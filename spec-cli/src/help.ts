@@ -544,7 +544,10 @@ guide is the SKILL layer — workflows and formats. Command usage lives here in 
     body: `Usage: spex internal <sub>
 
 Machine plumbing — called by generated hooks and launch scripts, never typed by a human or agent:
+  peer-accept|peer-drop <base64url-json>  gateway-owned machine peer RPCs
+  session-register <native-session-id>    register a self-launched protocol address
   trunk             print the resolved source-of-truth branch (the pre-commit main-guard captures it)
+  spec-governors <path> stable code: governor projection for hook gates
   commit-surgery    pre-commit footprint anchor: unconditional materialize + staged-index repair
   refresh-footprint quiet materialize — the post-checkout/post-merge freshness anchor
   session-state <st> --session <id>   a lifecycle hook authors the session's state
@@ -556,10 +559,16 @@ Machine plumbing — called by generated hooks and launch scripts, never typed b
   nudge <node>      the post-merge hook prints the issue nudge for a merged node
   hook-merge        fold NUL-separated handler stdouts (stdin) into one payload when two speak JSON
   shared-runtime-spawn <cwd> <log> <pid> <scope> <cmd> [args…]  detached adapter control plane (launch script)
+  codex-generation-current <runtime-root> <cmd>  ensure the current shared Codex generation
+  codex-generation-session <runtime-root> <session-id> <thread-id> <cmd>  resolve a session's Codex generation
   codex-launch <sock> <cwd> [prompt…]   backend-owned codex thread/start + first turn (launch script)
   codex-turn   <sock> <threadId> <text…>  fire a follow-up turn on an owned thread (tests/scripts)
+  codex-resume <sock> <threadId>           reload an evicted headless Codex thread
+  opencode-capture <native-session-id>     record an opencode native session id
   claude-headless-run <id> <runtime> <cmd> -- <tail…>  resident stream-json controller (launch script)
   pi-headless-run <id> <runtime> <cmd> -- <tail…>      resident pi text-mode controller (launch script)
+  commit-context <message-file>            prepare-commit-msg context plumbing
+  session-turn-fail <id> <harness> <exit>  record a headless turn failure
 
 If you reached for one of these by hand, the porcelain you want is probably elsewhere: the trunk
 name also lives at GET /api/settings (.layout); sessions are driven with spex session new / session send;

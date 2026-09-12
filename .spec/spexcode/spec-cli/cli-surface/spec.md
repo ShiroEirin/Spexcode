@@ -167,12 +167,14 @@ The retired `spex session new --node <id>` flag follows the same tombstone rule:
 the caller that a session carries no spec node, so the task — and any `[[<id>]]` reference it needs — belongs
 in the prompt. It never launches a session. This is a removal signpost, and it replaces the flag with nothing.
 
-**The internal boundary.** Machine plumbing — `trunk`, `commit-surgery`, `commit-context` (the
+**The internal boundary.** Machine plumbing — `peer-accept`/`peer-drop`, `session-register`, `trunk`,
+`spec-governors`, `commit-surgery`, `commit-context` (the
 prepare-commit-msg context block and derived Spec trailer, [[commit-context]]), `refresh-footprint`,
-`session-state`/`session-fail`/`session-idle`/`session-hook-state` (the hook-only canonical
+`session-state`/`session-fail`/`session-turn-fail`/`session-idle`/`session-hook-state` (the hook-only canonical
 lifecycle read — governed bit, status, proposal, tab-separated and never a note, so a Stop-gate shell never
 treats the runtime envelope as a second lifecycle database)/`commit-gate`, `hook-prompt`, `nudge`,
-`session-turn-fail`, `shared-runtime-spawn`, `codex-launch`/`codex-turn`, `claude-headless-run`, and `spec-governors` (the hook-stable `id<TAB>spec-path` projection of a
+`shared-runtime-spawn`, `codex-generation-current`/`codex-generation-session`, `codex-launch`/`codex-turn`/`codex-resume`,
+`opencode-capture`, `claude-headless-run`, and `pi-headless-run` (the hook-stable `id<TAB>spec-path` projection of a
 file's real `code:` owners), and `hook-prompt` (the hook-stable renderer for model-facing hook text) — is namespaced under `spex internal`, absent from the map; its usage
 text tells a stray human which porcelain they probably wanted. The typeable worker declarations
 (`session done|park|ask`) stay porcelain: an agent types them. `session done --propose nothing` is an
