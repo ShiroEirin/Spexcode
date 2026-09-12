@@ -107,7 +107,7 @@ test('spex open accepts the gateway login redirect when the password is correct'
 })
 
 test('spex open keeps authentication failures distinct from an unreachable gateway', async () => {
-  const record = { version: 1, url: 'http://gateway.test', pid: process.pid, instanceId: 'auth-diagnosis', startedAt: new Date().toISOString() }
+  const record = { version: 1 as const, url: 'http://gateway.test', pid: process.pid, instanceId: 'auth-diagnosis', startedAt: new Date().toISOString() }
   const fetchFn: typeof fetch = async (url) => {
     const path = new URL(String(url)).pathname
     if (path === '/host/identity') return new Response(JSON.stringify({ gateway: { instanceId: record.instanceId } }), { status: 200 })
