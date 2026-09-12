@@ -106,7 +106,9 @@ function parse(id: string, text: string): Issue {
     store: 'local',
     concern: fm.concern || id,
     by: fm.by || 'unknown',
-    status: fm.status === 'landed' ? 'landed' : 'open',
+    // The current local lifecycle has one terminal state. Preserve old rejected threads as closed rather
+    // than silently reopening them in the drain view.
+    status: fm.status === 'landed' || fm.status === 'rejected' ? 'landed' : 'open',
     nodes: list(fm.nodes),
     created: fm.created || '',
     body: body.join('\n').trim(),

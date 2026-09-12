@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { execFileSync } from 'node:child_process'
 
 import { fromForge } from './issues.js'
+import { loadLocalIssues } from './localIssues.js'
 
 test('fromForge preserves platform labels and their display colors on the unified Issue', () => {
   const [issue] = fromForge({
@@ -33,6 +34,20 @@ test('fromForge preserves platform labels and their display colors on the unifie
     { name: 'bug', color: '#d73a4a', textColor: '#ffffff' },
     { name: 'triage' },
   ])
+})
+
+test('legacy rejected local issues stay closed in the current two-state lifecycle', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'spex-legacy-rejected-'))
+  const previous = process.env.SPEXCODE_ISSUES_DIR
+  process.env.SPEXCODE_ISSUES_DIR = dir
+  try {
+    writeFileSync(join(dir, 'old.md'), '---\nconcern: old decision\nby: human\nstatus: rejected\ncreated: 2026-01-01T00:00:00Z\n---\n\nNo action.\n')
+    assert.equal(loadLocalIssues()[0]?.status, 'landed')
+  } finally {
+    if (previous === undefined) delete process.env.SPEXCODE_ISSUES_DIR
+    else process.env.SPEXCODE_ISSUES_DIR = previous
+    rmSync(dir, { recursive: true, force: true })
+  }
 })
 
 
