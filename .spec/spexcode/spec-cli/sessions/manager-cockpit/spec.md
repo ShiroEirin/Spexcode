@@ -81,7 +81,8 @@ branch (`mainBranch()`, auto-detected — never a hardcoded `main`). The payload
 
 `mergeSession(id)` is the ACT verb, served at `POST /api/sessions/:id/merge` and run by `spex session merge <id>`.
 It is a plain dispatch, never a server merge: only a governed `awaiting` session with `proposal=merge` can receive
-it; any other state fails loudly with HTTP 409. The request has no body or special header. Once its one ordinary
+it; the server checks that admission before loading the merge skill or appending a prompt, and any other state fails
+loudly with HTTP 409. The request has no body or special header. Once its one ordinary
 prompt is durably appended, normal session resume and delivery apply. The prompt tells the session's own agent to
 sync and resolve conflicts in its own worktree, re-run proof, atomically land the completed branch with one
 `--no-ff` merge into `main`, and verify the landing before proposing close. The server never touches `main` and

@@ -422,6 +422,12 @@ export type MergeSessionResult =
 export async function mergeSession(id: string): Promise<MergeSessionResult> {
   const wt = await findWorktree(id)
   if (!wt?.branch) return { dispatched: false, reason: 'no such mergeable session' }
+  if (wt.rec.status !== 'awaiting' || wt.rec.proposal !== 'merge') {
+    return {
+      dispatched: false,
+      reason: `session ${id} is not awaiting a merge proposal (status=${wt.rec.status}, proposal=${wt.rec.proposal ?? 'none'})`,
+    }
+  }
   const prompt = mergePrompt()
   if (!prompt) return { dispatched: false, reason: `no \`surface: skill\` plugin named '${MERGE_SKILL}' — the landing workflow this verb dispatches has no body to send` }
   const r = await sendText(id, prompt, undefined, {
