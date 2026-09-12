@@ -115,7 +115,7 @@ test('spex open keeps authentication failures distinct from an unreachable gatew
     if (path === '/login') return new Response('{}', { status: 401 })
     return new Response('{}', { status: 404 })
   }
-  const options = { readRecord: () => record, fetch: fetchFn, root: main, specs: [{ id: 'desktop-deep-link' }], sessions: [], cwd: main }
+  const options = { readRecord: () => record, fetch: fetchFn, root: main, specs: [{ id: 'desktop-deep-link' }], sessions: [], cwd: main, password: '' }
   await assert.rejects(() => resolveOpenDashboardUrl('desktop-deep-link', options), /requires authentication.*SPEXCODE_PASSWORD/)
   await assert.rejects(() => resolveOpenDashboardUrl('desktop-deep-link', { ...options, password: 'wrong' }), /rejected the supplied password \(HTTP 401\)/)
 })
