@@ -15,7 +15,7 @@ import { resolveLayout, mainBranch } from '@spexcode/spec-core'
 import { getBoardJson } from './graphCache.js'
 import { boardStream, closeBoardFileWatchers, ensureBoardFileWatchers, notifyBoardChanged, flushDeferredWorktreeRegistryChange } from './graphStream.js'
 import { gitA, gitTry, repoRoot } from '@spexcode/spec-core'
-import { pluginsView } from './plugins-view.js'
+import { pluginDetail, pluginsView } from './plugins-view.js'
 import { cockpitReview } from './cockpit.js'
 import { EMPTY_PROMPT_ERROR, listSessions, listArchivedSessionIndex, sendText, drainSession, markHumanPromptActive, interruptSession, rawKey, stopSession, closeSession, resumeSession, captureSessionResult, sessionPrompt, renameSession, setSessionSort, linkZCodeChildSession, projectCreatedSession, sessionCreateRequest, superviseQueue, superviseTurnFailures, superviseDelivery, reconcileLaunchedRuntimes, startWorktreeTrashReaper } from './sessions.js'
 import { mergeSession, retractDiffComment, saveDiffComment, sendDiffComments, sessionDiff } from './session-review.js'
@@ -432,6 +432,13 @@ app.get('/api/slash-commands', (c) => {
 // EVERY surface, not just the command one `/api/plugins` above serves. Read through the SAME loaders that
 // materialize them ([[plugins-view]]), so the page and the installer can never hold different opinions.
 app.get('/api/plugins/surfaces', (c) => c.json(pluginsView()))
+// One plugin's TEXT — the contract it folds in, the steps it sends, the shell it runs — fetched when the
+// board selects it rather than shipped with the list, which would be most of a megabyte to answer a
+// question about one row. The name selects a node and the node names its own files; no path is taken here.
+app.get('/api/plugins/surfaces/:name', (c) => {
+  const detail = pluginDetail(c.req.param('name'))
+  return detail ? c.json(detail) : c.json({ error: 'no such plugin' }, 404)
+})
 
 function uploadFailure(error: unknown): Response {
   if (!(error instanceof UploadError)) throw error

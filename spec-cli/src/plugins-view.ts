@@ -1,4 +1,6 @@
-import { loadAgentConfig, loadConfig, loadHookConfig, loadSkillConfig, loadSystemConfig } from '@spexcode/spec-core'
+import { readFileSync, statSync } from 'node:fs'
+import { join } from 'node:path'
+import { loadAgentConfig, loadConfig, loadHookConfig, loadSkillConfig, loadSystemConfig, repoRoot } from '@spexcode/spec-core'
 import { ALL_CORE_HOOKS, resolveCliProfile } from './help.js'
 import type { ConfigPreset } from '@spexcode/spec-core'
 
@@ -86,4 +88,46 @@ function readProfile(): Profile {
 export function pluginsView(): PluginsView {
   const rows = collectRows()
   return { rows, spine: buildSpine(rows), profile: readProfile() }
+}
+
+// @@@the-detail-is-what-it-actually-does - the list above is what a folder tree could almost say. What it
+// cannot say, and what a reader opens a plugin to find out, is the TEXT: the contract a system node folds
+// into every agent, the steps a skill sends, the shell a hook runs. That text is already loaded — every
+// `ConfigPreset` carries its body — but it is deliberately not in the list payload, because twenty-five
+// bodies and their scripts are most of a megabyte to answer a question about one of them. So the list is
+// cheap and this is fetched per selection, which is the shape the board reads in anyway.
+const FILE_LIMIT = 64 * 1024
+
+export type PluginFile = { path: string; text: string; bytes: number; truncated: boolean }
+export type PluginDetail = { name: string; surfaces: Surface[]; body: string; tools: string[]; files: PluginFile[] }
+
+// A plugin's co-located files are its own subtree, listed by the loader that found the node — never a path
+// from the request. The name selects a node; the node decides which bytes it owns.
+function readBundle(paths: string[]): PluginFile[] {
+  const root = repoRoot()
+  return paths.map((path) => {
+    const full = join(root, path)
+    try {
+      const bytes = statSync(full).size
+      const text = readFileSync(full, 'utf8')
+      return bytes > FILE_LIMIT
+        ? { path, text: text.slice(0, FILE_LIMIT), bytes, truncated: true }
+        : { path, text, bytes, truncated: false }
+    } catch (error) {
+      return { path, text: `<unreadable: ${error instanceof Error ? error.message : String(error)}>`, bytes: 0, truncated: false }
+    }
+  })
+}
+
+export function pluginDetail(name: string): PluginDetail | null {
+  const surfaces: Surface[] = []
+  let found: ConfigPreset | null = null
+  for (const surface of SURFACES) {
+    const hit = LOADERS[surface]().find((p) => p.name === name)
+    if (!hit) continue
+    surfaces.push(surface)
+    found = found ?? hit
+  }
+  if (!found) return null
+  return { name, surfaces, body: found.body, tools: found.tools, files: readBundle(found.files) }
 }
