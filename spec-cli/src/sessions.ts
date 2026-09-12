@@ -45,11 +45,15 @@ const DEFAULT_MAX_ACTIVE = 8
 const worktreeTrashDir = (root: string): string => join(root, '.worktrees', '.trash')
 const revokedSenderRoot = (): string => join(runtimeRoot(), '.revoked-senders')
 const revokedSenderPath = (id: string): string => join(revokedSenderRoot(), createHash('sha256').update(id).digest('hex'))
-function revokeSenderDelivery(id: string): void {
+export function revokeSenderDelivery(id: string): void {
   mkdirSync(revokedSenderRoot(), { recursive: true })
   writeFileSync(revokedSenderPath(id), `${id}\n`)
 }
 const senderDeliveryRevoked = (id: string): boolean => existsSync(revokedSenderPath(id))
+const managedWatchMessage = (message: { idempotencyKey?: string | null }): boolean => {
+  const key = message.idempotencyKey ?? ''
+  return key.startsWith('watch-event:') || key.startsWith('watch-initial:') || key.startsWith('watch-reparent:')
+}
 const pendingTrashDeletes: string[] = []
 let trashDeleteRunning = false
 let trashDeleteScheduled = false
@@ -248,7 +252,7 @@ export async function subscribeSessionWatch(watcher: string, targets: string[], 
       kind: 'session.prompt.v1',
       body: Buffer.from(message, 'utf8'),
       senderSessionId: target,
-      idempotencyKey: digest(`watch-initial-snapshot\0${watcher}\0${target}\0${source}\0${message}`),
+      idempotencyKey: `watch-initial:${watcher}:${target}:${source}:${digest(`watch-initial-snapshot\0${watcher}\0${target}\0${source}\0${message}`)}`,
     })
     const history = application.readEvents(target)
     application.advanceFollowCursor(watcher, target, history.at(-1)?.eventSeq ?? 0)
@@ -353,7 +357,7 @@ export async function reparentSessionRecords(rawChildren: string[], parent: stri
             kind: 'session.prompt.v1',
             body: Buffer.from(watchMessage(moved), 'utf8'),
             senderSessionId: id,
-            idempotencyKey: digest(`reparent-snapshot\0${change.event.eventId}`),
+            idempotencyKey: `watch-reparent:${change.event.eventId}`,
           })
           application.advanceFollowCursor(parent, id, change.event.eventSeq)
           notify.push(moved)
@@ -1281,9 +1285,13 @@ setSessionApplicationCommitWake((recipients) => {
     void Promise.resolve().then(async () => {
       // Transition commits already carry the durable subject event. Reconcile that event into the watcher's
       // ordinary conversation queue now, so a managed watch does not wait for the patrol tick to become a prompt.
-      await reconcileWatchDeliveries(configuredSessionApplication())
+      await reconcileWatchDeliveries(configuredSessionApplication(), wakeRecipients)
       for (const recipient of wakeRecipients) {
-        if (sessionHasPendingDelivery(recipient)) await drainSession(recipient)
+        try {
+          if (sessionHasPendingDelivery(recipient)) await drainSession(recipient)
+        } catch (error) {
+          console.error(`spex: canonical delivery wake failed for ${recipient}: ${error instanceof Error ? error.message : String(error)}`)
+        }
       }
     }).catch((error) => {
       console.error(`spex: canonical delivery wake failed: ${error instanceof Error ? error.message : String(error)}`)
@@ -1315,9 +1323,9 @@ function watchMessageFromEvent(event: { payload: Uint8Array }, subjectSessionId:
   return { text: `[spex watch] ${subjectSessionId} is ${label}${note}`, status, previousStatus: typeof body.previousStatus === 'string' ? body.previousStatus : null }
 }
 
-async function reconcileWatchDeliveries(application: ProductionSessionApplication): Promise<void> {
+async function reconcileWatchDeliveries(application: ProductionSessionApplication, requestedWatchers?: readonly string[]): Promise<void> {
   const watchers: string[] = []
-  for (const id of listSessionIds()) {
+  for (const id of requestedWatchers ?? listSessionIds()) {
     try {
       const rec = readRecord(id)
       if (rec?.governed && !rec.archived) watchers.push(id)
@@ -1340,7 +1348,7 @@ async function reconcileWatchDeliveries(application: ProductionSessionApplicatio
       continue
     }
     const alreadyQueued = application.readPendingMessages(item.watcherSessionId)
-      .some(message => message.idempotencyKey === item.event.eventId)
+      .some(message => message.idempotencyKey === item.event.eventId || message.idempotencyKey === `watch-event:${item.event.eventId}`)
     if (!alreadyQueued) {
       application.enqueueConversationMessage(item.watcherSessionId, {
         kind: 'session.prompt.v1',
@@ -3641,12 +3649,13 @@ type SendTextOptions = {
 }
 export async function sendText(id: string, text: string, from?: string, opts: SendTextOptions = {}): Promise<AcceptedDispatch> {
   if (!text.trim()) return { ok: false, error: EMPTY_PROMPT_ERROR }
+  if (from && senderDeliveryRevoked(from)) return { ok: false, error: `sender session ${from} is closed; prompt NOT delivered` }
   const application = configuredSessionApplication()
   let message: ReturnType<ProductionSessionApplication['protocol']['enqueue']> | undefined
   let replayed = false
   let recordless = false
   try {
-    await withRecordLocks([id, ...(from ? [from] : [])].sort(), async () => {
+    await withRecordLocks([...new Set([id, ...(from ? [from] : [])])].sort(), async () => {
       if (from && senderDeliveryRevoked(from)) throw new ResourceConflict(`sender session ${from} is closed; prompt NOT delivered`)
       const rec = readRecord(id)
       if (!rec) {
@@ -3746,7 +3755,7 @@ export async function drainSession(id: string): Promise<void> {
     for (;;) {
       const msg = application.readPendingMessages(id)[0]
       if (!msg) return
-      if (msg.senderSessionId && senderDeliveryRevoked(msg.senderSessionId)) {
+      if (msg.senderSessionId && senderDeliveryRevoked(msg.senderSessionId) && !managedWatchMessage(msg)) {
         const removed = application.dequeuePendingMessage(id, msg.messageId)
         if (!removed || removed.messageId !== msg.messageId) throw new ResourceConflict(`canonical queue head changed while revoking sender debt for ${id}`)
         continue

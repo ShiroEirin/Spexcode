@@ -8,7 +8,7 @@ import test from 'node:test'
 import { sessionRecordPath, sessionStoreDir } from '@spexcode/spec-core'
 
 import { initializeFreshSessionApplication, resetConfiguredSessionApplicationForTest } from './session-application.js'
-import { drainSession, linkZCodeChildSession, markIdle, markState, sessionHookState, superviseDelivery } from './sessions.js'
+import { drainSession, linkZCodeChildSession, markIdle, markState, revokeSenderDelivery, sessionHookState, superviseDelivery } from './sessions.js'
 import { stampRvSock } from './harness.js'
 
 const parent = 'managed-watch-realtime-parent'
@@ -91,6 +91,17 @@ test('canonical managed watch wakes the real parent transport once per state com
     assert.match(delivered[0], /review/)
     assert.match(delivered[1], /error/)
     assert.match(delivered[2], /asking/)
+
+    // A managed watch notice is system debt, not the child's outbound conversation. Closing the child revokes
+    // ordinary sender debt, but this already-accepted close notice must still reach its parent.
+    application.enqueueConversationMessage(parent, {
+      kind: 'session.prompt.v1', body: Buffer.from('[spex watch] managed-watch-realtime-child is close-pending', 'utf8'),
+      senderSessionId: child, idempotencyKey: 'watch-event:close-proof',
+    }, { text: '[spex watch] managed-watch-realtime-child is close-pending', from: child })
+    revokeSenderDelivery(child)
+    await drainSession(parent)
+    await waitForReceipt(initialReceipts + declarations.length + 1)
+    assert.match(received.at(-1) ?? '', /close-pending/)
   } finally {
     if (server) await new Promise<void>(resolve => server!.close(() => resolve()))
     resetConfiguredSessionApplicationForTest()

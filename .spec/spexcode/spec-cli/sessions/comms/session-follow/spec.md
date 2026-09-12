@@ -35,8 +35,9 @@ But a governed supervisor already has a durable address: its ordinary [[dispatch
 relationship once, then the backend owning the supervisor's control channel polls the global event store and enters
 each authored state transition in that queue through the same send path as every other agent message. The subject's
 backend only appends the event; it does not attempt delivery on a channel it does not own. The adopter's post-commit
-wake immediately translates each cursor-addressed event into one ordinary watcher prompt and its watcher-timeline
-message event, then drains the existing runtime; the patrol is only the recovery path. So consecutive changes arrive
+wake carries the affected watcher ids, immediately translates each cursor-addressed event into one ordinary watcher
+prompt and its watcher-timeline message event, then drains the existing runtime; the patrol is only the recovery
+path. So consecutive changes arrive
 one-by-one without a human message or dashboard poll to flush
 them. A caller with no governed address cannot pretend to receive such a delivery; it
 waits on the target's log in its own background command instead.
