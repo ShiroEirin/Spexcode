@@ -1278,11 +1278,16 @@ const requestQueueDrain = (): void => {
 setSessionApplicationCommitWake((recipients) => {
   const wakeRecipients = recipients.filter(recipient => !readinessWakeSuppressed.has(recipient))
   queueMicrotask(() => {
-    for (const recipient of wakeRecipients) {
-      void Promise.resolve().then(() => sessionHasPendingDelivery(recipient) ? drainSession(recipient) : undefined).catch((error) => {
-        console.error(`spex: canonical delivery wake failed for ${recipient}: ${error instanceof Error ? error.message : String(error)}`)
-      })
-    }
+    void Promise.resolve().then(async () => {
+      // Transition commits already carry the durable subject event. Reconcile that event into the watcher's
+      // ordinary conversation queue now, so a managed watch does not wait for the patrol tick to become a prompt.
+      await reconcileWatchDeliveries(configuredSessionApplication())
+      for (const recipient of wakeRecipients) {
+        if (sessionHasPendingDelivery(recipient)) await drainSession(recipient)
+      }
+    }).catch((error) => {
+      console.error(`spex: canonical delivery wake failed: ${error instanceof Error ? error.message : String(error)}`)
+    })
   })
 })
 
@@ -1334,12 +1339,16 @@ async function reconcileWatchDeliveries(application: ProductionSessionApplicatio
       application.advanceFollowCursor(item.watcherSessionId, item.subjectSessionId, item.event.eventSeq)
       continue
     }
-    application.enqueueMessage(item.watcherSessionId, {
-      kind: 'session.prompt.v1',
-      body: Buffer.from(rendered.text, 'utf8'),
-      senderSessionId: item.subjectSessionId,
-      idempotencyKey: `watch-event:${item.event.eventId}`,
-    })
+    const alreadyQueued = application.readPendingMessages(item.watcherSessionId)
+      .some(message => message.idempotencyKey === item.event.eventId)
+    if (!alreadyQueued) {
+      application.enqueueConversationMessage(item.watcherSessionId, {
+        kind: 'session.prompt.v1',
+        body: Buffer.from(rendered.text, 'utf8'),
+        senderSessionId: item.subjectSessionId,
+        idempotencyKey: `watch-event:${item.event.eventId}`,
+      }, { text: rendered.text, from: item.subjectSessionId })
+    }
     application.advanceFollowCursor(item.watcherSessionId, item.subjectSessionId, item.event.eventSeq)
     drain.add(item.watcherSessionId)
   }
