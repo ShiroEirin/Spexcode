@@ -135,7 +135,7 @@ app.get('/api/graph', async (c) => {
   }
   return c.body(result.json, 200, { 'content-type': 'application/json; charset=UTF-8' })
 })
-// the graph's push channel: an SSE that fires `board-changed` on any session-store write, so the dashboard
+// the graph's push channel: an SSE that fires `graph-changed` on any session-store write, so the dashboard
 // reloads the instant status moves instead of waiting for its slow fallback poll ([[graph-stream]]).
 app.get('/api/graph/stream', (c) => boardStream(c))
 app.get('/api/specs', async (c) => c.json(await loadSpecs()))
