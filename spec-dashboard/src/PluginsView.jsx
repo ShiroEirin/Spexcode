@@ -1,43 +1,109 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { apiUrl } from './project.js'
 import { useT } from './i18n/index.jsx'
-import { PageScroll } from './PageScroll.jsx'
+import { Segmented } from './Segmented.jsx'
+import { useResizable } from './useResizable.js'
 
-// THE AUTOMATION, READ BY WHAT IT DOES. Every plugin here is already a spec node and already in the graph,
-// so this board is not about making them exist on screen — it is about reading them by the surface they plug
-// into instead of the folder they sit in. The folders are shelves: `distill` and `merge` each carry two
-// surfaces and can appear only once in a tree, and a hook's event, order and refusal have nowhere in one to
-// live. Each row carries its node's own one line and opens the node; nothing here restates a body.
+// THE AUTOMATION, AS A PLACE YOU WORK RATHER THAN A PAGE YOU READ. Every plugin here is already a spec node
+// and already in the graph, so this board is not about making them exist on screen — it is about reading
+// them by the surface they plug into instead of the folder they sit in, and about seeing what one of them
+// actually DOES without leaving.
 //
-// @@@normal-is-not-drawable - the first version of this board was a badge farm: order, refusal, file count
-// and surface all rendered as chips on every row, so nothing stood out because everything was marked. The
-// rule that fixes it is not "fewer chips", it is that a marker for the ORDINARY case must be unrepresentable.
-// So `Mark` returns null unless the thing it names is true, `order` is drawn only on an event that carries
-// more than one hook (the only place the number decides anything — elsewhere position already says it), and
-// a file count is drawn only when files exist. A row with nothing remarkable therefore renders as its name
-// and its sentence, which is what a reader should be able to skim past.
+// @@@a-board-is-a-frame-not-a-document - the first two versions were one column in the shared page
+// scrollport: three stacked sections, one scrollbar, every row a link that navigated away. That is the
+// shape of a settings page — something you visit once a quarter, read top to bottom, and leave — and it is
+// the wrong shape for the thing a project's automation is. A surface you MANAGE holds still while you work
+// it: the frame and its controls never move, the list and the detail scroll independently, and selecting a
+// row answers the question in place instead of spending the whole window to go and look. So the page root
+// is a bounded pane ([[page-scroll]] exempts these deliberately) and the split is the one
+// [[diff-document]] already establishes — resizable master list, pinned zone headings, detail pane owning
+// its own overflow.
 //
-// The colour budget is one narrow left column and nothing else. A refusing hook puts its mark there, so the
-// hooks that can interrupt a session form a broken vertical line a reader finds without reading — and the
-// row itself is never tinted, because a tinted row spends colour on the whole line to say one word.
+// The LIFECYCLE SPINE survives the change of shape and gets better from it: the seven events are the list's
+// sticky group headings now, so the event a hook runs on stays overhead while its siblings scroll under it,
+// instead of being a label you have already scrolled past.
+//
+// @@@normal-is-not-drawable - a marker for the ORDINARY case must be unrepresentable, or nothing stands out
+// because everything is marked. An earlier version put order, refusal and a file count on every row and
+// read as a badge farm. So `Mark` returns null unless the thing it names is true, and `order` is drawn only
+// on an event carrying more than one hook — the only place the number decides anything, since elsewhere
+// position already says it.
 
 const specHref = (name) => `#/spec/${encodeURIComponent(name)}`
+const SURFACE_FILTERS = ['all', 'hook', 'system', 'invoked']
 
 // a mark exists only when it is TRUE; there is no neutral variant to render by accident
 const Mark = ({ when, glyph, tone, tip }) => (when
   ? <span className={`pg-mark pg-${tone}`} data-tip={tip} aria-label={tip}>{glyph}</span>
   : null)
 
-function Row({ row, mark = null, meta = null, dim = false }) {
+function Row({ row, selected, onSelect, mark = null, meta = null, dim = false }) {
+  const on = selected === row.name
   return (
-    <a className={dim ? 'pg-row is-dim' : 'pg-row'} href={specHref(row.name)}>
+    <button type="button"
+      className={`ft-row pg-item${on ? ' on' : ''}${dim ? ' is-dim' : ''}`}
+      aria-current={on ? 'true' : undefined}
+      data-tip={row.desc || undefined}
+      onClick={() => onSelect(row.name)}>
       <span className="pg-rail">{mark}</span>
-      <span className="pg-body">
-        <span className="pg-name">{row.name}</span>
-        {row.desc && <span className="pg-desc">{row.desc}</span>}
-      </span>
-      {meta && <span className="pg-meta">{meta}</span>}
-    </a>
+      <span className="ft-label">{row.name}</span>
+      {meta}
+    </button>
+  )
+}
+
+// The detail is the one thing the old page could not do: say what the plugin DOES. Its text is fetched per
+// selection ([[plugins-view]]), so this pane owns a small load of its own and says so rather than blanking.
+function Detail({ name, row, t }) {
+  const [detail, setDetail] = useState(null)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    if (!name) return undefined
+    let live = true
+    setDetail(null)
+    setError(null)
+    fetch(apiUrl(`/api/plugins/surfaces/${encodeURIComponent(name)}`))
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
+      .then((data) => { if (live) setDetail(data) })
+      .catch((err) => { if (live) setError(err.message || String(err)) })
+    return () => { live = false }
+  }, [name])
+
+  if (!name) return <div className="pg-detail pg-detail-empty">{t('plugins.pickOne')}</div>
+
+  return (
+    <div className="pg-detail">
+      <header className="pg-detail-head">
+        <h2 className="pg-detail-name">{name}</h2>
+        <span className="pg-detail-surfaces">{(row?.surfaces || []).join(' · ')}</span>
+        <a className="pg-detail-node" href={specHref(name)}>{t('plugins.openNode')}</a>
+      </header>
+      {row?.desc && <p className="pg-detail-desc">{row.desc}</p>}
+      <dl className="pg-facts">
+        {row?.events?.length > 0 && <><dt>{t('plugins.factEvents')}</dt><dd>{row.events.join(', ')}</dd></>}
+        {row?.surfaces?.includes('hook') && <><dt>{t('plugins.factOrder')}</dt><dd>{row.order}</dd></>}
+        {row?.surfaces?.includes('hook') && <><dt>{t('plugins.factBlock')}</dt>
+          <dd>{t(row.block ? 'plugins.factBlockYes' : 'plugins.factBlockNo')}</dd></>}
+        {detail?.tools?.length > 0 && <><dt>{t('plugins.factTools')}</dt><dd>{detail.tools.join(', ')}</dd></>}
+      </dl>
+      <div className="pg-detail-body">
+        {error && <p className="pg-error">{t('plugins.failed', { reason: error })}</p>}
+        {!error && !detail && <p className="pg-detail-wait">{t('plugins.reading')}</p>}
+        {detail && <>
+          <pre className="pg-text pg-prose">{detail.body}</pre>
+          {detail.files.map((file) => (
+            <section className="pg-file" key={file.path}>
+              <h3 className="pg-file-name">{file.path.split('/').pop()}
+                <span className="pg-file-path">{file.path}</span>
+              </h3>
+              <pre className="pg-text">{file.text}</pre>
+              {file.truncated && <p className="pg-file-cut">{t('plugins.truncated', { bytes: file.bytes })}</p>}
+            </section>
+          ))}
+        </>}
+      </div>
+    </div>
   )
 }
 
@@ -45,6 +111,10 @@ export default function PluginsView() {
   const t = useT()
   const [view, setView] = useState(null)
   const [error, setError] = useState(null)
+  const [selected, setSelected] = useState(null)
+  const [query, setQuery] = useState('')
+  const [surface, setSurface] = useState('all')
+  const [width, onDragStart, resetWidth] = useResizable('spex.pluginsPanelWidth', 300, { min: 220, max: 560 })
 
   useEffect(() => {
     let live = true
@@ -55,91 +125,93 @@ export default function PluginsView() {
     return () => { live = false }
   }, [])
 
-  if (error) return <PageScroll><div className="pg"><p className="pg-error">{t('plugins.failed', { reason: error })}</p></div></PageScroll>
-  if (!view) return <PageScroll><div className="pg" /></PageScroll>
+  const byName = useMemo(() => new Map((view?.rows || []).map((row) => [row.name, row])), [view])
+
+  // One predicate for both panes: the filter decides what the list SHOWS, never what the inventory IS
+  // ([[plugins-view]] always answers whole), and the counts in the bar report the filtered view honestly.
+  const keep = useMemo(() => {
+    const needle = query.trim().toLowerCase()
+    return (row) => {
+      if (!row) return false
+      if (surface === 'invoked' ? !row.surfaces.some((s) => s === 'skill' || s === 'command')
+        : surface !== 'all' && !row.surfaces.includes(surface)) return false
+      if (!needle) return true
+      return row.name.toLowerCase().includes(needle) || (row.desc || '').toLowerCase().includes(needle)
+    }
+  }, [query, surface])
+
+  if (error) return <div className="pg-board"><p className="pg-error">{t('plugins.failed', { reason: error })}</p></div>
+  if (!view) return <div className="pg-board" />
 
   const { rows, spine, profile } = view
-  const byName = new Map(rows.map((row) => [row.name, row]))
-  const system = rows.filter((row) => row.surfaces.includes('system'))
-  const invoked = rows.filter((row) => row.surfaces.includes('skill') || row.surfaces.includes('command'))
-  const unused = ['hook', 'system', 'command', 'skill', 'agent'].filter((s) => !rows.some((r) => r.surfaces.includes(s)))
-  // a hook ships exactly one script by construction (the manifest compiler refuses one that does not), so
-  // the count is a constant there and drawing it would mark every row to say nothing. Elsewhere a co-located
-  // file is a real fact about the node — `core` carries seven, `distill` ships an executable.
-  const files = (row) => (row.files.length ? <span className="pg-files">{row.files.length}</span> : null)
+  const shown = rows.filter(keep)
+  const system = shown.filter((row) => row.surfaces.includes('system'))
+  const invoked = shown.filter((row) => row.surfaces.includes('skill') || row.surfaces.includes('command'))
+  const spineShown = spine
+    .map((slot) => ({ ...slot, hooks: slot.hooks.filter((hook) => keep(byName.get(hook.name))) }))
+    .filter((slot) => slot.hooks.length > 0)
+
+  const zone = (key, count, label) => (
+    <div className="si-zone pg-zone" role="heading" aria-level="2" key={`z:${key}`}>
+      <span className="si-zone-count" aria-hidden="true">{count}</span>
+      <span className="si-zone-label">{label}</span>
+    </div>
+  )
 
   return (
-    <PageScroll>
-      <div className="pg">
-        <header className="pg-head">
-          <h1 className="pg-title">{t('plugins.title')}</h1>
-          <p className="pg-sub">
-            {t('plugins.sub', { nodes: rows.length, surfaces: rows.reduce((n, r) => n + r.surfaces.length, 0) })}
-            <span className="pg-profile">
-              <span className="pg-profile-k">{t('plugins.profileLabel')}</span>
-              <code>{profile.name}</code>
-              {profile.disables.length === 0
-                ? t('plugins.profileAll', { n: profile.retains.length })
-                : t('plugins.profileSome', { kept: profile.retains.length, off: profile.disables.join(', ') })}
-            </span>
-          </p>
-        </header>
+    <div className="pg-board">
+      {/* The bar carries what the reader acts WITH — never what the tab strip already says. */}
+      <header className="pg-bar">
+        <span className="pg-count">{t('plugins.count', { shown: shown.length, total: rows.length })}</span>
+        <input className="pg-search" type="search" value={query} placeholder={t('plugins.searchHint')}
+          aria-label={t('plugins.searchHint')} onChange={(e) => setQuery(e.target.value)} />
+        <Segmented label={t('plugins.surfaceFilter')} value={surface} onPick={setSurface}
+          options={SURFACE_FILTERS.map((value) => ({ value, label: t(`plugins.filter.${value}`) }))} />
+        <span className="pg-profile">
+          <span className="pg-profile-k">{t('plugins.profileLabel')}</span>
+          <code>{profile.name}</code>
+          {profile.disables.length === 0
+            ? t('plugins.profileAll', { n: profile.retains.length })
+            : t('plugins.profileSome', { kept: profile.retains.length, off: profile.disables.join(', ') })}
+        </span>
+      </header>
 
-        <section className="pg-section">
-          <h2 className="pg-h">{t('plugins.spine')}</h2>
-          <p className="pg-note">{t('plugins.spineNote')}</p>
-          <ol className="pg-spine">
-            {spine.map((slot) => (
-              <li key={slot.event} className={slot.hooks.length ? 'pg-stop' : 'pg-stop is-empty'}>
-                <span className="pg-event">
-                  {slot.event}
-                  {slot.offSpine && <em className="pg-offspine">{t('plugins.offSpine')}</em>}
-                </span>
-                <span className="pg-hooks">
-                  {slot.hooks.length === 0
-                    ? <span className="pg-nothing">{t('plugins.nothingRuns')}</span>
-                    : slot.hooks.map((hook) => (
-                      <Row key={hook.name}
-                        row={byName.get(hook.name) || { name: hook.name, desc: '', files: [] }}
-                        dim={profile.disables.includes(hook.name)}
-                        mark={<Mark when={hook.block} glyph="⊘" tone="refuse" tip={t('plugins.blocksTip')} />}
-                        meta={<>
-                          {/* the number only decides something where an event carries more than one hook */}
-                          {slot.hooks.length > 1 && <span className="pg-ord" data-tip={t('plugins.orderTip')}>{hook.order}</span>}
-                          {profile.disables.includes(hook.name) && <span className="pg-dimword">{t('plugins.disabled')}</span>}
-                        </>} />
-                    ))}
-                </span>
-              </li>
-            ))}
-          </ol>
-        </section>
-
-        <section className="pg-section">
-          <h2 className="pg-h">{t('plugins.alwaysOn')}</h2>
-          <p className="pg-note">{t('plugins.alwaysOnNote')}</p>
-          <div className="pg-list">{system.map((row) => <Row key={row.name} row={row} meta={files(row)} />)}</div>
-        </section>
-
-        <section className="pg-section">
-          <h2 className="pg-h">{t('plugins.invoked')}</h2>
-          <p className="pg-note">{t('plugins.invokedNote')}</p>
-          <div className="pg-list">
+      <div className="pg-split" style={{ '--pg-panel': `${width}px` }}>
+        <nav className="pg-list" aria-label={t('plugins.listLabel')}>
+          {/* the spine is the list's group headings now: the event stays overhead while its hooks scroll */}
+          {spineShown.map((slot) => (
+            <section key={slot.event}>
+              {zone(slot.event, slot.hooks.length, slot.event)}
+              {slot.hooks.map((hook) => (
+                <Row key={`${slot.event}:${hook.name}`} row={byName.get(hook.name) || { name: hook.name, desc: '' }}
+                  selected={selected} onSelect={setSelected}
+                  dim={profile.disables.includes(hook.name)}
+                  mark={<Mark when={hook.block} glyph="⊘" tone="refuse" tip={t('plugins.blocksTip')} />}
+                  meta={slot.hooks.length > 1
+                    ? <span className="pg-ord" data-tip={t('plugins.orderTip')}>{hook.order}</span>
+                    : null} />
+              ))}
+            </section>
+          ))}
+          {system.length > 0 && <section>
+            {zone('system', system.length, t('plugins.alwaysOn'))}
+            {system.map((row) => <Row key={row.name} row={row} selected={selected} onSelect={setSelected} />)}
+          </section>}
+          {invoked.length > 0 && <section>
+            {zone('invoked', invoked.length, t('plugins.invoked'))}
             {invoked.map((row) => {
               const both = row.surfaces.includes('skill') && row.surfaces.includes('command')
-              return <Row key={row.name} row={row} meta={<>
-                {/* two surfaces at once is the one thing a folder tree cannot show, so it is the one that earns colour */}
-                <span className={both ? 'pg-surf is-both' : 'pg-surf'}>
+              return <Row key={row.name} row={row} selected={selected} onSelect={setSelected}
+                meta={<span className={both ? 'pg-surf is-both' : 'pg-surf'}>
                   {both ? t('plugins.bothSurfaces') : row.surfaces.includes('skill') ? 'skill' : 'command'}
-                </span>
-                {files(row)}
-              </>} />
+                </span>} />
             })}
-          </div>
-        </section>
-
-        {unused.length > 0 && <p className="pg-unused">{t('plugins.unused', { names: unused.join(', ') })}</p>}
+          </section>}
+          {shown.length === 0 && <p className="pg-none">{t('plugins.noMatch')}</p>}
+        </nav>
+        <div className="pg-resize" onMouseDown={onDragStart} onDoubleClick={resetWidth} aria-hidden="true" />
+        <Detail name={selected} row={byName.get(selected)} t={t} />
       </div>
-    </PageScroll>
+    </div>
   )
 }
