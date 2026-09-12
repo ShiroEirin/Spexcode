@@ -216,11 +216,17 @@ test('session reparent rewrites parent/watch through live backend and only falls
     assert.match(newParentTimelineAtHandoff, new RegExp(childB), 'reparent delivers an already-working child current-state snapshot')
     const manualWatchState = await runCli(['session', 'done', '--propose', 'merge', '--session', childA, '--api', `http://127.0.0.1:${port}`], env, project)
     assert.equal(manualWatchState.code, 0, manualWatchState.err)
-    await waitFor(async () => timelineText(sessionDir(home, oldParent, project)).length > oldParentTimelineBefore.length,
+    // WAIT FOR THE THING BEING ASSERTED. These waits used to accept "the timeline grew", which is a weaker
+    // condition than the `/review/` they guard: any other watch notice arriving first satisfies growth while
+    // the review transition is still in flight, and the assertion below then reads a timeline whose newest
+    // line is, say, `[spex watch] <child> is created`. That raced from the day it was written and started
+    // losing once transition commits began waking watchers immediately instead of on the one-second patrol.
+    await waitFor(async () => /review/.test(timelineText(sessionDir(home, oldParent, project))),
       'the former parent\'s overlapping manual watch must survive reparent')
-    await waitFor(async () => timelineText(sessionDir(home, newParent, project)).length > newParentTimelineAtHandoff.length,
+    await waitFor(async () => /review/.test(timelineText(sessionDir(home, newParent, project))),
       'the new parent must receive a later non-working child transition')
-    assert.match(timelineText(sessionDir(home, oldParent, project)), /review/)
+    assert.ok(timelineText(sessionDir(home, oldParent, project)).length > oldParentTimelineBefore.length)
+    assert.ok(timelineText(sessionDir(home, newParent, project)).length > newParentTimelineAtHandoff.length)
     assert.deepEqual(pendingFrom(childADir), [], 'a moved child does not retain an undelivered command from its former supervisor')
     const newParentTimeline = timelineText(sessionDir(home, newParent, project))
     assert.match(newParentTimeline, new RegExp(childA))
