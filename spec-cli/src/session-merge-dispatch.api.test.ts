@@ -123,8 +123,12 @@ test('merge dispatch gives the agent the short local landing flow', { timeout: 1
       body: JSON.stringify({ status: 'awaiting', proposal: 'merge', note: 'ready to land' }),
     })
     assert.equal(declared.status, 200, declared.text)
-    const dispatched = await request(base, `/api/sessions/${id}/merge`, { method: 'POST' })
-    assert.deepEqual({ status: dispatched.status, dispatched: dispatched.body.dispatched }, { status: 200, dispatched: true }, dispatched.text)
+    // The supervisor's door is the CLI verb, not the route it happens to call, so the admitted dispatch goes
+    // through `spex session merge` — one path proven end to end beats two half-proven ones.
+    const cli = execFileSync(process.execPath, [
+      tsxBin(packageRoot), join(packageRoot, 'src', 'cli.ts'), 'session', 'merge', id,
+    ], { cwd: project, env: { ...env, SPEXCODE_API_URL: base }, encoding: 'utf8' })
+    assert.match(cli, new RegExp(`merge dispatched to ${id}`))
 
     const timeline = await waitFor(
       () => request(base, `/api/sessions/${id}/timeline`).then((reply) => reply.body.events as Array<{ kind: string; text: string }>),
