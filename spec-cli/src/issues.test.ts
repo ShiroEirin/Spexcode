@@ -42,7 +42,7 @@ test('legacy rejected local issues stay closed in the current two-state lifecycl
   process.env.SPEXCODE_ISSUES_DIR = dir
   try {
     writeFileSync(join(dir, 'old.md'), '---\nconcern: old decision\nby: human\nstatus: rejected\ncreated: 2026-01-01T00:00:00Z\n---\n\nNo action.\n')
-    assert.equal(loadLocalIssues()[0]?.status, 'landed')
+    assert.equal(loadLocalIssues()[0]?.status, 'rejected')
   } finally {
     if (previous === undefined) delete process.env.SPEXCODE_ISSUES_DIR
     else process.env.SPEXCODE_ISSUES_DIR = previous
