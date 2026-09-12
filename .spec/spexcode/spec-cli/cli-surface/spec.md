@@ -170,12 +170,13 @@ in the prompt. It never launches a session. This is a removal signpost, and it r
 **The internal boundary.** Machine plumbing — `peer-accept`/`peer-drop`, `session-register`, `trunk`,
 `spec-governors`, `commit-surgery`, `commit-context` (the
 prepare-commit-msg context block and derived Spec trailer, [[commit-context]]), `refresh-footprint`,
-`session-state`/`session-fail`/`session-turn-fail`/`session-idle`/`session-hook-state` (the hook-only canonical
-lifecycle read — governed bit, status, proposal, tab-separated and never a note, so a Stop-gate shell never
-treats the runtime envelope as a second lifecycle database)/`commit-gate`, `hook-prompt`, `nudge`,
-`shared-runtime-spawn`, `codex-generation-current`/`codex-generation-session`, `codex-launch`/`codex-turn`/`codex-resume`,
-`opencode-capture`, `claude-headless-run`, and `pi-headless-run` (the hook-stable `id<TAB>spec-path` projection of a
-file's real `code:` owners), and `hook-prompt` (the hook-stable renderer for model-facing hook text) — is namespaced under `spex internal`, absent from the map; its usage
+`session-state`/`session-idle`/`session-hook-state` (the hook-only canonical lifecycle read — governed bit,
+status, proposal, tab-separated and never a note, so a Stop-gate shell never treats the runtime envelope as a
+second lifecycle database), `session-fail`/`session-turn-fail` (turn-failure writers), `commit-gate`,
+`hook-prompt`, `nudge`, `spec-governors` (the hook-stable `id<TAB>spec-path` projection of a file's real
+`code:` owners), `shared-runtime-spawn`, `codex-generation-current`/`codex-generation-session`,
+`codex-launch`/`codex-turn`/`codex-resume`, `opencode-capture`, `claude-headless-run`, and `pi-headless-run` —
+is namespaced under `spex internal`, absent from the map; its usage
 text tells a stray human which porcelain they probably wanted. The typeable worker declarations
 (`session done|park|ask`) stay porcelain: an agent types them. `session done --propose nothing` is an
 intended correction trap rather than a state write: it exits non-zero after naming merge, close, ask, and
