@@ -88,6 +88,7 @@ type Backend = { port: number; child: ChildProcess }
 let current: Backend | null = null   // which internal port new proxy connections forward to
 let reloading = false                // single-flight guard for reload()
 let pending = false                  // a code change arrived mid-reload → reload again when done
+let restartRetryTimer: NodeJS.Timeout | undefined
 
 // grab an ephemeral port by binding :0, then release it for the child to claim (negligible rebind race).
 function freePort(): Promise<number> {
@@ -145,7 +146,18 @@ async function reload(reason: string): Promise<void> {
       pending = false
       if (!buildWorkspace()) break
       const next = await boot()
-      if (!next) { console.error(`[supervisor] new backend failed health check (${reason}) — keeping current`); break }
+      if (!next) {
+        console.error(`[supervisor] new backend failed health check (${reason}) — keeping current`)
+        if (!current && !restartRetryTimer) {
+          restartRetryTimer = setTimeout(() => {
+            restartRetryTimer = undefined
+            void reload('restart retry')
+          }, 1000)
+          restartRetryTimer.unref()
+        }
+        break
+      }
+      if (restartRetryTimer) { clearTimeout(restartRetryTimer); restartRetryTimer = undefined }
       const old = current
       current = next   // atomic flip: new connections now route to `next`
       console.log(`[supervisor] reloaded (${reason}) → backend :${next.port}`)
@@ -210,7 +222,7 @@ function dropEndpoint(): void {
   try { dropOwnEndpoint(instanceId, projectRoot) } catch { /* not ours / already gone */ }
 }
 
-const shutdown = () => { dropEndpoint(); unregisterBackendInstance(instanceId); try { current?.child.kill('SIGTERM') } catch { /* */ } process.exit(0) }
+const shutdown = () => { if (restartRetryTimer) clearTimeout(restartRetryTimer); dropEndpoint(); unregisterBackendInstance(instanceId); try { current?.child.kill('SIGTERM') } catch { /* */ } process.exit(0) }
 process.on('SIGINT', shutdown)
 process.on('SIGTERM', shutdown)
 
