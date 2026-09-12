@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { codexHarness } from './codex-harness.js'
 import { processStartToken } from '@spexcode/spec-core'
-import { closeSession } from './sessions.js'
+import { closeSession, sendText } from './sessions.js'
 import { repoRoot, runtimeRoot, sessionArtifactPath, sessionRecordPath, sessionStoreDir } from '@spexcode/spec-core'
 import { initializeFreshSessionApplication } from './session-application.js'
 
@@ -99,6 +99,9 @@ esac
     assert.equal(existsSync(worktree), false, 'the target close removes only the worktree')
     assert.notEqual(execFileSync('git', ['-C', project, 'branch', '--list', branch], { encoding: 'utf8' }).trim(), '', 'the target close retains the branch')
     assert.notEqual(execFileSync('git', ['-C', project, 'rev-parse', '--verify', `refs/spex-archive/${id}^{commit}`], { encoding: 'utf8' }).trim(), '', 'the target close publishes the archive ref')
+    const postCloseSend = await sendText(id, 'must not leave closed-sender debt', id)
+    assert.equal(postCloseSend.ok, false, 'a closed sender cannot append new outbound debt')
+    assert.match(postCloseSend.error ?? '', /sender session .* is closed/)
     assert.equal(runtimeRoot(), join(home, 'projects', project.replace(/[/.]/g, '-')))
   } finally {
     codexHarness.sharedRuntimes = originalShared

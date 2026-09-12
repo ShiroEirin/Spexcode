@@ -99,6 +99,10 @@ was accepted, not permission to hand it over after the sender died. An adapter i
 the close/reparent transaction obtains the queue lock may arrive before that operation returns; no unhanded
 entry from that sender may arrive after a successful close returns.
 
+The canonical CLI adopter keeps this boundary in the sender's session record lock and its SQLite-backed queue
+drain: close publishes the revocation only after the retained archive record is durable, while a concurrent or
+later send sees the marker before appending.
+
 **Supervisor transfer revokes only former control debt.** Reparent holds each moved child's record lock, its
 former parent's sender lock, and the moved queues' delivery locks in one ordered transaction. It replaces the
 parent/watch relation and removes unhanded entries whose `from` is that former parent, rolling both queue and
