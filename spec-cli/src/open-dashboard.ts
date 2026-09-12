@@ -49,7 +49,7 @@ export async function resolveOpenDashboardUrl(value: string, options: OpenDashbo
     const cookies = (response.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie?.()
       ?? [response.headers.get('set-cookie') ?? '']
     const cookie = cookies.map((value) => value.split(';', 1)[0]).find(Boolean)
-    if (!response.ok || !cookie) throw new Error(`the host gateway rejected the supplied password (HTTP ${response.status})`)
+    if (response.status < 200 || response.status >= 400 || !cookie) throw new Error(`the host gateway rejected the supplied password (HTTP ${response.status})`)
     gatewayCookie = cookie
   }
   const authorized = async (path: string): Promise<Response> => {
