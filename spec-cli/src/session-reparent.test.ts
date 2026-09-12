@@ -12,6 +12,7 @@ import { dirname, join } from 'node:path'
 import { createRequire } from 'node:module'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { reparentSessionRecords } from './sessions.js'
 
 const pkgRoot = fileURLToPath(new URL('..', import.meta.url))
 const cli = fileURLToPath(new URL('./cli.ts', import.meta.url))
@@ -126,6 +127,43 @@ async function stop(server: ReturnType<typeof spawn>): Promise<void> {
   server.kill('SIGTERM')
   await once(server, 'close')
 }
+
+test('reparent deduplicates a former parent that is also in the moved child batch', { timeout: 60_000 }, async () => {
+  const home = mkdtempSync(join(tmpdir(), 'spex-reparent-overlap-'))
+  const previousHome = process.env.SPEXCODE_HOME
+  const previousDatabase = process.env.SPEX_SESSION_DATABASE_PATH
+  process.env.SPEXCODE_HOME = home
+  process.env.SPEX_SESSION_DATABASE_PATH = join(home, 'sessions.sqlite')
+  writeFileSync(`${process.env.SPEX_SESSION_DATABASE_PATH}.json-migration.json`, JSON.stringify({ version: 1, sourceDigest: 'reparent-overlap-fixture' }) + '\n')
+  const oldParent = 'overlap-old-parent'
+  const child = 'overlap-child'
+  const grandchild = 'overlap-grandchild'
+  const nextParent = 'overlap-next-parent'
+  try {
+    writeSession(home, oldParent, null)
+    writeSession(home, child, oldParent)
+    writeSession(home, grandchild, child)
+    writeSession(home, nextParent, null)
+    const application = openProjectSessionApplication({ databasePath: resolveDatabasePath(), locality: () => {} })
+    application.createSession({ sessionId: oldParent })
+    application.createSession({ sessionId: child, parentSessionId: oldParent })
+    application.createSession({ sessionId: grandchild, parentSessionId: child })
+    application.createSession({ sessionId: nextParent })
+    application.attachWatcher(oldParent, child, 'watch:parent')
+    application.attachWatcher(child, grandchild, 'watch:parent')
+    const result = await reparentSessionRecords([child, grandchild], nextParent)
+    assert.deepEqual(result.children, [child, grandchild])
+    assert.equal(application.readState(child)?.parentSessionId, nextParent)
+    assert.equal(application.readState(grandchild)?.parentSessionId, nextParent)
+    application.close()
+  } finally {
+    if (previousHome === undefined) delete process.env.SPEXCODE_HOME
+    else process.env.SPEXCODE_HOME = previousHome
+    if (previousDatabase === undefined) delete process.env.SPEX_SESSION_DATABASE_PATH
+    else process.env.SPEX_SESSION_DATABASE_PATH = previousDatabase
+    rmSync(home, { recursive: true, force: true })
+  }
+})
 
 test('session reparent rewrites parent/watch through live backend and only falls back after a local refusal', { timeout: 60_000 }, async () => {
   const home = mkdtempSync(join(tmpdir(), 'spex-reparent-'))

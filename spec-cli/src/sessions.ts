@@ -293,8 +293,9 @@ export function cancelSessionWatch(watcher: string, targets: string[]): number {
 export type SessionReparentResult = { children: string[]; parent: string | null; notified: string[] }
 
 async function withRecordLocks<T>(ids: string[], body: () => Promise<T>, index = 0): Promise<T> {
-  if (index >= ids.length) return body()
-  return withRecordLock(ids[index], () => withRecordLocks(ids, body, index + 1))
+  const unique = index === 0 ? [...new Set(ids)].sort() : ids
+  if (index >= unique.length) return body()
+  return withRecordLock(unique[index], () => withRecordLocks(unique, body, index + 1))
 }
 
 function assertReparentable(children: string[], parent: string | null, records: Map<string, SessRec>): void {
@@ -3655,7 +3656,7 @@ export async function sendText(id: string, text: string, from?: string, opts: Se
   let replayed = false
   let recordless = false
   try {
-    await withRecordLocks([...new Set([id, ...(from ? [from] : [])])].sort(), async () => {
+    await withRecordLocks([id, ...(from ? [from] : [])], async () => {
       if (from && senderDeliveryRevoked(from)) throw new ResourceConflict(`sender session ${from} is closed; prompt NOT delivered`)
       const rec = readRecord(id)
       if (!rec) {

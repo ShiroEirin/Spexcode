@@ -105,3 +105,17 @@ test('spex open accepts the gateway login redirect when the password is correct'
     await new Promise<void>((resolve) => server.close(() => resolve()))
   }
 })
+
+test('spex open keeps authentication failures distinct from an unreachable gateway', async () => {
+  const record = { version: 1, url: 'http://gateway.test', pid: process.pid, instanceId: 'auth-diagnosis', startedAt: new Date().toISOString() }
+  const fetchFn: typeof fetch = async (url) => {
+    const path = new URL(String(url)).pathname
+    if (path === '/host/identity') return new Response(JSON.stringify({ gateway: { instanceId: record.instanceId } }), { status: 200 })
+    if (path === '/projects') return new Response('{}', { status: 401 })
+    if (path === '/login') return new Response('{}', { status: 401 })
+    return new Response('{}', { status: 404 })
+  }
+  const options = { readRecord: () => record, fetch: fetchFn, root: main, specs: [{ id: 'desktop-deep-link' }], sessions: [], cwd: main }
+  await assert.rejects(() => resolveOpenDashboardUrl('desktop-deep-link', options), /requires authentication.*SPEXCODE_PASSWORD/)
+  await assert.rejects(() => resolveOpenDashboardUrl('desktop-deep-link', { ...options, password: 'wrong' }), /rejected the supplied password \(HTTP 401\)/)
+})

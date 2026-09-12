@@ -62,9 +62,16 @@ export async function resolveOpenDashboardUrl(value: string, options: OpenDashbo
   }
   try {
     hostResponse = await request('/host/identity', { cache: 'no-store', headers: { Accept: 'application/json' }, signal: controller.signal })
-    catalogResponse = await authorized('/projects')
   } catch {
     throw new Error('the recorded host gateway is not reachable; run `spex dashboard` first')
+  }
+  try {
+    catalogResponse = await authorized('/projects')
+  } catch (error) {
+    if (error instanceof TypeError || (error instanceof Error && error.name === 'AbortError')) {
+      throw new Error('the recorded host gateway is not reachable; run `spex dashboard` first')
+    }
+    throw error
   } finally {
     clearTimeout(timer)
   }
