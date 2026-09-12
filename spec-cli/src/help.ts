@@ -472,7 +472,7 @@ edit the spec instead — same commit as the code.`,
        spex issue reply <id> --body -|<text> [--evidence <hash>…]
        spex issue close <id>
        spex issue promote <id>
-       spex issue links [--pending] [--store <host>] [--node <id>] [--json]
+       spex issue links [--store <host>] [--node <id>] [--json]
 
 ls — the drain view a supervisor reads: ONE store-tagged list, local + forge interleaved by
 creation time.
