@@ -88,6 +88,8 @@ esac
     codexHarness.coldPreflight = async () => ({ ok: true, receipt: Object.freeze({ fixture: 'target-probe' }) })
     codexHarness.coldRuntime = async () => ({ ok: true })
     codexHarness.cleanupRuntime = async () => {}
+    const selfSend = await sendText(id, 'self-send lock probe', id, { deferDrain: true })
+    assert.equal(selfSend.ok, true, 'a session can send to its own address without re-entering its record lock')
     assert.equal(await closeSession(id), true)
     assert.equal(existsSync(sessionRecordPath(id)), true, 'the target close retains the record after the cold proof')
     const retained = JSON.parse(readFileSync(sessionRecordPath(id), 'utf8'))
