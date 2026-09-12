@@ -378,8 +378,8 @@ an admin password exists, and ungated projects serve open.`,
     see: 'spex serve (each project\'s backend) · spex serve ui (explicit one-backend pairing)',
   },
   open: {
-    line: 'open <target>         open a node, session, or project file in the running host dashboard  [--print-only]',
-    body: `Usage: spex open <node-id|session-SEL|path> [--print-only]
+    line: 'open <target>         open a node, session, or project file in the running host dashboard  [--print-only] [--password <pw>]',
+    body: `Usage: spex open <node-id|session-SEL|path> [--print-only] [--password <pw>]
 
 Resolves the target in the current project, prints its canonical HTTP(S) dashboard URL to stdout, and
 opens that URL in the platform browser. Node ids resolve before session selectors, then existing project

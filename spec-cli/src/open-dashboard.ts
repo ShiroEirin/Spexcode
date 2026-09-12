@@ -14,6 +14,7 @@ export type OpenDashboardOptions = {
   specs?: Pick<SpecLite, 'id'>[]
   sessions?: Session[]
   cwd?: string
+  password?: string
 }
 
 function sameRoot(left: string, right: unknown): boolean {
@@ -30,11 +31,38 @@ export async function resolveOpenDashboardUrl(value: string, options: OpenDashbo
   const timer = setTimeout(() => controller.abort(), 1_500)
   let hostResponse: Response
   let catalogResponse: Response
+  let gatewayCookie: string | null = null
+  const password = options.password ?? process.env.SPEXCODE_PASSWORD ?? null
+  const request = async (path: string, init: RequestInit = {}): Promise<Response> => {
+    const headers = new Headers(init.headers)
+    if (gatewayCookie) headers.set('cookie', gatewayCookie)
+    return fetchFn(`${record.url}${path}`, { ...init, headers })
+  }
+  const login = async (): Promise<void> => {
+    if (!password) throw new Error('the host gateway requires authentication; pass --password <pw> or set SPEXCODE_PASSWORD')
+    const response = await fetchFn(`${record.url}/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ password }).toString(),
+      redirect: 'manual',
+    })
+    const cookies = (response.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie?.()
+      ?? [response.headers.get('set-cookie') ?? '']
+    const cookie = cookies.map((value) => value.split(';', 1)[0]).find(Boolean)
+    if (!response.ok || !cookie) throw new Error(`the host gateway rejected the supplied password (HTTP ${response.status})`)
+    gatewayCookie = cookie
+  }
+  const authorized = async (path: string): Promise<Response> => {
+    let response = await request(path, { cache: 'no-store', headers: { Accept: 'application/json' } })
+    if (response.status === 401) {
+      await login()
+      response = await request(path, { cache: 'no-store', headers: { Accept: 'application/json' } })
+    }
+    return response
+  }
   try {
-    ;[hostResponse, catalogResponse] = await Promise.all([
-      fetchFn(`${record.url}/host`, { cache: 'no-store', headers: { Accept: 'application/json' }, signal: controller.signal }),
-      fetchFn(`${record.url}/projects`, { cache: 'no-store', headers: { Accept: 'application/json' }, signal: controller.signal }),
-    ])
+    hostResponse = await request('/host/identity', { cache: 'no-store', headers: { Accept: 'application/json' }, signal: controller.signal })
+    catalogResponse = await authorized('/projects')
   } catch {
     throw new Error('the recorded host gateway is not reachable; run `spex dashboard` first')
   } finally {

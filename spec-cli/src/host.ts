@@ -15,7 +15,7 @@ import { mkdirSync, writeFileSync, readFileSync, renameSync, rmSync, readdirSync
 import { homedir } from 'node:os'
 import { dirname, join, basename, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { spexcodeHome, encodeProject, readJsonConfig, templateConfigPath } from '@spexcode/spec-core'
+import { spexcodeHome, encodeProject, readJsonConfig, templateConfigPath, readGatewayIdentity } from '@spexcode/spec-core'
 import { git } from '@spexcode/spec-core'
 import { serveStatic, resolveDistDir } from './gateway.js'
 import { endpointRecordPath, readEndpointRecord, type EndpointRecord } from './endpoint-record.js'
@@ -785,6 +785,10 @@ export function startHostDashboard(opts: HostDashboardOpts): HostDashboard {
 
   const extensions: HubExtensions = {
     hostRoute: (req, res, path) => {
+      if (path === '/host/identity' && req.method === 'GET') {
+        json(res, 200, { gateway: { instanceId: hostRecord.instanceId } })
+        return true
+      }
       if (path === '/host' && req.method === 'GET') { json(res, 200, collectHostFacts()); return true }
       if (path === '/host/doctor' && req.method === 'POST') {
         void runSpex(process.cwd(), ['doctor', '--host']).then((r) => json(res, 200, { ok: r.code === 0, code: r.code, output: r.output }))

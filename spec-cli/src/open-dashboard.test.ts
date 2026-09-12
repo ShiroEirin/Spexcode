@@ -35,7 +35,7 @@ test('spex open prints the scoped URL and invokes xdg-open exactly once', { skip
   const instanceId = 'open-dashboard-test'
   const server = createServer((req, res) => {
     res.setHeader('content-type', 'application/json')
-    if (req.url === '/host') res.end(JSON.stringify({ gateway: { instanceId } }))
+    if (req.url === '/host/identity') res.end(JSON.stringify({ gateway: { instanceId } }))
     else if (req.url === '/projects') res.end(JSON.stringify({ projects: [{ id: 'project-id', root: main }] }))
     else { res.statusCode = 404; res.end('{}') }
   })
