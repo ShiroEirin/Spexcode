@@ -48,8 +48,8 @@ makes legacy writers fail closed before they can publish `session.json` or `watc
 any residue is absorbed and retired on the first canonical access ([[production-cutin]]). The application service is
 the only state/event/topology authority, and callers have no legacy read or write branch.
 [[session-follow]] owns the durable watch relation and what its `manual` and `parent` sources mean; this layer
-supplies the transport. A committed state record projects its watcher edges, notifies each through the existing
-send queue, and invokes ONE post-commit wake callback so each recipient's queue drains in the originating
+supplies the transport. A committed state record projects its watcher edges, returns their ids as the one
+post-commit wake list, and invokes ONE callback so each recipient's queue drains in the originating
 runtime. That callback is a wake, not a second queue or a second truth: a missing runtime, a crash, or a failed
 handover leaves the row pending for the normal retry. No monitor loop, second transport, or bidirectional index
 enters the shared layer; `wait` stays the cursor-backed fallback for a caller with no governed delivery address,
@@ -73,6 +73,8 @@ stopped. There is no unbound delivery path beside it, so the retry sweep reaches
 stopped or closed one: their debt waits in the queue for the resume that binds them again, and the post-commit wake
 likewise leaves an unbound recipient alone. Acceptance there is still success: the caller is told `delivery: queued`
 after the message commits, never a false append failure because the post-commit drain refused an unbound runtime.
+Managed watch messages carry a `watch-*` idempotency key and remain deliverable when their watched child closes;
+sender revocation applies to ordinary outbound debt, not supervision facts.
 
 The manager's merge dispatch prompt owns the post-landing handoff: once the verified base branch has advanced,
 it names `spex session done --propose close` as the final action only when the task is settled, its worktree is

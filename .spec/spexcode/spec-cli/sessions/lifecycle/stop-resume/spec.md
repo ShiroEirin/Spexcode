@@ -38,8 +38,9 @@ that does not become ready restores the stopped record and releases that binding
 clears `stopped` as it restores the runtime and settles the **resting** lifecycle under the SAME active-only
 guard `idle` uses — a resumed agent that was `active` (working), or was prepared as `queued` before this explicit
 launch, is now just sitting at its prompt → `idle`; a successful readiness publication can never retain `queued`
-alongside a live runtime. Every deliberate declaration survives the
-resume untouched (`awaiting` and **its proposal**, `asking`, `parked`, `error`). resume deliberately does NOT
+alongside a live runtime. Waiting declarations survive the resume untouched
+(`awaiting` and **its proposal**, `asking`, `parked`), while a terminal `error` is cleared with its failure note
+so the newly running conversation is not presented as failed. resume deliberately does NOT
 touch the proposal: resuming a session that is proposing a merge must not silently withdraw it — proposals are
 reversible only by MESSAGING the session (mark-active clears them), never as a hidden side-effect of a relaunch.
 So resume never itself makes the agent work; the `merge` dispatch, which resumes ONLY to relaunch a dead agent

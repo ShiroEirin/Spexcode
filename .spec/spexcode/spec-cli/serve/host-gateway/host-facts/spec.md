@@ -54,7 +54,7 @@ and the same questions as the desktop user.
 
 ## current state
 
-The host extension owns `GET /host` and `POST /host/doctor` behind the hub's admin scope. The response is one
+The host extension owns public `GET /host/identity` (instance id only), plus admin-scoped `GET /host` and `POST /host/doctor`. The response is one
 stable projection: `runtime` (`native-linux`, `darwin`, or `wsl2` with `distro`), `versions` (`node`, `tmux`,
 `git`), four `agents` rows (`installed` from PATH and `loggedIn` from each tool's local credential file),
 and `launchers` from the known projects' merged `.spec/spexcode.json` / `.spec/spexcode.local.json` profiles

@@ -34,6 +34,10 @@ it, then **gracefully drains** the old child — which stops accepting new conne
 in-flight requests before exiting. The public socket never closes, so the flip is invisible. (SO_REUSEPORT
 is the obvious alternative but is unsupported on this platform, hence the proxy.) An unhealthy new child
 is discarded and the current one kept, so a broken edit degrades to "still serving old code", never a gap.
+If the active child itself crashes and no replacement becomes healthy, the supervisor keeps owning the public
+port and retries replacement boot until a healthy child is available. Crash retries skip an unchanged workspace
+build and use capped exponential backoff; a failed source build while no child is selected follows the same retry
+path rather than leaving a bound but dead port.
 Live ws/pty bridges drop and reconnect; detached tmux sessions survive untouched. (Under `spex serve
 --public` the supervisor's raw proxy retreats to a **loopback** port and the password-gated [[public-mode]]
 gateway takes the public port — loopback stays the trusted face local agents reach; the gateway is the

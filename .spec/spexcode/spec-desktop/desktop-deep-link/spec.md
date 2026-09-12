@@ -39,7 +39,8 @@ An unpackaged development launch registers `process.execPath` with the resolved 
 OS invokes this shell rather than Electron's default app; packaged builds use the installed application handler.
 
 **`spex open` is the terminal twin.** `spex open <node|session|path>` reads [[host-facts]]'s live `host.json`,
-validates its instance against `GET /host`, and matches the current project's main root against the gateway
+validates its instance against the public `GET /host/identity` probe, authenticates the admin-scoped catalog with
+`--password` or `SPEXCODE_PASSWORD` when needed, and matches the current project's main root against the gateway
 catalog. It resolves an exact node id first, then a session selector, then an existing file within that project;
 prints the resulting HTTP(S) `/p/<projectId>/` URL; and hands it to `xdg-open`, `open`, or Windows `start` unless
 `--print-only` was given. An ambiguous selector, missing/outside path, absent gateway, or project the gateway

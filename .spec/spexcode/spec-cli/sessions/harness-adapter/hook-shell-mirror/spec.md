@@ -32,7 +32,7 @@ path-like token (`sed -n 1p f.ts` → `f.ts`). A patch can bundle SEVERAL `*** �
 edit), so `hp_code_path` emits ALL touched paths — one per line — and every consuming hook iterates them.
 Its operation mode is the semantic matcher shared by every harness: `read` accepts only read-shaped payloads,
 `mutate` only edits, and `access` their union. The native shims still bind the common `PreToolUse` event
-broadly; a non-matching payload simply resolves to no path. [[inject-spec-first]] uses `read`, then advances
+broadly; a non-matching payload simply resolves to no path. [[inject-spec-first]] uses `access`, then advances
 only if the spec graph resolves a real governor; [[inject-spec-of-file]] uses `mutate`. Neither hook branches
 on a harness or on special filenames. The shared
 `hp_field` reads a top-level JSON string value as a real JSON string: the close quote is the first UNESCAPED `"`,

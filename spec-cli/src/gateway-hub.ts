@@ -366,6 +366,12 @@ export function startHubGateway(opts: HubOpts): http.Server {
       return sendJson(res, 404, { error: 'not found' })
     }
 
+    // A minimal identity probe is public so a desktop shell can attach before a user has logged in. Full
+    // host facts remain behind the admin scope below; the probe carries no host inventory or project data.
+    if (path === '/host/identity' && ext.hostRoute) {
+      if (await ext.hostRoute(req, res, path)) return
+      return sendJson(res, 404, { error: 'not found' })
+    }
     // Host facts are an admin-scoped extension just like the project catalog, but live at a stable
     // top-level path so browsers, shells, and CLI readers share one identity-bearing endpoint.
     if ((path === '/host' || path.startsWith('/host/')) && ext.hostRoute) {
