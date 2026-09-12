@@ -15,7 +15,7 @@ import { mkdirSync, writeFileSync, readFileSync, renameSync, rmSync, readdirSync
 import { homedir } from 'node:os'
 import { dirname, join, basename, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { spexcodeHome, encodeProject, readJsonConfig, templateConfigPath, readGatewayIdentity } from '@spexcode/spec-core'
+import { spexcodeHome, encodeProject, readJsonConfig, templateConfigPath } from '@spexcode/spec-core'
 import { git } from '@spexcode/spec-core'
 import { serveStatic, resolveDistDir } from './gateway.js'
 import { endpointRecordPath, readEndpointRecord, type EndpointRecord } from './endpoint-record.js'
