@@ -102,6 +102,11 @@ with one visible fleet per issue, and close/retire/children/acceptance reachable
   `active`, `idle` and `queued` stay off it. Nothing is written to the issue: the worker's `done --propose merge`
   IS its report of readiness, which is why the skill forbids typing a status into a reply. A timeline that cannot
   be read contributes nothing, never a broken thread; the ledger re-reads when a fleet row's status or note moves.
+- **Issue writes go backend-first, except into a disposable store.** `spex issue reply` / `open` post to the reachable
+  backend (it serves the trunk and owns the store write) signed with the caller's session id, and fall back to the local
+  write only when no backend answers. `SPEXCODE_ISSUES_DIR` is the one override that never leaves the process: a
+  disposable store is a local write by definition, so an isolated run can never land on the real trunk through the
+  project's recorded live backend — which outranks an unreachable env address for a shell without a session identity.
 - **The composer's explicit send door.** The shared reply composer ([[issues-view]]) reads the draft's `@<id>`
   tokens that name a retained board session EXACTLY (`mentionedSessions`; the autocomplete writes full ids, so a
   prefix, a label, or the `@new`/`@parent:` doors are never deliveries) and shows one **Send to @x** button per
