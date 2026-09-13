@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { execFileSync } from 'node:child_process'
 
 import { fromForge } from './issues.js'
-import { loadLocalIssues } from './localIssues.js'
+import { loadLocalIssues, openIssue } from './localIssues.js'
 
 test('fromForge preserves platform labels and their display colors on the unified Issue', () => {
   const [issue] = fromForge({
@@ -82,6 +82,29 @@ test('post-merge nudge names `issue open` only where the store would accept it',
     assert.match(fromLinked, /spex issue ls/, 'reads still resolve to the trunk, so keep offering the read')
     assert.match(fromLinked, /CLOSE what you finished/, 'the close half is unaffected')
   } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+// A minted id keeps the concern's unicode letters and numbers — the characters [[spec-lint]]'s id-format and a
+// `[[id]]` link already accept ([[local-issues]]), so a concern in any script gets a readable address.
+test('a local issue id keeps the unicode letters and numbers of its concern', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'spex-issue-id-'))
+  const previous = process.env.SPEXCODE_ISSUES_DIR
+  process.env.SPEXCODE_ISSUES_DIR = dir
+  const mint = (concern: string) => openIssue(concern, { author: 'test' }).id
+  try {
+    assert.equal(mint('还没人认领的第二个 issue'), '还没人认领的第二个-issue')
+    assert.equal(mint('纯中文 concern 开 local issue 时 id 被 mint 成 issue'), '纯中文-concern-开-local-issue-时-id-被-mint-成-issue')
+    assert.equal(mint('Ελληνικά, Ünïcode!'), 'ελληνικά-ünïcode')
+    assert.equal(mint('cafe\u0301 menu'), 'caf\u00e9-menu')              // NFC: a combining accent is not a separator
+    assert.equal(mint('界'.repeat(47) + '𠀀尾'), '界'.repeat(47) + '𠀀')         // 48 code points: an astral letter stays whole
+    assert.equal(mint('!!! ???'), 'issue')                                      // no letter or number at all → `issue`
+    assert.equal(mint('——'), 'issue-2')
+    assert.equal(mint('New'), 'new-2')                                          // the reserved address word still steps aside
+  } finally {
+    if (previous === undefined) delete process.env.SPEXCODE_ISSUES_DIR
+    else process.env.SPEXCODE_ISSUES_DIR = previous
     rmSync(dir, { recursive: true, force: true })
   }
 })
