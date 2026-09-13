@@ -282,6 +282,42 @@ test('a declaring CLI hands the watch delivery to the running backend and return
   }
 })
 
+// A send is accepted by its append, not by the handover already in flight ([[delivery-queue]]). While the backend
+// sits on the parent's rendezvous wall with a watch notice, a peer message returns at once, stays owed behind that
+// notice, and reaches the parent after it.
+test('a send to a watcher whose harness is holding a watch notice does not wait behind it', { timeout: 90_000 }, async () => {
+  const home = mkdtempSync(join(tmpdir(), 'spex-send-behind-hold-'))
+  const repo = reviewFixture()
+  const { parentDir, base } = watchPair(home, repo)
+  const harness = await watcherHarness(parentDir, /parked/)
+  const backendPort = await refusedPort()
+  const backend = spawn(process.execPath, [tsxCli, cli, 'serve', '--port', String(backendPort)], {
+    cwd: repo, env: { ...base, PORT: String(backendPort) }, stdio: ['ignore', 'ignore', 'ignore'],
+  })
+  const childEnv = { ...base, SPEXCODE_SESSION_ID: ID, PORT: String(await refusedPort()) }
+  const peer = 'a peer message behind the held notice'
+  const owed = () => configuredSessionApplication().readPendingMessages(WATCHER).map((message) => Buffer.from(message.body).toString('utf8'))
+  try {
+    await waitFor(() => fetch(`http://127.0.0.1:${backendPort}/health`).then((response) => response.ok).catch(() => false), 'owner backend healthy', 60_000)
+    await waitFor(() => owed().length === 0, 'the relation snapshot handed over', 15_000)
+    const parked = await runCli(['session', 'park', '--note', 'held'], childEnv, repo)
+    assert.equal(parked.code, 0, parked.stderr)
+    await waitFor(() => harness.received.some((text) => /is parked — held/.test(text)), 'the backend holding the parked notice on the wall', 10_000)
+    const started = Date.now()
+    const sent = await runCli(['session', 'send', WATCHER, peer], childEnv, repo)
+    const elapsed = Date.now() - started
+    assert.equal(sent.code, 0, sent.stderr)
+    assert.ok(elapsed < 5_000, `send took ${elapsed}ms — it waited behind the handover in flight`)
+    assert.ok(owed().some((text) => text.startsWith(peer)), 'the accepted send is owed on the parent queue')
+    await waitFor(() => harness.received.some((text) => text.startsWith(peer)), 'the peer message reaching the parent after the held notice', 20_000)
+    assert.ok(harness.received.findIndex((text) => /is parked — held/.test(text)) < harness.received.findIndex((text) => text.startsWith(peer)), 'order is kept')
+  } finally {
+    if (backend.exitCode === null) backend.kill('SIGTERM')
+    await once(backend, 'exit').catch(() => {})
+    await harness.close()
+  }
+})
+
 test('with no backend, the declaring CLI hands the watch delivery over itself', { timeout: 60_000 }, async () => {
   const home = mkdtempSync(join(tmpdir(), 'spex-watch-nobackend-'))
   const repo = reviewFixture()

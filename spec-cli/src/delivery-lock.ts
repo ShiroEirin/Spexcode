@@ -6,9 +6,10 @@ const lockRoot = (): string => join(runtimeRoot(), '.delivery-locks')
 const lockPath = (id: string): string => join(lockRoot(), `${id}.lock`)
 const pause = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms))
 
-async function acquire(id: string, timeoutMs: number): Promise<() => void> {
+/** One attempt that never waits: the release, or null while a live process holds the queue. A dead owner's lock is reclaimed. */
+export function claimDeliveryLock(id: string): (() => void) | null {
   mkdirSync(lockRoot(), { recursive: true })
-  const path = lockPath(id), deadline = Date.now() + timeoutMs
+  const path = lockPath(id)
   for (;;) {
     try {
       const fd = openSync(path, 'wx')
@@ -22,9 +23,18 @@ async function acquire(id: string, timeoutMs: number): Promise<() => void> {
       if (owner && owner !== process.pid) {
         try { process.kill(owner, 0) } catch { try { unlinkSync(path) } catch { /* race */ }; continue }
       }
-      if (Date.now() >= deadline) throw new Error(`delivery queue ${id}: timed out waiting for transaction lock`)
-      await pause(25)
+      return null
     }
+  }
+}
+
+async function acquire(id: string, timeoutMs: number): Promise<() => void> {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    const release = claimDeliveryLock(id)
+    if (release) return release
+    if (Date.now() >= deadline) throw new Error(`delivery queue ${id}: timed out waiting for transaction lock`)
+    await pause(25)
   }
 }
 
