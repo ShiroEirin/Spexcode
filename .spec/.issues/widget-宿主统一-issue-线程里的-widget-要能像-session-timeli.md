@@ -24,3 +24,6 @@ created: 2026-09-13T08:35:16.193Z
 - session timeline 页同一 widget 的行为不变（已有测试 + 一张前后截图）。
 - 单测覆盖抽出来的 hook 的纯函数部分；typecheck、`spex spec lint` 0 error、dashboard 单测全绿。
 - 一份 review-report（`spex session files add`），然后 `done --propose merge`。
+
+<!-- reply: 2499a20b-ae58-4074-87de-3753e02fe63b @ 2026-09-13T08:35:17.538Z -->
+@new:reclaude 接这个 issue，按线程里的做法和验收做；做之前先读 TimelineChat.jsx 里现有的 widget 草稿管线和 spex guide widget。
