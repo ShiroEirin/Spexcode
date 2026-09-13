@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { createServer } from 'node:http'
+import { createServer as createNetServer, type Socket } from 'node:net'
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -113,8 +114,8 @@ const events = (dir: string): Array<{ kind: string; text?: string; from?: string
   })
   return messages.filter((message, index) => messages.findIndex((candidate) => candidate.text === message.text && candidate.from === message.from) === index)
 }
-async function waitFor(check: () => boolean | Promise<boolean>, label: string): Promise<void> {
-  const deadline = Date.now() + 2_000
+async function waitFor(check: () => boolean | Promise<boolean>, label: string, timeoutMs = 2_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
   while (!await check()) {
     if (Date.now() >= deadline) assert.fail(`timed out waiting for ${label}`)
     await new Promise((resolve) => setTimeout(resolve, 10))
@@ -203,6 +204,97 @@ test('managed watch registers once, delivers child states, and cancel stops deli
   } finally {
     if (backend.exitCode === null) backend.kill('SIGTERM')
     await once(backend, 'exit').catch(() => {})
+  }
+})
+
+// The watcher's harness, as a rendezvous listener bound to the parent's stamped socket. A notice matching `holdOn`
+// never gets its repaint answered, so whichever process hands that notice over sits on the rendezvous wall.
+async function watcherHarness(parentDir: string, holdOn: RegExp) {
+  const sockDir = mkdtempSync(join(tmpdir(), 'spex-rv-'))
+  const sock = join(sockDir, 'p.sock')
+  writeFileSync(join(parentDir, 'rv.path'), sock)
+  const received: string[] = []
+  const open = new Set<Socket>()
+  const server = createNetServer((socket) => {
+    open.add(socket)
+    socket.on('close', () => open.delete(socket)).on('error', () => {})
+    let buffer = '', held = false
+    socket.on('data', (chunk) => {
+      buffer += chunk.toString('utf8')
+      for (let nl = buffer.indexOf('\n'); nl >= 0; nl = buffer.indexOf('\n')) {
+        const line = buffer.slice(0, nl)
+        buffer = buffer.slice(nl + 1)
+        let message: { type?: string; text?: string }
+        try { message = JSON.parse(line) } catch { continue }
+        if (message.type === 'reply') { received.push(message.text ?? ''); held = holdOn.test(message.text ?? '') }
+        if (message.type === 'repaint' && !held) socket.write('{"type":"repaint-done"}\n')
+      }
+    })
+  })
+  server.listen(sock); await once(server, 'listening')
+  const app = configuredSessionApplication()
+  app.attachWatcher(WATCHER, ID, 'watch:manual')
+  app.bindRuntime(WATCHER, { namespace: 'spex-governed', runtimeKind: 'claude', nativeSessionId: WATCHER, nativeStartToken: 'start-1' })
+  return {
+    received,
+    close: async () => { for (const socket of open) socket.destroy(); server.close(); await once(server, 'close') },
+  }
+}
+
+function watchPair(home: string, repo: string): { parentDir: string; base: NodeJS.ProcessEnv } {
+  const parentDir = seedSession(home, WATCHER, null, repo)
+  const childDir = seedSession(home, ID, null, repo)
+  append(parentDir, { kind: 'status', status: 'active', proposal: null, note: null })
+  append(childDir, { kind: 'status', status: 'active', proposal: null, note: null })
+  const base: NodeJS.ProcessEnv = { ...process.env, SPEXCODE_HOME: home, SPEXCODE_API_URL: '', CLAUDE_CONFIG_DIR: join(home, 'claude'), SPEXCODE_TMUX: `spex-follow-cli-${process.pid}-${Date.now()}` }
+  for (const key of ['SPEXCODE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_THREAD_ID', 'PI_SESSION_ID', 'OPENCODE_SESSION_ID']) delete base[key]
+  return { parentDir, base }
+}
+
+// A declaration is a local state write; the watch delivery it wakes belongs to the backend that owns the watcher's
+// channel ([[session-follow]]). The declaring CLI asks that backend to drain and returns — it never holds the parent's
+// socket itself, so a harness that is slow to confirm the notice cannot hold the declaration.
+test('a declaring CLI hands the watch delivery to the running backend and returns', { timeout: 90_000 }, async () => {
+  const home = mkdtempSync(join(tmpdir(), 'spex-watch-owner-'))
+  const repo = reviewFixture()
+  const { parentDir, base } = watchPair(home, repo)
+  const harness = await watcherHarness(parentDir, /parked/)
+  const backendPort = await refusedPort()
+  const backend = spawn(process.execPath, [tsxCli, cli, 'serve', '--port', String(backendPort)], {
+    cwd: repo, env: { ...base, PORT: String(backendPort) }, stdio: ['ignore', 'ignore', 'ignore'],
+  })
+  try {
+    await waitFor(() => fetch(`http://127.0.0.1:${backendPort}/health`).then((response) => response.ok).catch(() => false), 'owner backend healthy', 60_000)
+    await waitFor(() => configuredSessionApplication().readPendingMessages(WATCHER).length === 0, 'the relation snapshot handed over', 15_000)
+    const started = Date.now()
+    const parked = await runCli(['session', 'park', '--note', 'held'], { ...base, SPEXCODE_SESSION_ID: ID, PORT: String(await refusedPort()) }, repo)
+    const elapsed = Date.now() - started
+    assert.equal(parked.code, 0, parked.stderr)
+    assert.doesNotMatch(parked.stderr, /wake failed|handoff failed/)
+    assert.ok(elapsed < 6_000, `the declaring CLI took ${elapsed}ms — it held the parent's unanswered socket instead of handing the drain to the backend`)
+    await waitFor(() => harness.received.some((text) => /\[spex watch\] .* is parked — held/.test(text)), 'the backend delivered the parked notice', 10_000)
+    const misrouted = await fetch(`http://127.0.0.1:${backendPort}/api/sessions/no-such-session/push`, { method: 'POST' })
+    assert.equal(misrouted.status, 404, 'a backend holding no record for the session refuses the wake instead of answering ok')
+  } finally {
+    if (backend.exitCode === null) backend.kill('SIGTERM')
+    await once(backend, 'exit').catch(() => {})
+    await harness.close()
+  }
+})
+
+test('with no backend, the declaring CLI hands the watch delivery over itself', { timeout: 60_000 }, async () => {
+  const home = mkdtempSync(join(tmpdir(), 'spex-watch-nobackend-'))
+  const repo = reviewFixture()
+  const { parentDir, base } = watchPair(home, repo)
+  const harness = await watcherHarness(parentDir, /(?!)/)
+  try {
+    const parked = await runCli(['session', 'park', '--note', 'alone'], { ...base, SPEXCODE_SESSION_ID: ID, PORT: String(await refusedPort()) }, repo)
+    assert.equal(parked.code, 0, parked.stderr)
+    assert.doesNotMatch(parked.stderr, /wake failed|handoff failed/)
+    await waitFor(() => harness.received.some((text) => /\[spex watch\] .* is parked — alone/.test(text)), 'the CLI delivered the parked notice itself')
+    assert.equal(configuredSessionApplication().readPendingMessages(WATCHER).length, 0, 'nothing is left owed')
+  } finally {
+    await harness.close()
   }
 })
 

@@ -28,7 +28,8 @@ backend answers.
 **Three roles, one question per verb.**
 
 - **Owner** — doing it twice is destructive, and it needs a resource only an owner may hold: `new`, `resume`,
-  `stop`, `close`, `quarantine`, `interrupt`, `merge`, and the poke half of `send`. These prefer
+  `stop`, `close`, `quarantine`, `interrupt`, `merge`, the poke half of `send`, and the delivery wake of a local
+  state write (below). These prefer
   the running backend, which holds the launch environment and the concurrency cap. They may act in-process
   **only after proving there is no owner** — an explicit `ECONNREFUSED`; any HTTP answer, including `404`
   and `503`, proves a backend owns the target, and an indeterminate outcome fails loud rather than risking
@@ -123,7 +124,11 @@ State **producers** were always local and stay that way: `done`/`ask`/`park`/`id
 write the agent's OWN per-session record in the GLOBAL store directly (keyed by session_id — see
 [[state]]), so an agent declares its own state with no backend up. The backend learns that state by
 ENUMERATING the store, never by a write of its own — which is the same fact the Cache role above
-generalises to every read.
+generalises to every read. The delivery wake such a write fires is not a producer write: handing a watcher the
+notice the commit queued is the poke half of the **Owner** role. The producer therefore asks the running backend
+to drain that queue (`POST /api/sessions/:id/push`, answered once the drain has started) and returns, handing the
+queue over in-process only after an explicit `ECONNREFUSED`; any other failure is printed on stderr and leaves the
+notice owed to the backend's retry ([[delivery-queue]]).
 
 **Degradation is never silent, and never invented.** An Owner verb that cannot prove the absence of an owner
 throws a clear `no backend reachable at <url>` with a non-zero exit. A Cache verb that fell back says which

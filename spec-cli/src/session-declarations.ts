@@ -29,6 +29,8 @@ function nothingProposalTrap(): never {
 // diagnostic rules, but they do not own any porcelain declaration verb.
 export async function sessionStateKit(sessionId?: string) {
   const s = await import('./sessions.js')
+  // The state write stays local; the watch delivery its commit wakes is the backend's to hand over ([[remote-client]]).
+  s.setDeliveryHandover(async (id) => (await import('./client.js')).clientHandOverQueued(id))
   const t = await import('./session-table.js')
   const l = await import('@spexcode/spec-core')
   const { existsSync, writeFileSync } = await import('node:fs')

@@ -49,9 +49,11 @@ any residue is absorbed and retired on the first canonical access ([[production-
 the only state/event/topology authority, and callers have no legacy read or write branch.
 [[session-follow]] owns the durable watch relation and what its `manual` and `parent` sources mean; this layer
 supplies the transport. A committed state record projects its watcher edges, returns their ids as the one
-post-commit wake list, and invokes ONE callback so each recipient's queue drains in the originating
-runtime. That callback is a wake, not a second queue or a second truth: a missing runtime, a crash, or a failed
-handover leaves the row pending for the normal retry. No monitor loop, second transport, or bidirectional index
+post-commit wake list, and invokes ONE callback that hands each recipient's queue over. Who drains is a per-process
+handover with one default, drain in place: right for the backend that owns the channel and for an in-process caller
+that declared nothing else, while a guest of that backend (a CLI state producer, [[remote-client]]) installs the
+owner-first handover instead. That callback is a wake, not a second queue or a second truth: a missing runtime, a
+crash, or a failed handover leaves the row pending for the normal retry. No monitor loop, second transport, or bidirectional index
 enters the shared layer; `wait` stays the cursor-backed fallback for a caller with no governed delivery address,
 and a rendered state message names the watched SUBJECT, never its recipient. Creation, [[session-reparent]], and
 watch cancellation each move exactly one source through that same handoff — no snapshot token, no deferred debt,
