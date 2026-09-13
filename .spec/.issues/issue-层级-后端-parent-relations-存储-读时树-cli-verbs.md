@@ -1,7 +1,7 @@
 ---
 concern: issue 层级（后端）：parent / relations 存储、读时树、CLI verbs
 by: 2499a20b-ae58-4074-87de-3753e02fe63b
-status: open
+status: landed
 nodes: local-issues, issues, issues-cli, state, issue-driven-development
 created: 2026-09-13T08:51:20.386Z
 ---
