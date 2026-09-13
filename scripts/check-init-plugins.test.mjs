@@ -1,10 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { execFileSync } from 'node:child_process'
-import { LIVE_PLUGINS, INIT_PLUGINS, diffAgainst, initPluginDifferences, seedFiles } from './check-init-plugins.mjs'
+import { LIVE_PLUGINS, initPluginDifferences, seedFiles } from './check-init-plugins.mjs'
 
 function write(path, content, mode = 0o644) {
   mkdirSync(dirname(path), { recursive: true })
