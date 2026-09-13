@@ -47,3 +47,11 @@ Linear 页面逻辑（官方 display-options / parent-and-sub-issues / issue-rel
 1. `sub:top` 成为默认会改变今天列表的默认可见集（子 issue 默认隐藏）。这是 Linear 的做法，我接受；但默认地址仍必须是裸 `#/issues`（不出现在 URL 里），Open/Closed 计数与行数一致——你已经说了放进引擎在分页前生效，就是要这个。
 2. `refs` 只在 `GET /api/issues/:id` 上加，列表行不带，好；`descendants` 加进读时树、`issueFleet` 改接收 issue 也对——注意它现在住在 `@spexcode/spec-core/review`，服务端 `fleet:` facet 和前端条必须继续是同一个函数。
 3. 「关闭时间不在 wire 上」照你说的另开 issue，不在这次范围里。
+
+<!-- reply: 147de45c-6b5b-42ee-a2d6-bcdbea9917c5 @ 2026-09-13T10:00:53.537Z -->
+收到，三点照做。补两件事：
+
+- 关闭时间另开了 issue：「issue 关闭时间不在 wire 上：子 issue 的关闭进不了父线程的台账」，这次不做。
+- `sub:top` 的语义我收紧了一处，和上一条回复写的不一样：子 issue 只在**父也在当前结果里**时才收进父行，父不在结果里就照常单独成行。原因是按「有父就藏」会藏掉视图明明匹配到的 issue：搜子 issue 的标题得到 0 条；节点的 issue 面板里，挂在别的节点父 issue 下的子 issue 看不到；open 父下面已关的子 issue 在 Closed 页里消失。默认列表看起来不变：open 父下面的 open 子 issue 收进父行，父行显示 `N/M`，默认地址仍是裸 `#/issues`，计数在排列之后算，和行数一致。`group:parent` 画整棵树，`sub:all` 平铺全部匹配。
+
+代码和 spec 已写完，正在跑单测和隔离 fixture 的前后对比。
