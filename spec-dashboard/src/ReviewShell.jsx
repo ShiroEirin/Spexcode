@@ -254,9 +254,10 @@ export function SecondaryFilters({ label, groups = [], clearLabel, compact = fal
   )
 }
 
-export function ReviewListRow({ state, title, meta, aside }) {
+// a row the list NESTS (an issue under its parent) carries its depth and indents by it; the grammar is unchanged.
+export function ReviewListRow({ state, title, meta, aside, depth = 0 }) {
   return (
-    <div className="rl-row-grid">
+    <div className="rl-row-grid" data-depth={depth > 0 ? depth : undefined} style={depth > 0 ? { '--row-depth': depth } : undefined}>
       <div className="rl-row-state">{state}</div>
       <div className="rl-row-body">
         <div className="rl-row-title">{title}</div>
@@ -467,10 +468,30 @@ function RowMenu({ menu, onClose }) {
   )
 }
 
+// the ONE anchor-row list: every row a REAL anchor sibling of its structured content, with the row's own menu. The
+// list page draws its results through it, and a detail section listing the same objects (an issue's sub-issues) draws
+// its rows through it too — so a row there IS the list page's row, gestures included.
+export function ReviewRows({ rows, cur = null }) {
+  const [rowMenu, setRowMenu] = useState(null)
+  return (
+    <>
+      {rows.map((row) => (
+        <div key={row.key} className={`lp-row ${row.href ? '' : 'inert'} ${row.cls || ''} ${cur === row.key ? 'cur' : ''}`}>
+          {row.href && <a className="lp-row-link" href={row.href}
+            onClick={(event) => newTabAnchor(event, row.href)}
+            onContextMenu={(event) => { event.preventDefault(); setRowMenu({ x: event.clientX, y: event.clientY, href: row.href }) }}>
+            <span className="sr-only">{row.label || row.key}</span></a>}
+          {row.content}
+        </div>
+      ))}
+      <RowMenu menu={rowMenu} onClose={() => setRowMenu(null)} />
+    </>
+  )
+}
+
 export function ListPage({ leading, error, loading = false, title, action, search, sections = [], sectionMode = 'tabs', facets, secondaryFilters, rows, empty, pagination, children }) {
   const t = useT()
   const [cur, setCur] = useState(null)
-  const [rowMenu, setRowMenu] = useState(null)
   const tabsId = useId()
   const stateRef = useRef({})
   stateRef.current = { rows, cur }
@@ -550,21 +571,12 @@ export function ListPage({ leading, error, loading = false, title, action, searc
             aria-labelledby={sectionsAreTabs ? tabId(activeSectionIndex) : undefined}
             aria-label={sectionsAreTabs ? undefined : title}>
             {rows.length === 0 && <div className="lp-empty">{loading ? t('common.loading') : emptyText}</div>}
-            {rows.map((row) => (
-              <div key={row.key} className={`lp-row ${row.href ? '' : 'inert'} ${row.cls || ''} ${cur === row.key ? 'cur' : ''}`}>
-                {row.href && <a className="lp-row-link" href={row.href}
-                  onClick={(event) => newTabAnchor(event, row.href)}
-                  onContextMenu={(event) => { event.preventDefault(); setRowMenu({ x: event.clientX, y: event.clientY, href: row.href }) }}>
-                  <span className="sr-only">{row.label || row.key}</span></a>}
-                {row.content}
-              </div>
-            ))}
+            <ReviewRows rows={rows} cur={cur} />
           </div>
         </section>
         {pagination && <Pagination {...pagination} />}
       </div>
       {children}
-      <RowMenu menu={rowMenu} onClose={() => setRowMenu(null)} />
     </PageScroll>
   )
 }

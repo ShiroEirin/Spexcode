@@ -15,13 +15,15 @@ export const sessionTitle = sessionHeadline
 // @@@ issue fleet - the ONE issue->session join ([[issue-binding]]), shared by the browser (the Issues page's
 // strip, band and rail) and the server (the review adapter's `fleet:` facet) so neither can grow its own idea of
 // "who is on this issue". A session carries `issue`, the id of the issue it was created for or assigned to, the
-// way it carries `parent`. `assigned` are the unarchived rows pointing at the issue; `fleet` adds every
-// descendant of those rows through the same parent pointers the forest is drawn from — a worker's children work
-// its issue without each writing a pointer. Cycle-safe by construction: a row joins the fleet once.
-export const issueFleet = (issueId, sessions = []) => {
-  if (!issueId) return { assigned: [], fleet: [] }
+// way it carries `parent`. `assigned` are the unarchived rows pointing at the issue OR at any issue below it — the
+// read-time issue tree's `descendants` ([[issues]]), so a parent issue's fleet holds every sub-issue's workers; `fleet`
+// adds every descendant of those rows through the same parent pointers the forest is drawn from — a worker's children
+// work its issue without each writing a pointer. Cycle-safe by construction: a row joins the fleet once.
+export const issueFleet = (issue, sessions = []) => {
+  if (!issue?.id) return { assigned: [], fleet: [] }
+  const ids = new Set([issue.id, ...(issue.descendants || [])])
   const board = (sessions || []).filter((s) => s?.id && !s.archived)
-  const assigned = board.filter((s) => s.issue === issueId)
+  const assigned = board.filter((s) => ids.has(s.issue))
   const childrenOf = new Map()
   for (const s of board) {
     if (!s.parent || s.parent === s.id) continue

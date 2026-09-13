@@ -126,7 +126,7 @@ function parse(id: string, text: string): Issue {
 
 // the read-time half of the hierarchy, empty: only issues.ts's merged read (issueHierarchy) fills it in.
 const unrelated = () => ({
-  children: [] as string[], childCounts: { open: 0, closed: 0 },
+  children: [] as string[], descendants: [] as string[], childCounts: { open: 0, closed: 0 },
   blockedBy: [] as string[], relatedBy: [] as string[], duplicatedBy: [] as string[], duplicateOf: null,
 })
 
@@ -348,10 +348,10 @@ export function openIssue(concern: string, opts: { nodes?: string[]; body?: stri
   }).issue
 }
 
-// a pointer lands only on an OPEN local issue: one at a closed issue would read as a root the moment it was written.
+// a pointer lands only on an OPEN local issue: a sub-issue is new work, and new work never hangs under finished work.
 function openParent(id: string): Issue {
   const p = loadOne(id)
-  if (p.status !== 'open') throw new Error(`parent '${id}' is ${p.status} — a sub-issue hangs under an open issue (a closed parent's children read as roots)`)
+  if (p.status !== 'open') throw new Error(`parent '${id}' is ${p.status} — a sub-issue hangs under an open issue`)
   return p
 }
 

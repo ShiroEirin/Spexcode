@@ -69,6 +69,32 @@ test('the canonical bridge maps token text into engine state without a second pa
   assert.deepEqual(issueFilterModel(colonItems, tokenFilterState('state:open frobnicate:xyz', 'issue'), { sessions, t }).shown, [])
 })
 
+test('the issue tree arranges matched rows: sub:top folds matched children, group:parent nests them, counts follow', () => {
+  const tree = [
+    { id: 'epic', concern: 'epic', status: 'open', parent: null },
+    { id: 'kid-open', concern: 'kid open', status: 'open', parent: 'epic' },
+    { id: 'kid-done', concern: 'kid done', status: 'landed', parent: 'epic' },
+    { id: 'grandkid', concern: 'grandkid', status: 'open', parent: 'kid-open' },
+    { id: 'solo', concern: 'solo', status: 'open', parent: null },
+  ]
+  const rows = (raw) => issueFilterModel(tree, raw, { t }).shown.map((item) => `${item.id}${item.depth ? `@${item.depth}` : ''}`)
+  assert.deepEqual(rows({}), ['epic', 'solo'], 'sub:top is the default: a sub-issue whose parent matched folds into that parent')
+  assert.deepEqual(rows({ sub: 'all' }), ['epic', 'kid-open', 'kid-done', 'grandkid', 'solo'], 'sub:all lists every match flat, in API order')
+  assert.deepEqual(rows({ group: 'parent' }), ['epic', 'kid-open@1', 'grandkid@2', 'kid-done@1', 'solo'])
+  assert.deepEqual(rows({ group: 'parent', state: 'open' }), ['epic', 'kid-open@1', 'grandkid@2', 'solo'], 'a child the section excludes is not drawn')
+  // a sub-issue whose parent this view does not match stands as its own row: no view hides an issue it matched
+  assert.deepEqual(rows({ state: 'closed' }), ['kid-done'])
+  assert.deepEqual(rows({ q: 'grandkid' }), ['grandkid'])
+  assert.deepEqual(issueFilterModel(tree, {}, { t }).sections, { open: 2, closed: 1 }, 'a section count is the rows that section shows')
+  assert.deepEqual(issueFilterModel(tree, { group: 'parent' }, { t }).sections, { open: 4, closed: 1 })
+  assert.deepEqual(tokenFilterState('is:issue sub:all group:parent', 'issue'), { q: [], sub: 'all', group: 'parent' })
+  assert.deepEqual(tokenFilterState('sub:top group:none', 'issue'), { q: [], sub: '', group: '' })
+  assert.deepEqual(tokenFilterState('group:store', 'issue'), { impossible: true, q: [] })
+  const model = issueFilterModel(tree, {}, { t })
+  assert.deepEqual([model.facets.sub.options.map((o) => o.value), model.facets.group.options.map((o) => o.value)], [['', 'all'], ['', 'parent']])
+  assert.deepEqual(issueFilterModel([tree[4]], {}, { t }).facets.sub.options, [], 'no tree in the data, no tree control')
+})
+
 test('issue adapter rolls the fleet work state into a fixed-value facet through the one shared join', () => {
   // one row per statement: each carries ONE status word, so no literal here mints a second status vocabulary
   const w1 = { id: 'w1', issue: 'local:a', status: 'review', parent: null }

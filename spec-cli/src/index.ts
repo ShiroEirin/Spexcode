@@ -6,7 +6,7 @@ import { installConnectionReaper } from './reaper.js'
 import { daemonRuntime } from './daemon-runtime.js'
 import { loadSpecs, loadSpecsLite, specContent, specHistory, specDiffAt, specAt, loadConfig, runtimeRoot } from '@spexcode/spec-core'
 import { issuesEnabled } from './localIssues.js'
-import { closeIssue, createIssue, findIssue, mergedIssues, promote } from './issues.js'
+import { closeIssue, createIssue, findIssue, issueRefs, mergedIssues, promote } from './issues.js'
 import { replyIssueWithLoopIn } from './loop-in.js'
 import { residentForgeState, refreshForgeNow } from '@spexcode/spec-forge/resident'
 import { resolveForgeHost } from '@spexcode/spec-forge/drivers'
@@ -329,9 +329,12 @@ app.get('/api/issues', etag(), async (c) => c.json(await issuesReview(c.req.quer
 // the single-thread read ([[issues]]) behind `spex issue show <id>` — the SAME findIssue lookup, from the
 // resident forge slice (instant view, background reconcile — the list route's freshness contract). A local
 // id, or a forge id (`<host>#<n>`); unknown → 404.
+// It also carries `refs` — the compact face of every issue its hierarchy fields name — from the same merged set.
 app.get('/api/issues/:id', (c) => {
-  const t = findIssue(c.req.param('id'), { host: resolveForgeHost(), state: residentForgeState() }, loadSpecsLite().map((s) => s.id))
-  return t ? c.json(t) : c.json({ error: `no issue '${c.req.param('id')}'` }, 404)
+  const id = c.req.param('id')
+  const merged = mergedIssues(id.includes('#') ? { host: resolveForgeHost(), state: residentForgeState() } : null, loadSpecsLite().map((s) => s.id))
+  const t = merged.find((i) => i.id === id)
+  return t ? c.json({ ...t, refs: issueRefs(t, merged) }) : c.json({ error: `no issue '${id}'` }, 404)
 })
 // the WRITE surface ([[local-issues]] / [[issues-view]]) — the human reply path, STORE-ROUTED through the one
 // reply verb ([[issues]] replyIssue): a local id git-commits to the trunk store, a forge id ('github#N')

@@ -18,6 +18,10 @@ related:
   - spec-dashboard/src/session.js
   - spec-dashboard/src/IssuesPage.jsx
   - spec-dashboard/src/session.test.mjs
+  - packages/spec-core/src/review/session.js
+  - spec-dashboard/src/issueLedger.js
+  - spec-dashboard/src/issueLedger.test.mjs
+  - spec-cli/src/issue-assign.test.ts
 ---
 # issue-binding
 
@@ -54,8 +58,10 @@ with one visible fleet per issue, and close/retire/children/acceptance reachable
   the one ordinary send path with an assignment message that says it is taking this thread on beside its own task.
   Both halves are one verb: a pointer nobody told the worker about is a lie on the board, and a message without the
   pointer leaves the Issues page blind. It is the twin of [[session-reparent]], moving `issue` instead of `parent`.
-- **Joined at read, descendants inherited.** The dashboard's `issueFleet(issueId, sessions)` is the ONE
-  issue→session join: `assigned` are the unarchived board rows whose `issue` is this id; `fleet` adds every
+- **Joined at read, descendants inherited.** The dashboard's `issueFleet(issue, sessions)` is the ONE
+  issue→session join: `assigned` are the unarchived board rows whose `issue` is this issue or any issue below it (the
+  read-time tree's `descendants`, [[issues]]) — a parent issue's fleet is its own plus every sub-issue's, so splitting
+  work into sub-issues never hides a worker from the issue it serves; `fleet` adds every
   descendant of those rows through the same read-time tree the forest is drawn from — a worker's children
   work its issue without each writing a pointer, exactly as a child is promoted when its parent closes. An
   issue's **work state** is rolled up from the fleet as a fold pod rolls up a subtree (`need` > `run` >
@@ -77,7 +83,7 @@ with one visible fleet per issue, and close/retire/children/acceptance reachable
   (POST `/api/sessions/:id/merge`, the only declaration that offers a clickable merge — [[state]]),
   `retired` → Close (the menu's own confirm), liveness `offline` and not `queued` → Relaunch. A plain click on a
   row opens its **card** in place (a second click closes it): the session's status word and declaration note,
-  its branch, and its posted files / web services / widgets as REAL anchors into the console surface that shows
+  the sub-issue it works when that is not this issue, its branch, and its posted files / web services / widgets as REAL anchors into the console surface that shows
   each ([[resource-tabs]]' address grammar) — every fact already on the wire, no second viewer — plus an **Open
   console** anchor, the door a plain click used to be; ctrl/⌘-click still opens the console in a new tab. The
   section's **New worker** door does not dispatch: it types the grammar's `@new:` trigger into the reply composer —

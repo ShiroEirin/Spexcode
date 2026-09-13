@@ -5,7 +5,7 @@ import { useMentionAutocomplete, TriggerButton, typeTrigger } from './mentions.j
 import { ComposerSurface, ComposerTextarea, composingKey } from './Composer.jsx'
 import { STATUS_COLOR, STATUS_GLYPH, liveSession, mentionedSessions, sessionHeadline } from './session.js'
 import { mergeThread } from './issueLedger.js'
-import { SideValue } from './ReviewShell.jsx'
+import { ReviewState, SideValue } from './ReviewShell.jsx'
 import { useT } from './i18n/index.jsx'
 import { Icon, IconButton } from './icons.jsx'
 import { useLaunchers } from './launch.js'
@@ -83,6 +83,24 @@ export function Replies({ replies, sessions = [], ledger = [], widgetHost = null
   const isMobile = useIsMobile()
   return mergeThread(replies, ledger).map((r, i) => {
     const author = (sessions || []).find((s) => s.id === r.by)
+    // a sub-issue opening ([[issues-view]]'s ledger): the declaration row's shape, its body the child as a real anchor
+    // wearing the child's current state mark.
+    if (r.kind === 'sub-issue') {
+      const href = routeHash('issues', r.id)
+      return (
+        <div className="fv-reply fv-declaration" key={`c-${r.id}`}>
+          <div className="fv-reply-meta">
+            <span className="fv-reply-by" data-tip={r.by}>{author ? sessionHeadline(author) : r.by}</span>
+            {r.at && <span className="fv-reply-at">{r.at}</span>}
+            <span className="fv-declaration-word">{t('thread.openedSubIssue')}</span>
+          </div>
+          <a className="fv-subissue-link" href={href} onClick={(event) => newTabAnchor(event, href)}>
+            <ReviewState kind="issue" state={r.status} size={14} />
+            <span>{r.concern || r.id}</span>
+          </a>
+        </div>
+      )
+    }
     if (r.kind === 'declaration') {
       const color = STATUS_COLOR[r.status] || STATUS_COLOR.idle
       return (
