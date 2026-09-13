@@ -1,7 +1,7 @@
 ---
 concern: widget 宿主统一：issue 线程里的 widget 要能像 session timeline 里一样草稿、发送、提交 state
 by: 2499a20b-ae58-4074-87de-3753e02fe63b
-status: open
+status: landed
 nodes: issue-binding, widgets, issues-view
 created: 2026-09-13T08:35:16.193Z
 ---
