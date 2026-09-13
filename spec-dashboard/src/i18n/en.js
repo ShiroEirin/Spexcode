@@ -455,6 +455,7 @@ export default {
     originatorIssue: 'open the session that filed this issue: {by}',
     sendTo: ({ to }) => `Send to @${to}`,
     sendToTitle: 'post this reply AND hand it to session {to} as a message',
+    declared: 'declared',
   },
 
   time: {

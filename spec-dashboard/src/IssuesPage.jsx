@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
-import { loadIssue, postIssueClose, postIssuePromote, postIssueReply, postIssueThread } from './data.js'
+import { loadIssue, loadSessionTimeline, postIssueClose, postIssuePromote, postIssueReply, postIssueThread } from './data.js'
+import { ledgerFromTimeline } from './issueLedger.js'
 import { MENTION_RE, TriggerButton, typeTrigger, useMentionAutocomplete } from './mentions.jsx'
 import { ComposerSurface, ComposerTextarea, composingKey } from './Composer.jsx'
 import { SpecBody } from './NodeView.jsx'
@@ -181,6 +182,24 @@ export function IssuesListPage({ data, loading, error, query, onQueryText, sessi
   )
 }
 
+
+// the fleet's declaration ledger ([[issue-binding]]): one timeline read per fleet session, re-read when a fleet
+// row's status or note moves on the board (the same push the rail repaints on). Read-time only — the issue
+// stores nothing — and a failed read is an empty ledger for that session, never a broken thread.
+function useFleetLedger(fleet) {
+  const [ledger, setLedger] = useState([])
+  const key = fleet.map((s) => `${s.id}:${s.status}:${s.note || ''}`).join('|')
+  useEffect(() => {
+    let live = true
+    if (!fleet.length) { setLedger([]); return undefined }
+    Promise.all(fleet.map((s) => loadSessionTimeline(s.id, { limit: 60 }).then((w) => ledgerFromTimeline(s.id, w?.events)).catch(() => [])))
+      .then((all) => { if (live) setLedger(all.flat()) })
+    return () => { live = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key])
+  return ledger
+}
+
 // The DETAIL page (`#/issues/<id>`) — [[review-chrome]]'s GitHub-grammar skeleton: the concern ALONE as
 // the title, the status band under it, the markdown body + reply thread as the MAIN column with the
 // composer docked at its foot, and the store/originator/node/permalink metadata in the SIDE rail (reflowed
@@ -197,6 +216,7 @@ export function IssueDetailPage({ issue: th, specs, sessions, onOpenSession, onW
   const replies = Array.isArray(th.replies) ? th.replies : []
   const status = th.status || 'open'
   const { fleet } = issueFleet(th.id, sessions)
+  const ledger = useFleetLedger(fleet)
   const run = (name, fn) => async () => {
     if (acting) return
     setActing(name)
@@ -289,7 +309,7 @@ export function IssueDetailPage({ issue: th, specs, sessions, onOpenSession, onW
       }
     >
       {th.body && <div className="fvd-body"><SpecBody body={th.body} /></div>}
-      <Replies replies={replies} sessions={sessions} />
+      <Replies replies={replies} sessions={sessions} ledger={ledger} />
     </DetailShell>
   )
 }

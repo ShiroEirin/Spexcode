@@ -4141,3 +4141,8 @@ body.is-session-dragging .si-pill.archive:hover {
 .fv-fleet-card .ds-action { margin-top: 3px; }
 .fv-fleet-doors { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 4px; align-self: stretch; }
 .fv-assign-modal .legend-body { min-width: 320px; }
+/* a fleet session's DECLARATION on the thread ([[issue-binding]]'s ledger): the reply row's own shape, its left
+   rule in the status colour, the status word beside the author, the note as the body. */
+.fv-reply.fv-declaration { border-left-color: var(--decl, var(--line)); }
+.fv-declaration-word { display: inline-flex; align-items: center; gap: 4px; color: var(--decl, var(--muted)); font-weight: var(--weight-semibold); }
+.fv-declaration-note { color: var(--ink2); font-size: var(--type-meta); }
