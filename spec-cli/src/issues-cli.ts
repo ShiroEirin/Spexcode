@@ -241,6 +241,11 @@ const repeated = (args: string[], name: string): string[] =>
 // answered (any status) is the authority and its receipt is returned as is. A refused connection is the one
 // fallback signal; every other failure is loud, because a half-reachable backend must not be silently bypassed.
 async function backendIssueWrite<T>(run: () => Promise<T>): Promise<T | null> {
+  // A DISPOSABLE store is a local write by definition: `SPEXCODE_ISSUES_DIR` names where the bytes go, and a
+  // backend would write to ITS store instead — which is how an "isolated" comparison once landed eight test
+  // issues on the real trunk (the project's recorded live backend outranks an unreachable env address for a
+  // shell without a session identity). The override therefore never leaves the process.
+  if (process.env.SPEXCODE_ISSUES_DIR?.trim()) return null
   try { return await run() }
   catch (error) {
     const { backendConnectionRefused } = await import('./client.js')

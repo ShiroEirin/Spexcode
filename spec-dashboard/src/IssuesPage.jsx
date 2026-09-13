@@ -217,6 +217,7 @@ export function IssueDetailPage({ issue: th, specs, sessions, onOpenSession, onW
   const status = th.status || 'open'
   const { fleet } = issueFleet(th.id, sessions)
   const ledger = useFleetLedger(fleet)
+  const [composeSeed, setComposeSeed] = useState(null)   // a rail door's trigger for the composer to type, consumed once
   const run = (name, fn) => async () => {
     if (acting) return
     setActing(name)
@@ -267,7 +268,7 @@ export function IssueDetailPage({ issue: th, specs, sessions, onOpenSession, onW
           {/* the issue's FLEET ([[issue-binding]]): the sessions dispatched for it, as the one session forest with the
               one session menu, plus the dispatch door — the rail is where GitHub keeps assignees, and here the
               assignees are worktrees you can merge, relaunch, or close. */}
-          <IssueSessions issue={th} sessions={sessions} onOpenSession={onOpenSession} onWrite={onWrite} onError={(message) => setActErr(message)} />
+          <IssueSessions issue={th} sessions={sessions} onOpenSession={onOpenSession} onWrite={onWrite} onError={(message) => setActErr(message)} onCompose={setComposeSeed} />
           {/* the originator (who filed) + whether their session is still ALIVE — a local thread's `by` is a
               session id (join it against the board for liveness, click through when live); a forge issue's
               `by` is a github login that resolves to no session, so it stays a plain labeled value. */}
@@ -298,6 +299,8 @@ export function IssueDetailPage({ issue: th, specs, sessions, onOpenSession, onW
           sessions={sessions}
           focusId={nodes[0] || null}
           onDone={onWrite}
+          seed={composeSeed}
+          onSeedConsumed={() => setComposeSeed(null)}
           actionsEnd={!isConcluded && (
             <>
               {actErr && <span className="fv-error">{actErr}</span>}

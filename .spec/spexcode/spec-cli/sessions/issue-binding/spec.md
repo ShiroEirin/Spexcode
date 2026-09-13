@@ -80,9 +80,9 @@ with one visible fleet per issue, and close/retire/children/acceptance reachable
   its branch, and its posted files / web services / widgets as REAL anchors into the console surface that shows
   each ([[resource-tabs]]' address grammar) — every fact already on the wire, no second viewer — plus an **Open
   console** anchor, the door a plain click used to be; ctrl/⌘-click still opens the console in a new tab. The
-  section's **New worker** door posts the SAME durable `@new[:<launcher>]` token a hand would type as a reply on
-  the thread, so the dispatch is recorded where it happened and spawns through the one grammar; a second
-  launcher is chosen through the shared launcher list. The **Assign…** door opens the ONE session picker
+  section's **New worker** door does not dispatch: it types the grammar's `@new:` trigger into the reply composer —
+  the launcher menu opens there as it does for a hand — and the human's send is the act. Every write on the page
+  leaves through the composer's send; a door only prepares it ([[mentions]], [[composer]]). The **Assign…** door opens the ONE session picker
   ([[session-picker]]) in a modal over every retained board session not yet on the issue and calls the assign
   verb. A **participants** row lists the other thread voices as liveness chips. The originator row is unchanged.
 - **The `fleet:` facet.** The join and the work-state rollup live in the shared review package (`@spexcode/spec-core/review`'s
@@ -102,6 +102,11 @@ with one visible fleet per issue, and close/retire/children/acceptance reachable
   `active`, `idle` and `queued` stay off it. Nothing is written to the issue: the worker's `done --propose merge`
   IS its report of readiness, which is why the skill forbids typing a status into a reply. A timeline that cannot
   be read contributes nothing, never a broken thread; the ledger re-reads when a fleet row's status or note moves.
+- **Issue writes go backend-first, except into a disposable store.** `spex issue reply` / `open` post to the reachable
+  backend (it serves the trunk and owns the store write) signed with the caller's session id, and fall back to the local
+  write only when no backend answers. `SPEXCODE_ISSUES_DIR` is the one override that never leaves the process: a
+  disposable store is a local write by definition, so an isolated run can never land on the real trunk through the
+  project's recorded live backend — which outranks an unreachable env address for a shell without a session identity.
 - **The composer's explicit send door.** The shared reply composer ([[issues-view]]) reads the draft's `@<id>`
   tokens that name a retained board session EXACTLY (`mentionedSessions`; the autocomplete writes full ids, so a
   prefix, a label, or the `@new`/`@parent:` doors are never deliveries) and shows one **Send to @x** button per
