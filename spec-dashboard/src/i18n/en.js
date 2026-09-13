@@ -452,6 +452,7 @@ export default {
     closeTitle: 'close this retired session',
     refused: ({ what }) => `${what} refused`,
     opened: 'opened',
+    replied: 'replied',
     closedTag: 'closed',
     assign: 'Assign…',
     assignTitle: 'bind a session that already exists to this issue, and tell it',

@@ -108,7 +108,7 @@ const idSec = issueRail.secs[0]
 check('issue identity row FIRST under a localized Issue label', idSec?.label === 'issue' && idSec.values[0]?.text === LOCAL_ISSUE, JSON.stringify(idSec?.label))
 check('long slug ellipsizes inside the rail, full slug on tooltip', idSec.values[0]?.truncated === true && idSec.values[0]?.tip === LOCAL_ISSUE)
 check('value contract min-width:0 / ellipsis / nowrap', JSON.stringify(idSec.values[0]?.cs) === JSON.stringify({ minWidth: '0px', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }))
-const bySec = issueRail.secs.find((s) => s.label === 'on the thread')
+const bySec = issueRail.secs.find((s) => /^sessions/.test(s.label))
 const by = bySec?.values[0]
 check('local originator is a liveness chip (button when live, span when offline) wearing SideValue', (by?.tag === 'BUTTON' || by?.tag === 'SPAN') && /\bds-val\b/.test(by?.cls || '') && /\bfv-originator\b/.test(by?.cls || '') && by?.dot === true, by?.cls)
 check('originator chip: a session NAME as text, the full id kept on the tooltip, tagged opened', !/^[0-9a-f-]{36}$/.test(by?.text || '') && /[0-9a-f]{8}-/.test(by?.tip || '') && /opened/.test(by?.tags || ''))

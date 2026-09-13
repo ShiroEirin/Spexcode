@@ -124,8 +124,10 @@ theatre is invented for a model that has none. An actually empty issue store say
   because one above the thread made the replies read as "the sub-issues". The `+ Sub-issue` door lives in the rail's
   **sub-issues** row beside Parent, with the closed/total count as its value. The thread carries its own heading
   (`Activity · N`) whenever it has replies or ledger rows, so it is never read as anything else.
-- **Who filed it is a VOICE in the Sessions section, never a bare id row.** The rail has no separate "opened by" row:
-  the originator is the first chip of the **on the thread** list under Sessions, tagged `opened`, and wears the one
+- **Who filed it is a VOICE in the Sessions section, never a bare id row.** The rail has ONE section for "who is
+  involved": the fleet rows first, then — below a hairline in the same section — the voices that are not in the fleet,
+  each tagged with how it is involved (`opened`, `replied`); a fleet row that is also the originator carries the
+  `opened` tag itself and is not repeated. Every voice wears the one
   session vocabulary — the headline with the board's status dot while it is a board session (click-through to its
   console), its archived name with a `closed` tag once it has closed (read from the archive index, the short id only
   when no name exists), a plain value when it is a human or a forge login. Other reply authors outside the fleet

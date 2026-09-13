@@ -146,6 +146,11 @@ export default function IssueSessions({ issue, sessions = [], onOpenSession, onW
   const { fleet } = issueFleet(issue, sessions)
   // the thread's other voices, after the originator, outside the fleet
   const participants = issueParticipants(issue, sessions, fleet).filter((s) => s.id !== issue.by)
+  const inFleetIds = new Set(fleet.map((s) => s.id))
+  const voices = [
+    ...(issue.by && !inFleetIds.has(issue.by) ? [{ id: issue.by, tags: ['opened'] }] : []),
+    ...participants.map((p) => ({ id: p.id, tags: ['replied'] })),
+  ]
   const { expanded, toggle } = useFold()
   const [menu, setMenu] = useState(null)
   const [closeRequest, setCloseRequest] = useState(null)
@@ -209,6 +214,7 @@ export default function IssueSessions({ issue, sessions = [], onOpenSession, onW
                       : <span className="fv-fleet-fold" aria-hidden="true" />}
                     {/* a plain click opens the row's card in place; ctrl/⌘ still opens the console in a new tab ([[tab-strip]]) */}
                     <SideValue text={sessionHeadline(s)} lead={<StatusDot s={s} />} tip={s.note ? `${status} · ${s.note}` : status} label={sessionHeadline(s)}
+                      trail={s.id === issue.by ? <span className="rl-tag fv-voice-tag">{t('fleet.opened')}</span> : null}
                       className="fv-fleet-name" onClick={(e) => { if (isNewTabGesture(e)) openNewTab('sessions', s.id); else setPicked((cur) => (cur === s.id ? null : s.id)) }} />
                     {action && (
                       <RailAction tone={action === 'close' ? 'danger' : ''} disabled={!!busy} data-tip={t(`fleet.${action}Title`)} onClick={act(action, s)}>
@@ -222,6 +228,14 @@ export default function IssueSessions({ issue, sessions = [], onOpenSession, onW
             })}
           </div>
         ) : <SideValue text={t('fleet.none')} dim />}
+        {/* the voices that are NOT in the fleet — who filed it, who replied — below a hairline in the SAME section:
+            one answer to "who is involved", the tags saying how. A voice that is also a fleet row is not repeated;
+            its fleet row carries the tag instead. */}
+        {voices.length > 0 && (
+          <div className="fv-voices">
+            {voices.map(({ id, tags }) => <Voice key={id} id={id} sessions={sessions} tags={tags} onOpenSession={onOpenSession} />)}
+          </div>
+        )}
         <div className="fv-fleet-doors">
           <RailAction disabled={!!busy || !onCompose} data-tip={t('fleet.newWorkerTitle')} onClick={dispatch}>
             <Icon name="plus" size={12} />{t('fleet.newWorker')}
@@ -231,12 +245,6 @@ export default function IssueSessions({ issue, sessions = [], onOpenSession, onW
           </RailAction>
         </div>
       </SideSection>
-      {(issue.by || participants.length > 0) && (
-        <SideSection label={t('detail.sideParticipants')}>
-          {issue.by && <Voice id={issue.by} sessions={sessions} tags={['opened']} onOpenSession={onOpenSession} />}
-          {participants.map((p) => <Voice key={p.id} id={p.id} sessions={sessions} onOpenSession={onOpenSession} />)}
-        </SideSection>
-      )}
       {/* the assign door is the ONE session picker ([[session-picker]]) in the one modal, portaled to the body:
           the rail is a sticky overflow scroller painted under the sticky composer, so a modal drawn inside it
           would sit behind the compose box — as it did. */}

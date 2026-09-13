@@ -443,6 +443,7 @@ export default {
     closeTitle: '关闭这个已退役的会话',
     refused: ({ what }) => `${what}被拒绝`,
     opened: '发起',
+    replied: '回复过',
     closedTag: '已关闭',
     assign: '指派…',
     assignTitle: '把一个已存在的会话挂到这个 issue 上，并通知它',
