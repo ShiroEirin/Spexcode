@@ -174,7 +174,7 @@ export default {
     invoked: '按需调用',
     bothSurfaces: 'skill + command',
     pickOne: '选一个插件，看它到底干什么。',
-    reading: '读取中…',
+    loading: '读取中…',
     openNode: '打开规格节点',
     factEvents: '绑定',
     factOrder: '顺序',

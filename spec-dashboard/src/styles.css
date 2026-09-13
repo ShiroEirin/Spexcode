@@ -4033,7 +4033,7 @@ body.is-session-dragging .si-pill.archive:hover {
    THE COLOUR BUDGET IS ONE NARROW COLUMN. A hook that may refuse its event puts a mark in the rail at the
    row's left edge and nothing else is tinted, so the hooks that can interrupt a session form a broken
    vertical line a reader finds without reading. */
-.pg-board { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden;
+.pg-frame { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden;
   background: var(--paper); color: var(--ink); }
 .pg-error { color: var(--red); font-size: var(--type-body); padding: var(--space-5); }
 

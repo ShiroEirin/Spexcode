@@ -272,6 +272,18 @@ test('every workspace that ships a test script is run by the workflow', () => {
   assert.deepEqual(missing, [], `these workspaces have tests no CI step runs: ${missing.join(', ')}`)
 })
 
+// The parity above runs one way — local suites must be reached by CI. The other way is what let the
+// dead-words gate sit in CI alone for a day: a step spelled as a bare `node scripts/…` is a gate no
+// `npm run lint` or `npm test` can reach, so a worker's own gates pass, they land, and CI goes red after
+// the fact. A gate's command belongs in ONE place — the npm script everyone runs — and CI calls that.
+test('no CI gate is reachable only from the workflow', () => {
+  const bare = ciWorkflow
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => /^run:\s+node\s+(--test\s+)?scripts\//.test(line))
+  assert.deepEqual(bare, [], `these CI steps run a script directly, so nobody can run them locally by name: ${bare.join(' | ')}`)
+})
+
 test('the workflow names no workspace twice', () => {
   const seen = named.filter((name, index) => named.indexOf(name) !== index)
   assert.deepEqual(seen, [], `duplicated --workspace entries: ${seen.join(', ')}`)
