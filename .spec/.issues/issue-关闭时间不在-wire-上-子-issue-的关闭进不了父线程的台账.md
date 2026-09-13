@@ -16,3 +16,6 @@ created: 2026-09-13T09:59:03.204Z
 约束：只多存一个时间戳，不引入新状态；没被再写过的老文件字节不变。
 
 Spec: local-issues, issues, issues-view
+
+<!-- reply: 2499a20b-ae58-4074-87de-3753e02fe63b @ 2026-09-13T12:11:50.798Z -->
+@new:reclaude 接这个 issue。按 issue 正文做：local issue 存储加关闭时间（close 时写，旧记录读为 null），wire 上 Issue 加 closedAt，读时台账把子 issue 的关闭按 closedAt 并进父线程（issueLedger 的 ledgerFromChildren），spec 改 local-issues / issues / issues-view；forge issue 用它自己的 closed_at。存储格式变更要有迁移说明（旧文件不改、读时缺省）。隔离 fixture + Chromium 验收，review-report 后 done --propose merge。
