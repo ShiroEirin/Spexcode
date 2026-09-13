@@ -229,8 +229,8 @@ derived status, title, and attention badges (drift:N · stale:N · issues:N · g
   },
   init: {
     line: 'init [dir]            adopt SpexCode on a repo: seed .spec + hooks + materialize  --harness <ids> [--preset name] | --pure',
-    body: `Usage: spex init [dir=cwd] --harness <id[,id]|plugin:<folder>> [--preset default]
-       spex init [dir=cwd] --pure
+    body: `Usage: spex init [dir=cwd] --harness <id[,id]|plugin:<folder>> [--preset default] [--title <name>]
+       spex init [dir=cwd] --pure [--title <name>]
 
 Scaffolds adoption in one shot: seeds a starter .spec tree (project root + .plugins plugins), plants
 .spec/spexcode.json, installs the git hooks, and materializes the harness artifacts (contract block +
@@ -243,8 +243,13 @@ skill/agent name you already use is skipped and reported rather than overwritten
 --preset picks the .plugins plugin tier (cumulative).
 Footprint is fixed: materialized artifacts are never tracked — hidden via the per-clone .git/info/exclude, with
 a tracked/mixed CLAUDE.md/AGENTS.md covered by the clean/smudge filter (see spex guide footprint).
+--title names the PROJECT, and names it in both places a reader sees it: the root node's own directory
+and \`spec.md\` (so a graph is not topped by a node called "project"), and \`dashboard.title\` in the config
+(so a dashboard and a published page are not named after the checkout directory — often \`repo\` or \`tmp\`). A
+title the id vocabulary cannot take keeps the neutral root; the config carries it either way, and an
+existing title is never overwritten.
 --pure plants the spec skeleton and nothing else: .spec/spexcode.json (its lint section) and the root
-.spec/project/spec.md. No .plugins, no git hooks, no agent config, no file outside .spec; an existing tree is
+.spec/<name>/spec.md. No .plugins, no git hooks, no agent config, no file outside .spec; an existing tree is
 left as it is. A later \`spex init --harness <id>\` adopts that tree (or any tree that arrived without the
 machinery) as it is: no node is rewritten, .plugins goes into its root, and the config gains what it lacks.`,
     see: 'spex guide (the full setup workflow) · spex uninstall (the inverse) · spex spec lint (adoption TODO)',

@@ -29,6 +29,7 @@
     "spec-dashboard/test/explorer-reveal-spec-tab.e2e.mjs": "dashboard-browser",
     "spec-dashboard/test/graph-node-address.e2e.mjs": "dashboard-browser",
     "spec-dashboard/test/identity-chain.e2e.mjs": "dashboard-browser",
+    "spec-dashboard/test/issue-thread-widget.e2e.mjs": "dashboard-browser",
     "spec-dashboard/test/keep-alive.e2e.mjs": "dashboard-browser",
     "spec-dashboard/test/lifecycle-outcome.e2e.mjs": "dashboard-browser",
     "spec-dashboard/test/live-tail.e2e.mjs": "dashboard-browser",
@@ -98,4 +99,3 @@
     "spec-dashboard/test/transcript-fold-motion.e2e.mjs": "dashboard-browser"
   }
 }
-

@@ -81,8 +81,12 @@ use (`--harness` is required and takes any one id or comma-separated subset). Wa
 nothing wired into an agent? `--harness none` adopts L0 alone and writes nothing into any agent's config.
 Only the spec skeleton, with no git hooks either? `spex init --pure` plants `.spec/spexcode.json` and the root
 spec and nothing else; a later `spex init --harness …` adopts that tree as it is.
+Add `--title "Your Project"` and the name lands in both places a reader sees it: the root node's own
+directory and `spec.md`, and the dashboard's title — without it the graph is topped by a node called
+`project` and the page is named after the checkout directory, which is often `repo` or `tmp`.
+
 `spex init` works on any existing git repo and does three things: it seeds a root
-`.spec/project/spec.md` plus a starter `.spec/spexcode.json`, installs the git hooks, and **materializes**
+`.spec/<name>/spec.md` plus a starter `.spec/spexcode.json`, installs the git hooks, and **materializes**
 the workflow rules into the files your agent already reads (`CLAUDE.md`, `AGENTS.md`): read the
 governing spec before the code, land spec and code in one commit, propose merges instead of
 performing them. Any agent that opens the repo discovers the workflow on its own.
@@ -105,6 +109,43 @@ runtime (an HTTP server and a native PTY addon). One `spex dashboard`
 per machine is enough: every project you serve shows up behind it, and its
 `/projects` page manages them from the browser.
 [Getting started](https://spexcode.net/getting-started/) walks the rest of the setup.
+
+## Start from inside your agent, with nothing installed
+
+The fastest way to see what a spec tree is worth is to let your agent draw one. The **atlas** skill ships
+as a plugin for the agents that install plugins, and it runs SpexCode through `npx` — nothing to install
+on the machine, nothing to configure.
+
+**Claude Code**
+
+```sh
+claude plugin marketplace add shuxueshuxue/spexcode-plugins
+claude plugin install atlas@spexcode
+```
+
+**Codex**
+
+```sh
+codex plugin marketplace add shuxueshuxue/spexcode-plugins
+codex plugin add atlas@spexcode
+```
+
+Then, in any repository, hand the agent one sentence:
+
+> Draw the spec atlas of this repository, and give me the page I can open.
+
+It reads the repository into a spec tree, plants it with `spex init --pure --title <your project>`,
+chooses the parts worth a picture and draws each one, checks every diagram until it passes, commits
+`.spec/`, and hands back one self-contained HTML file that opens from disk — the whole tree with each
+node's diagram above its body. It is asked to write the tree in the language you used, so a question in
+your own language comes back as a tree in it.
+
+That repository is now adopted at L0: the tree it wrote is the same asset `spex init` seeds, so
+`spex init --harness …` later picks it up as it is and adds the machinery beside it.
+
+[`shuxueshuxue/spexcode-plugins`](https://github.com/shuxueshuxue/spexcode-plugins) is the marketplace —
+it holds the packages and nothing else, mirrored from this repo's `distribution/`. ZCode, gugu and
+PenguinHarness install the same skill through their own mechanisms; `distribution/README.md` has each one.
 
 ## How does this system work
 
@@ -143,7 +184,7 @@ spex session ls                  # the living table below
 spex session watch stream        # follow transitions: working → review → done …
 spex session review uploader     # commits ahead of trunk, merge-base diff, merge/lint gates
 spex session merge uploader      # hands the gated merge to the session's own agent
-spex session close uploader      # retire the worktree, branch, and record
+spex session close uploader      # remove the worktree; branch, record and transcript stay resumable
 ```
 
 <img src="docs/readme-sessions.svg" alt="animated terminal: spex session ls listing five sessions across working, review, asking and done states">
