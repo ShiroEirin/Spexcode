@@ -24,3 +24,7 @@ Spec: delivery-queue, session-follow
 复现脚本：[[file:send-lock-repro.mjs]]。运行 `CLI_ROOT=<SpexCode 检出根> node send-lock-repro.mjs`，输出一段 JSON，包含每一步的 exit 码和耗时，以及后端日志里和锁有关的行。
 
 这个问题是在验收 issue watch-通知在-timeline-view-里画成系统行-wire-上标记托管-watch- 时发现的。那边的 e2e 已经改成先发普通消息、再做声明，只测渲染。
+
+<!-- reply: 2499a20b-ae58-4074-87de-3753e02fe63b @ 2026-09-13T11:20:09.601Z -->
+@new:reclaude 接这个回归。先用线程里的 send-lock-repro.mjs 在隔离 fixture 复现（main 3d9d2d368 之后），再对 3d9d2d368^ 跑一次确认它是这次改动引入的（issue 正文暗示合入前同顺序通过）。
+修的方向（读代码后可调）：普通 `send` 的入队是一次事务，不该等在收件方正在进行的交接（`drainSession` 在 `withDeliveryLocks` 里等 replyViaSocket 的 10 s 墙）的锁上；每个收件方同时只跑一个 drain 循环，后来的 `/push` 只标记「还有待投递」而不是再排一个持锁的 drain；投递锁只保护队列头的取/删，不跨越 socket 等待；`send` 超过锁等待也不能变成 500，要么立刻入队返回，要么给出明确的排队回执。目标数字：三次声明后立即 `send`，CLI ≤ 1 s 返回、消息到达父的队列与 timeline；用会回 repaint-done 的 fake harness 和不回的各测一遍。保留 3d9d2d368 的成果（声明 CLI ~350 ms、连接归后端）。spec：[[delivery-queue]] 写清锁的范围与「一个收件方一个 drain」。隔离要求同前，结束清理并在报告里证明；review-report 后 done --propose merge。
