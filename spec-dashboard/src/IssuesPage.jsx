@@ -4,7 +4,7 @@ import { ledgerFromChildren, ledgerFromTimeline } from './issueLedger.js'
 import { MENTION_RE, TriggerButton, typeTrigger, useMentionAutocomplete } from './mentions.jsx'
 import { ComposerSurface, ComposerTextarea, composingKey } from './Composer.jsx'
 import { SpecBody } from './NodeView.jsx'
-import { Replies, ReplyComposer, OriginatorLiveness } from './Thread.jsx'
+import { Replies, ReplyComposer } from './Thread.jsx'
 import { useWidgetHost } from './widgetHost.js'
 import { useT } from './i18n/index.jsx'
 import { DetailShell, FacetMenu, ListPage, ReviewListRow, ReviewRows, ReviewState, SecondaryFilters, SideSection, SideValue } from './ReviewShell.jsx'
@@ -398,16 +398,6 @@ export function IssueDetailPage({ issue: th, specs, sessions, onOpenSession, onW
               one session menu, plus the dispatch door — the rail is where GitHub keeps assignees, and here the
               assignees are worktrees you can merge, relaunch, or close. */}
           <IssueSessions issue={th} sessions={sessions} onOpenSession={onOpenSession} onWrite={onWrite} onError={(message) => setActErr(message)} onCompose={setComposeSeed} />
-          {/* the originator (who filed) + whether their session is still ALIVE — a local thread's `by` is a
-              session id (join it against the board for liveness, click through when live); a forge issue's
-              `by` is a github login that resolves to no session, so it stays a plain labeled value. */}
-          {th.by && (
-            <SideSection label={t('detail.sideOriginator')}>
-              {local
-                ? <OriginatorLiveness originator={th.by} sessions={sessions} onOpenSession={onOpenSession} />
-                : <SideValue text={th.by} dim />}
-            </SideSection>
-          )}
           {nodes.length > 0 && (
             <SideSection label={t('detail.sideNodes')}>
               {nodes.map((id) => (

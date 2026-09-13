@@ -90,7 +90,10 @@ with one visible fleet per issue, and close/retire/children/acceptance reachable
   the launcher menu opens there as it does for a hand — and the human's send is the act. Every write on the page
   leaves through the composer's send; a door only prepares it ([[mentions]], [[composer]]). The **Assign…** door opens the ONE session picker
   ([[session-picker]]) in a modal over every retained board session not yet on the issue and calls the assign
-  verb. A **participants** row lists the other thread voices as liveness chips. The originator row is unchanged.
+  verb. An **on the thread** list names the voices: the originator first, tagged `opened`, then every other reply author
+  outside the fleet — each in the one session vocabulary (headline + status dot while on the board; archived name +
+  `closed` tag from the archive index once closed; plain value for a human or forge login). The rail keeps no separate
+  originator row.
 - **The `fleet:` facet.** The join and the work-state rollup live in the shared review package (`@spexcode/spec-core/review`'s
   `issueFleet` / `fleetWorkState`), so the server's issue adapter exposes `fleet:need|run|stopped|none` as one more fixed-value
   facet in [[review-chrome]]'s secondary Filters menu — `fleet:need` lists exactly the rows whose strip reads "needs you",

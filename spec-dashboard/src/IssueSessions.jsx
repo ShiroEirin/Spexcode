@@ -1,12 +1,13 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { apiFetch, postIssueAssign } from './data.js'
+import { apiUrl } from './project.js'
 import { Icon, IconButton } from './icons.jsx'
 import SessionContextMenu from './SessionContextMenu.jsx'
 import SessionPicker from './SessionPicker.jsx'
 import Modal from './Modal.jsx'
 import { SideSection, SideValue } from './ReviewShell.jsx'
-import { fleetWorkState, isArchived, issueFleet, issueParticipants, sessionDisplayState, sessionForest, sessionHeadline } from './session.js'
+import { STATUS_COLOR, fleetWorkState, isArchived, issueFleet, issueParticipants, sessionDisplayState, sessionForest, sessionHeadline } from './session.js'
 import { fileName, webName } from './resourceCatalog.js'
 import { resourceSurface, resourceTabKey } from './sessionSurface.js'
 import { useT } from './i18n/index.jsx'
@@ -100,10 +101,50 @@ function FleetCard({ s, issueId, onOpenSession }) {
   )
 }
 
+
+// a session that already CLOSED is off the board, so its name comes from the archive index — the same read the
+// console's archive overlay makes — fetched once per id; a name that never resolves stays the short id, honestly.
+const archivedNames = new Map()
+function useArchivedName(id, onBoard) {
+  const [name, setName] = useState(() => archivedNames.get(id) || null)
+  useEffect(() => {
+    if (!id || onBoard || archivedNames.has(id)) return undefined
+    let live = true
+    fetch(apiUrl('/api/sessions/archive-index')).then((r) => (r.ok ? r.json() : [])).then((rows) => {
+      for (const row of Array.isArray(rows) ? rows : []) archivedNames.set(row.id, row.title || row.label || row.id)
+      if (live) setName(archivedNames.get(id) || null)
+    }).catch(() => { /* the short id stands */ })
+    return () => { live = false }
+  }, [id, onBoard])
+  return onBoard ? null : name
+}
+
+// the thread's VOICES as one list of session chips: the originator first, tagged `opened`; then every other reply
+// author outside the fleet. A voice that is still a board session wears its live status dot and opens its console;
+// one that has closed wears a `closed` tag and its archived name; a non-session author (a human, a forge login)
+// is a plain value. One vocabulary for "who is this" — the session headline — never a bare id where a name exists.
+function Voice({ id, sessions, tags = [], onOpenSession }) {
+  const t = useT()
+  const s = (sessions || []).find((x) => x.id === id) || null
+  const archived = useArchivedName(id, !!s)
+  const isSessionId = /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(id || '')
+  const trail = <>{tags.map((tag) => <span key={tag} className="rl-tag fv-voice-tag">{t(`fleet.${tag}`)}</span>)}{!s && isSessionId && <span className="rl-tag fv-voice-tag">{t('fleet.closedTag')}</span>}</>
+  if (s) {
+    const d = sessionDisplayState(s)
+    return <SideValue text={sessionHeadline(s)} lead={<StatusDot s={s} />} trail={trail} tip={`${s.id} · ${t(`status.${d.status}`)}`} label={sessionHeadline(s)}
+      className="fv-originator alive openable" onClick={() => onOpenSession?.(s.id)} />
+  }
+  if (isSessionId) {
+    const dot = <span className="fv-originator-dot" style={{ background: STATUS_COLOR.offline }} aria-hidden="true" />
+    return <SideValue text={archived || id.slice(0, 8)} lead={dot} trail={trail} tip={id} label={archived || id} className="fv-originator offline openable" onClick={() => onOpenSession?.(id)} />
+  }
+  return <SideValue text={id} trail={trail} dim />
+}
+
 export default function IssueSessions({ issue, sessions = [], onOpenSession, onWrite, onError, onCompose }) {
   const t = useT()
   const { fleet } = issueFleet(issue, sessions)
-  // the originator has its own labelled rail row already; participants are the OTHER thread voices.
+  // the thread's other voices, after the originator, outside the fleet
   const participants = issueParticipants(issue, sessions, fleet).filter((s) => s.id !== issue.by)
   const { expanded, toggle } = useFold()
   const [menu, setMenu] = useState(null)
@@ -148,10 +189,6 @@ export default function IssueSessions({ issue, sessions = [], onOpenSession, onW
       else onError?.(res?.error || t('fleet.refused', { what: t('fleet.assign') }))
     } finally { setBusy('') }
   }
-  const chip = (s) => (
-    <SideValue key={s.id} text={sessionHeadline(s)} lead={<StatusDot s={s} />} tip={`${s.id} · ${t(`status.${sessionDisplayState(s).status}`)}`}
-      label={sessionHeadline(s)} className="fv-originator alive openable" onClick={() => onOpenSession?.(s.id)} />
-  )
   return (
     <>
       <SideSection label={fleet.length ? `${t('detail.sideSessions')} · ${fleet.length}` : t('detail.sideSessions')}>
@@ -194,9 +231,10 @@ export default function IssueSessions({ issue, sessions = [], onOpenSession, onW
           </RailAction>
         </div>
       </SideSection>
-      {participants.length > 0 && (
+      {(issue.by || participants.length > 0) && (
         <SideSection label={t('detail.sideParticipants')}>
-          {participants.map(chip)}
+          {issue.by && <Voice id={issue.by} sessions={sessions} tags={['opened']} onOpenSession={onOpenSession} />}
+          {participants.map((p) => <Voice key={p.id} id={p.id} sessions={sessions} onOpenSession={onOpenSession} />)}
         </SideSection>
       )}
       {/* the assign door is the ONE session picker ([[session-picker]]) in the one modal, portaled to the body:
