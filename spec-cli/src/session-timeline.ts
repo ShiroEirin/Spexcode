@@ -5,11 +5,26 @@ import { configuredSessionApplication } from './session-application.js'
 
 export type TimelineEvent =
   | { ts: string; kind: 'status'; status: SessionLifecycle; proposal: SessionProposal | null; note: string | null; display?: string }
-  | { ts: string; kind: 'sent'; mid: string; text: string; from: string | null; replyVia?: 'note' }
+  | { ts: string; kind: 'sent'; mid: string; text: string; from: string | null; replyVia?: 'note'; system?: 'watch' }
+
+// The idempotency keys a managed watch mints for its deliveries ([[session-follow]]). Such a message is the system
+// describing another session's state, not anyone speaking — and it is the KEY that says so, never the text, which any
+// sender can type.
+export const isManagedWatchKey = (key: string | null | undefined): boolean =>
+  !!key && (key.startsWith('watch-event:') || key.startsWith('watch-initial:') || key.startsWith('watch-reparent:'))
 
 // The timeline is a history: events read in occurrence order (sequence breaks ties). Migrated legacy history
 // lands after the live events in sequence but before them in time, and it is shown where it happened.
 const canonicalSessionId = (id: string): string => readAliasedRawRecord(id)?.session_id ?? id
+
+// The key lives on the queued message, not on the `sent` fact, so the mark is joined at read time — and only for
+// the messages a reader is actually handed, which keeps a growth poll as cheap as its growth.
+const markSystem = (canonicalId: string, events: TimelineEvent[]): TimelineEvent[] => {
+  const mids = events.flatMap((event) => event.kind === 'sent' ? [event.mid] : [])
+  if (mids.length === 0) return events
+  const keys = configuredSessionApplication().readMessageKeys(canonicalId, mids)
+  return events.map((event) => event.kind === 'sent' && isManagedWatchKey(keys.get(event.mid)) ? { ...event, system: 'watch' as const } : event)
+}
 
 const publicEvent = (event: SessionEvent): TimelineEvent[] => {
   const decoded = decodeEventJson(event.payload)
@@ -155,7 +170,7 @@ export function readTimeline(id: string, read: TimelineRead = {}): TimelineWindo
     const rows = application.readEvents(canonicalId, Math.max(0, Math.trunc(read.since)))
     const grown = rows.flatMap(publicEvent)
     if (grown.length <= limit) {
-      return { events: spoken(grown), stamp: rows.length === 0 ? String(Math.max(0, Math.trunc(read.since))) : String(rows.at(-1)!.eventSeq) }
+      return { events: spoken(markSystem(canonicalId, grown)), stamp: rows.length === 0 ? String(Math.max(0, Math.trunc(read.since))) : String(rows.at(-1)!.eventSeq) }
     }
   }
   const timeline = canonicalTimeline(id)!
@@ -164,7 +179,7 @@ export function readTimeline(id: string, read: TimelineRead = {}): TimelineWindo
   const budget = Math.max(1, Math.trunc(read.textBudget ?? DEFAULT_TIMELINE_WINDOW_TEXT))
   const start = windowStart(events, end, limit, budget)
   return {
-    events: spoken(events.slice(start, end)),
+    events: spoken(markSystem(canonicalId, events.slice(start, end))),
     stamp: timeline.stamp,
     offset: start,
     total: events.length,

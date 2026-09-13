@@ -33,16 +33,39 @@ export function splitEnvelope(text) {
   return { text: envelope.body, envelope: { label: envelope.who === envelope.id ? null : envelope.who, id: envelope.id } }
 }
 
+// A MANAGED WATCH NOTICE IS NOT SPEECH. The wire marks what a watch delivered (`system: 'watch'`, derived from the
+// message's key, [[session-timeline]]): the system describing ANOTHER session's state. It neither closes a stretch
+// of work nor opens one. Landing on a working agent it belongs to the seam it arrived inside (`seam.notices`);
+// landing on an agent that is not working it joins the notices right before it, as one `notices` item. Either
+// way a run of them stays one run, which is what lets the page fold a supervisor's burst behind a count.
+// The one producer writes `[spex watch] <id> is <word> — <note>` ([[session-follow]]); a text that does not read
+// that way keeps its whole text as the note rather than vanishing.
+const WATCH_NOTICE = /^\[spex watch\] (\S+) is (\S+)(?: — ([\s\S]*))?$/
+export function watchNotice(event) {
+  const match = WATCH_NOTICE.exec(event.text || '')
+  return match
+    ? { ts: event.ts, mid: event.mid, from: event.from || match[1], status: match[2], note: match[3] || null }
+    : { ts: event.ts, mid: event.mid, from: event.from, status: null, note: event.text || null }
+}
+
 export function conversationItems(events, priorWorking = false) {
   const items = []
   let seam = null
   let working = !!priorWorking   // the record's last word about the agent, carried across the events that do not repeat it
-  const open = (ts) => { seam ??= { kind: 'seam', ts, from: epochOf(ts) } }
+  const open = (ts) => { seam ??= { kind: 'seam', ts, from: epochOf(ts), notices: [] } }
   const close = (to, open = false) => {
     if (seam) items.push({ ...seam, to, open })
     seam = null
   }
   for (const event of events) {
+    if (event.kind === 'sent' && event.system === 'watch') {
+      const notice = watchNotice(event)
+      const last = items.at(-1)
+      if (working) { open(event.ts); seam.notices.push(notice) }
+      else if (last?.kind === 'notices') last.notices.push(notice)
+      else items.push({ kind: 'notices', ts: event.ts, notices: [notice] })
+      continue
+    }
     const status = event.display || event.status
     if (event.kind === 'status') working = status === 'working'
     if (event.kind === 'status' && working && !event.note) { open(event.ts); continue }

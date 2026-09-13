@@ -314,6 +314,7 @@ function TimelineChat({ s, sessions = [], active = true, footerState = 'live', o
   const [sendErr, setSendErr] = useState(null)
   const [sendNote, setSendNote] = useState(null)   // the last send's child receipt (`@new`), if any
   const [expandedSeams, setExpandedSeams] = useState(() => new Set())
+  const [openNotices, setOpenNotices] = useState(() => new Set())   // the notice runs the reader opened, keyed by their first notice
   const [transcripts, setTranscripts] = useState(() => new Map())
   const [tail, setTail] = useState(null)   // the open seam's streamed payload ([[session-transcript]]); null until the first frame
   const scrollRef = useRef(null)
@@ -397,7 +398,7 @@ function TimelineChat({ s, sessions = [], active = true, footerState = 'live', o
     })
   }, [s.id, win.offset, loadingEarlier])
   useEffect(() => {
-    setEvents(null); setWin({ stamp: null, offset: 0, total: 0, priorWorking: false }); setLoadingEarlier(false); stampRef.current = null; anchorRef.current = null; setDetail(null); setSendNote(null); setExpandedSeams(new Set()); setTranscripts(new Map()); inflightRef.current.clear(); wantedRef.current.clear(); cachedKeyRef.current.clear(); outputCacheRef.current.clear(); outputLoadersRef.current.clear(); setTail(null); tailForRef.current = null; paintedRef.current = false; setWaited(false); pollNowRef.current = Date.now(); pinnedRef.current = true; setQuotes([]); setMenu(null)
+    setEvents(null); setWin({ stamp: null, offset: 0, total: 0, priorWorking: false }); setLoadingEarlier(false); stampRef.current = null; anchorRef.current = null; setDetail(null); setSendNote(null); setExpandedSeams(new Set()); setTranscripts(new Map()); inflightRef.current.clear(); wantedRef.current.clear(); cachedKeyRef.current.clear(); outputCacheRef.current.clear(); outputLoadersRef.current.clear(); setTail(null); tailForRef.current = null; paintedRef.current = false; setWaited(false); pollNowRef.current = Date.now(); pinnedRef.current = true; setQuotes([]); setMenu(null); setOpenNotices(new Set())
   }, [s.id])
   useEffect(() => {
     if (!active) return undefined
@@ -716,6 +717,50 @@ function TimelineChat({ s, sessions = [], active = true, footerState = 'live', o
   }
   // a quoted message's copy control lives on its time, under it in the ruler ([[copy-control]])
   const gutter = (ts, copy = null) => <div className="m-gut">{ts ? <time>{timeOf(ts)}</time> : null}{copy}</div>
+  // A MANAGED WATCH NOTICE is the system saying what another session did, so it is drawn as the system: one caption
+  // line — who, the state in its board colour, the note — never a bubble in the person's grammar. Two or more in a
+  // run fold behind their count and open in place: folded is not hidden, what woke the agent is one press away.
+  const noticeLine = (notice) => (
+    <div className="m-ev m-ev-line m-ev-notice" key={`n:${notice.mid}`} data-at={atOf(notice.ts)}>
+      <div className="m-gut" />
+      <div className="m-line m-notice">
+        <time className="m-line-time">{timeOf(notice.ts)}</time>
+        <span className="m-notice-who">{fromLabel(notice.from)}</span>
+        {notice.status && (
+          <span className="m-notice-state" style={{ color: STATUS_COLOR[notice.status] || STATUS_COLOR.idle }}>
+            <span className="m-ev-glyph">{STATUS_GLYPH[notice.status] || '·'}</span>
+            <span className="m-ev-word">{t(`status.${notice.status}`)}</span>
+          </span>
+        )}
+        {notice.note && <span className="m-notice-note" title={notice.note}>{notice.note}</span>}
+      </div>
+    </div>
+  )
+  const toggleNotices = (run) => setOpenNotices((previous) => {
+    const next = new Set(previous)
+    if (next.has(run)) next.delete(run)
+    else next.add(run)
+    return next
+  })
+  const pushNotices = (notices) => {
+    if (!notices?.length) return
+    dayRow(notices[0].ts, `n:${notices[0].mid}`)
+    if (notices.length === 1) { rows.push(noticeLine(notices[0])); return }
+    const run = notices[0].mid
+    const open = openNotices.has(run)
+    rows.push(
+      <div className="m-ev m-ev-notices" key={`r:${run}`} data-at={atOf(notices[0].ts)}>
+        <div className="m-gut" />
+        <div className="m-notices">
+          <button type="button" className="m-notice-fold" aria-expanded={open} onClick={() => toggleNotices(run)}>
+            <span className="m-notice-count">{t('mobile.statusNotices', { count: notices.length })}</span>
+            <Caret open={open} className="m-seam-caret" />
+          </button>
+        </div>
+      </div>,
+    )
+    if (open) for (const notice of notices) rows.push(noticeLine(notice))
+  }
   const promptTs = s.created || detail?.created || events?.[0]?.ts
   if (detail?.prompt) {
     if (promptTs) dayRow(promptTs, 'p')
@@ -781,6 +826,8 @@ function TimelineChat({ s, sessions = [], active = true, footerState = 'live', o
           </div>
         </div>,
       )
+    } else if (item.kind === 'notices') {
+      pushNotices(item.notices)
     } else {
       // THE SEAM. One line for everything between two messages, saying only how long the agent worked —
       // the one duration a reader asks scrollback for — and, once read, what that stretch cost. The tail
@@ -834,6 +881,8 @@ function TimelineChat({ s, sessions = [], active = true, footerState = 'live', o
           </div>
         </div>,
       )
+      // the notices that arrived while this stretch ran sit under it, where they landed
+      pushNotices(item.notices)
     }
   }
 

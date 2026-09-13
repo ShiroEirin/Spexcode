@@ -23,6 +23,7 @@ import { decodeEventJson } from '@spexcode/session-events'
 import { claimDeliveryLock, withDeliveryLocks } from './delivery-lock.js'
 import { withRecordLock, withRecordLockSync, readRecord, readLiveRecord, writeRecord, fromRaw, hasValidColdProof, coldProofFor, launchReadinessPending, restoreLaunchReadinessOriginal, retirementReason, corruptReason, assertLegacyJsonWritesAllowed, type SessRec, SessionRecordUnusable, setRecordTransitionWrapper, backendLaunchAuthority, canDrainQueued } from './session-record.js'
 import { unbindSpexGovernedRuntime } from './session-runtime-adapter.js'
+import { isManagedWatchKey } from './session-timeline.js'
 import { shQuote } from './sh.js'
 import {
   composeSessionPrompt, launchScript, launchShellCommand, nodeFromPrompt, slugify, titleFromPrompt,
@@ -50,10 +51,7 @@ export function revokeSenderDelivery(id: string): void {
   writeFileSync(revokedSenderPath(id), `${id}\n`)
 }
 const senderDeliveryRevoked = (id: string): boolean => existsSync(revokedSenderPath(id))
-const managedWatchMessage = (message: { idempotencyKey?: string | null }): boolean => {
-  const key = message.idempotencyKey ?? ''
-  return key.startsWith('watch-event:') || key.startsWith('watch-initial:') || key.startsWith('watch-reparent:')
-}
+const managedWatchMessage = (message: { idempotencyKey?: string | null }): boolean => isManagedWatchKey(message.idempotencyKey)
 const pendingTrashDeletes: string[] = []
 let trashDeleteRunning = false
 let trashDeleteScheduled = false

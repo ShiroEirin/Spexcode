@@ -28,6 +28,8 @@ hostile, or very large content, without turning `TimelineChat` into a second ren
 One `RichText` entry is the timeline's whole rendering boundary, and it is a thin door onto the one dashboard
 [[prose-renderer]]: `TimelineChat` sends every human-authored prose field through it — the originating prompt,
 sent messages, and authored status notes — and never grows its own Markdown branches or a parser of its own.
+A managed watch notice is not a sent message in this sense: it is the system's one-line caption ([[conversation]]),
+its note plain text held to that line, so it never passes through this door.
 
 `RichText` supplies the timeline's semantic handlers, not its dialect. The same component also previews a
 Markdown FILE, whose authoring wraps are typography rather than speech, so the one newline decision travels

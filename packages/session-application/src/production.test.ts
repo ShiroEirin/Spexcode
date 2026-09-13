@@ -255,6 +255,26 @@ test('conversation enqueue records the public message fact beside protocol debt 
   app.close()
 })
 
+test('message keys are a scoped lookup by id: the target\'s own messages only, unknown ids simply absent', () => {
+  const root = mkdtempSync(join(tmpdir(), 'session-application-message-keys-'))
+  const databasePath = join(root, 'sessions.sqlite')
+  const app = openProjectSessionApplication({ databasePath, locality: () => {} })
+  app.createSession({ sessionId: 'watcher' })
+  app.createSession({ sessionId: 'other' })
+  const keyed = app.enqueueMessage('watcher', { kind: 'session.prompt.v1', body: Buffer.from('keyed'), idempotencyKey: 'watch-event:abc' })
+  const bare = app.enqueueMessage('watcher', { kind: 'session.prompt.v1', body: Buffer.from('bare') })
+  const elsewhere = app.enqueueMessage('other', { kind: 'session.prompt.v1', body: Buffer.from('elsewhere'), idempotencyKey: 'watch-event:def' })
+  // enough unknown ids ahead of the real ones that the lookup crosses its chunk boundary
+  const unknown = Array.from({ length: 1200 }, (_, index) => index.toString(16).padStart(32, '0'))
+  const keys = app.readMessageKeys('watcher', [...unknown, keyed.messageId, bare.messageId, elsewhere.messageId, keyed.messageId])
+  assert.equal(keys.get(keyed.messageId), 'watch-event:abc')
+  assert.equal(keys.get(bare.messageId), null)
+  assert.equal(keys.has(elsewhere.messageId), false, 'a message addressed to another session is not this session\'s to report')
+  assert.equal(keys.size, 2)
+  assert.equal(app.readMessageKeys('watcher', []).size, 0)
+  app.close()
+})
+
 test('protocol addresses without migrated application state are absent and read-only', () => {
   const root = mkdtempSync(join(tmpdir(), 'session-application-unmigrated-'))
   const databasePath = join(root, 'sessions.sqlite')

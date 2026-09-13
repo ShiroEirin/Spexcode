@@ -28,3 +28,21 @@ Spec: delivery-queue, session-follow
 <!-- reply: 2499a20b-ae58-4074-87de-3753e02fe63b @ 2026-09-13T11:20:09.601Z -->
 @new:reclaude 接这个回归。先用线程里的 send-lock-repro.mjs 在隔离 fixture 复现（main 3d9d2d368 之后），再对 3d9d2d368^ 跑一次确认它是这次改动引入的（issue 正文暗示合入前同顺序通过）。
 修的方向（读代码后可调）：普通 `send` 的入队是一次事务，不该等在收件方正在进行的交接（`drainSession` 在 `withDeliveryLocks` 里等 replyViaSocket 的 10 s 墙）的锁上；每个收件方同时只跑一个 drain 循环，后来的 `/push` 只标记「还有待投递」而不是再排一个持锁的 drain；投递锁只保护队列头的取/删，不跨越 socket 等待；`send` 超过锁等待也不能变成 500，要么立刻入队返回，要么给出明确的排队回执。目标数字：三次声明后立即 `send`，CLI ≤ 1 s 返回、消息到达父的队列与 timeline；用会回 repaint-done 的 fake harness 和不回的各测一遍。保留 3d9d2d368 的成果（声明 CLI ~350 ms、连接归后端）。spec：[[delivery-queue]] 写清锁的范围与「一个收件方一个 drain」。隔离要求同前，结束清理并在报告里证明；review-report 后 done --propose merge。
+
+<!-- reply: de8e66a8-af01-41d3-8bb4-0094bac8ca60 @ 2026-09-13T11:38:37.716Z -->
+复现结果。隔离 fixture 同前：独立 SPEXCODE_HOME、空闲端口、独立 tmux socket，每次跑完 fixture 目录已删、tmux server 已退、没有残留进程。
+
+- HEAD 37c0ae4f9（含 3d9d2d368），fake-claude 不回 repaint-done：三次声明各约 0.55 s；send 30.6 s 后 exit 1（500），后端日志 3 条 `timed out waiting for transaction lock`。消息其实已经进了父的队列和 timeline，39 s 后才交到父的 harness。
+- 3d9d2d368^1，同一个 harness：send 10.6 s，exit 0；但三次声明分别是 20.6 / 10.5 / 10.5 s，因为那时声明 CLI 自己在等 socket 墙。issue 正文里"每步约 0.5 s"是合入之后的数字。
+- 换成回 repaint-done 的 harness：两棵树的 send 都是 0.63 s 左右，不复现。
+
+结论：是 3d9d2d368 引入的。等待从短命的声明 CLI 挪进了常驻后端，锁一直有人占着，send 排在后面等满 30 s。
+
+读完代码，方向上有两处调整：
+
+1. 投递锁仍然跨一次 insert。如果只锁队头的取/删、不锁 socket 等待，两个进程可能把同一个队头各发一次：出队的 CAS 只防重复删除，防不了重复插入。要补上就得加一个"已认领"标记，那只是给同一把锁换个名字。毛病不在锁跨了 socket，在于有人排队等它。所以改成：锁只跨一个队头，发完一条就释放，不再跨整个队列；drain 拿不到锁就直接返回，不等；持锁方释放后要再读一次队列才能停，持锁期间入队的消息由它来发，唤醒不会丢。
+2. 不另设"还有待投递"标志，队列里那一行就是这个标记。同一进程里每个收件方最多跑一个 drain 循环，之后来的 send、/push、sweep、commit wake 发现循环在跑就直接返回。sweep 和 commit wake 原先按收件方顺序 await，一个父卡在 10 s 墙上，别的会话的重试也跟着等；现在每个收件方各跑各的循环。
+
+send 提交之后的交接不管因为什么失败，都只记日志、回 `delivery: queued`，不再变成 500。消息已经被接受了，报失败只会让发送方再发一遍。还会等锁的只剩 [[session-reparent]]（它要在两次 insert 之间看到队列），现在最多等一条。锁的范围和"一个收件方一个 drain"写进 [[delivery-queue]]。
+
+回归测试 `a send to a watcher whose harness is holding a watch notice does not wait behind it`：在未修复的 HEAD 上失败（send 10047 ms），修复后通过。下一步用 repro 在两种 harness 上量修复后的数字，然后出 review-report。

@@ -3104,6 +3104,7 @@ body.is-session-dragging .si-pill.archive:hover {
 @container (min-width: 561px) {
   .m-ev-say > .m-say,
   .m-ev-line > .m-line,
+  .m-ev-notices > .m-notices,
   .m-ev-seam > .m-seam {
     width: calc(100% + 52px + 16px);
     max-width: none;
@@ -3142,6 +3143,16 @@ body.is-session-dragging .si-pill.archive:hover {
 .m-line .m-ev-word { font-weight: var(--weight-semibold); }
 .m-line-text.m-ev-note { min-width: 0; color: var(--ink); font-size: var(--type-control); line-height: var(--leading-relaxed); }
 
+/* A MANAGED WATCH NOTICE: the system reporting another session's state. It is an event line in the caption voice —
+   who, the state word in its board colour, the note held to one line — and a run of them folds behind a count
+   that speaks the seam's own quiet disclosure grammar (the row rule below is shared with it). */
+.m-notices { min-width: 0; }
+.m-notice { font-size: var(--type-caption); color: var(--muted); }
+.m-notice-who { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink2); }
+.m-notice-state { display: inline-flex; flex: none; align-items: baseline; gap: 5px; }
+.m-notice-note { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m-notice-count { flex: none; font-variant-numeric: tabular-nums; }
+
 /* THE SEAM: one line for everything that happened between two messages, saying only how long the agent
    worked — the one duration scrollback asks for — and, once read, what that stretch cost. The chevron TRAILS
    the words, as it does on every disclosure in the conversation (tool rows, work folds, the live tail's
@@ -3176,12 +3187,12 @@ body.is-session-dragging .si-pill.archive:hover {
 }
 /* one quiet line, no rule across the page: the work between two messages is a footnote to the exchange,
    said in the caption voice and lit only under the pointer, the way a reading surface folds its thinking. */
-.m-seam-row {
+.m-seam-row, .m-notice-fold {
   display: inline-flex; align-items: center; gap: var(--space-3); max-width: 100%; padding: var(--space-2) var(--space-3); margin-left: calc(var(--space-3) * -1);
   color: var(--muted); background: none; border: 0; border-radius: var(--radius);
   font-family: var(--ui-font); font-size: var(--type-caption); text-align: left; cursor: pointer;
 }
-.m-seam-row:hover { color: var(--ink2); background: var(--wash-hover); }
+.m-seam-row:hover, .m-notice-fold:hover { color: var(--ink2); background: var(--wash-hover); }
 .m-seam-lead { flex: none; font-variant-numeric: tabular-nums; }
 .m-seam-detail { flex: none; font-variant-numeric: tabular-nums; }
 .m-seam-inset { margin: var(--space-2) 0 var(--space-5); padding: var(--space-4) 0 var(--space-3) var(--space-6); border-left: 1px solid var(--edge); }
