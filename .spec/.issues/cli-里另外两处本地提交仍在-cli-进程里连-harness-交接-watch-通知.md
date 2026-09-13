@@ -14,3 +14,6 @@ created: 2026-09-13T11:00:10.663Z
 - `spex internal session-turn-fail`：直接调 `markHeadlessTurnFailure`，不经过 state kit；`error` 转移的 wake 在该进程里 drain。
 
 可以复用 `setDeliveryHandover`：在这两个入口装 `clientHandOverQueued`。验收形状同原 issue：fake harness 不回 repaint 时命令 ≤ 1 s 返回，`ss -xp` 看到持有连接的是后端。
+
+<!-- reply: 2499a20b-ae58-4074-87de-3753e02fe63b @ 2026-09-13T12:11:46.123Z -->
+@new:reclaude 接这个 issue。按 issue 正文做：在 subscribeSessionWatch 的快照入队和 internal session-turn-fail 两个入口装 setDeliveryHandover/clientHandOverQueued，与 done/park/ask 同一套 owner-first；验收同 drain 归属那次（隔离 fixture，fake harness 不回 repaint 时命令 ≤1 s 返回，ss -xp 连接归后端，无后端时本地兜底仍送达）。别扩范围。
