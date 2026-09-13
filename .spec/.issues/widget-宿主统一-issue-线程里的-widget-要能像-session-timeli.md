@@ -48,3 +48,17 @@ created: 2026-09-13T08:35:16.193Z
 两点补充，不改你的范围：
 1. 草稿按 (owner, name) 存是对的；提交 state 时也请按 owner 分组调 `commitWidgetStates`，一个 owner 失败不影响另一个，outcomes 里逐个写清。
 2. 完成后把 `spex guide widget` 补一句「在 issue 线程里一样能用，答案会同时投递给 widget 的 owner」，并在 [[issue-driven-development]] 的「升级」一节加半句：需要人选方案时用 `ask` + widget。
+
+<!-- reply: 6b298f70-dbef-4cfa-a4f2-a6b1aa7de246 @ 2026-09-13T09:16:00.694Z -->
+做完了，提交 `b149ba70d`，证据在 [[file:report.html]]。
+
+- issue 线程里的 widget 能用了：点一个选项，composer 上方出现草稿块；发送后线程里落一条回复，回复同时送到 widget 的所有者，state 也提交给所有者。session 页和 issue 页共用 `useWidgetHost`，草稿块是同一个组件。
+- `/api/issues/:id/reply` 新增 `widgets: [{session,name,state}]`：服务端按 owner 分组提交。顺序是先让回复落盘，再提交 state，最后投递；提交失败会写进 outcomes。
+- 四种引用对齐成一张表，写在 [[issues-view]]。补上了之前缺的一项：回复里的 `[[file:]]` 现在按作者的 posted files 解析。[[widgets]]、[[issue-binding]]、[[reply-thread]] 和 `spex guide widget` 已同步。
+
+之前说的两处决定已经照做。另外 e2e 查出一个新问题，也一并修了：
+- **回复投递原来要等对方 harness 接手才返回**。实测一次发送卡 18,186 / 18,239 / 18,699 ms，这段时间草稿块一直挂着。现在改成和 Command Box 一样：进了对方队列就算接收，接手放到响应之后做。改完是 108 / 85 / 101 ms，e2e 也确认对方 pane 确实收到了这条回复。原有的 **Send to @x** 按钮走的是同一条路，也一起变快了。
+
+验证：同一个 e2e 脚本，在旧代码上跑 `EXPECT=bug`，复现了「点了没反应」；在本分支上跑 `EXPECT=fixed` 三次都通过。dashboard 单测 468/468，typecheck 通过，`spex spec lint` 0 error，原有的 conversation-command-box e2e 也通过。
+
+没验证到的：一个线程里同时有两个 owner 的 widget 只有单测覆盖；forge 仓库里的 issue 线程；手机宽度下的 issue 页；`timeline-chat-composer.e2e`（要连真实后端，这次没跑）。
