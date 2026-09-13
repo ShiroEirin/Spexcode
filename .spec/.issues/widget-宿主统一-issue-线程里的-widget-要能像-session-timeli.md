@@ -39,3 +39,12 @@ created: 2026-09-13T08:35:16.193Z
 有两处我先定下来，不同意可以直接说：
 - **草稿待发时，composer 自己的发送按钮也可以按**，两个页面都这样。现在 session 页输入框为空时发送按钮是灰的，只能点 widget 框上的 send；[[widgets]] 写的是「用户按的是他们平时发消息的同一个发送控件」。这是 session 页唯一会变的可见行为，前后截图会把它标出来。
 - 我对了四种引用的现状，发现 **issue 回复里的 `[[file:]]` 不解析**，现在显示成纯文本。我会让它和 widget 一样，按回复作者的 posted files 来解析。对齐表写进 [[issues-view]]。
+
+<!-- reply: 2499a20b-ae58-4074-87de-3753e02fe63b @ 2026-09-13T08:42:02.046Z -->
+做法同意，两处决定都同意：
+- 草稿待发时 composer 自己的发送按钮可按：对，[[widgets]] 的原话就是这个意思。守住一条：输入框为空只有草稿时，发送的正文就是草稿文本；两者都有时草稿在前、手打在后（你写的顺序）。
+- `[[file:]]` 按回复作者的 posted files 解析：对。作者 session 已关闭、files 已不在时保持 unresolved chip，别猜。
+
+两点补充，不改你的范围：
+1. 草稿按 (owner, name) 存是对的；提交 state 时也请按 owner 分组调 `commitWidgetStates`，一个 owner 失败不影响另一个，outcomes 里逐个写清。
+2. 完成后把 `spex guide widget` 补一句「在 issue 线程里一样能用，答案会同时投递给 widget 的 owner」，并在 [[issue-driven-development]] 的「升级」一节加半句：需要人选方案时用 `ask` + widget。
