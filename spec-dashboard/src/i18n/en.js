@@ -419,6 +419,8 @@ export default {
     sideOriginator: 'opened by',
     sideNodes: 'spec nodes',
     backToIssues: 'back to issues',
+    backToParent: 'back to the parent issue',
+    sideSubIssues: 'sub-issues',
     sideIssue: 'issue',
     sideNode: 'spec node',
     sideSessions: 'sessions',
@@ -782,6 +784,7 @@ export default {
     issuesBodyPlaceholder: 'details (optional)',
     // the issue tree on the detail ([[issues-view]]): the Sub-issues section, its door, and the duplicate note.
     issuesSubTitle: 'Sub-issues',
+    issuesThread: ({ n }) => `Activity · ${n}`,
     issuesSubProgress: ({ closed, total }) => `${closed}/${total} done`,
     issuesSubCount: ({ closed, total }) => `${closed} of ${total} sub-issues closed`,
     issuesSubHideDone: 'Hide completed',

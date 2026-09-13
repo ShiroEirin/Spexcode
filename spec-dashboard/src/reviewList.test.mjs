@@ -368,11 +368,13 @@ test('New is a routed compose PAGE reusing the shared shells, never a pop-out ov
   assert.match(issues, /className="rl-new" href=\{routeHash\('issues', NEW_PARAM\)\}/)
   // the page wears the SAME DetailShell (back anchor + main + rail) and the SAME composer surface every
   // other writing box uses ([[review-chrome]] / [[composer]]) — no page-local layout or textarea dialect
-  assert.match(issues, /function NewIssuePage\([\s\S]*<DetailShell[\s\S]*backHref=\{detailBackHash\('issues'\)\}/)
+  // the compose page's way back is the parent it was opened from, else the derived list anchor — never history.back
+  assert.match(issues, /function NewIssuePage\([\s\S]*const returnHref = parent \? routeHash\('issues', parent\) : detailBackHash\('issues'\)[\s\S]*<DetailShell[\s\S]*backHref=\{returnHref\}/)
+  assert.match(issues, /<a className="fv-cancel" href=\{returnHref\}>/)
   assert.match(issues, /function NewIssuePage\([\s\S]*<ComposerSurface[\s\S]*className="fv-new-compose"/)
   assert.match(issues, /function NewIssuePage\([\s\S]*<TriggerButton[\s\S]*typeTrigger\(taRef\.current, '@'/)
   // Cancel returns by the SAME derived list address the back anchor uses, never history.back
-  assert.match(issues, /<a className="fv-cancel" href=\{detailBackHash\('issues'\)\}>/)
+  assert.match(issues, /<a className="fv-cancel" href=\{returnHref\}>/)
   assert.doesNotMatch(issues, /Modal|fv-new-modal|useEscLayer/)
   // one insertion mechanism for the grammar's doors — Thread's composer types through the same helper
   assert.match(read('Thread.jsx'), /typeTrigger\(taRef\.current, trigger, setBody/)
