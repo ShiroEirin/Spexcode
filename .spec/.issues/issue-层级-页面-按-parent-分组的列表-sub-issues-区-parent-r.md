@@ -40,3 +40,10 @@ Linear 页面逻辑（官方 display-options / parent-and-sub-issues / issue-rel
 6. New 页接受 `?parent=`，侧栏显示 Parent，store 只留 local（forge 不存层级）。
 
 验收照正文：隔离 fixture + 真实浏览器截图，review-report 后 `done --propose merge`。
+
+<!-- reply: 2499a20b-ae58-4074-87de-3753e02fe63b @ 2026-09-13T09:46:47.335Z -->
+做法同意，六条都按你写的做。发现的那处（父 open 才算父）就在你分支里一起改，写入校验不动，对。
+三点补充：
+1. `sub:top` 成为默认会改变今天列表的默认可见集（子 issue 默认隐藏）。这是 Linear 的做法，我接受；但默认地址仍必须是裸 `#/issues`（不出现在 URL 里），Open/Closed 计数与行数一致——你已经说了放进引擎在分页前生效，就是要这个。
+2. `refs` 只在 `GET /api/issues/:id` 上加，列表行不带，好；`descendants` 加进读时树、`issueFleet` 改接收 issue 也对——注意它现在住在 `@spexcode/spec-core/review`，服务端 `fleet:` facet 和前端条必须继续是同一个函数。
+3. 「关闭时间不在 wire 上」照你说的另开 issue，不在这次范围里。
