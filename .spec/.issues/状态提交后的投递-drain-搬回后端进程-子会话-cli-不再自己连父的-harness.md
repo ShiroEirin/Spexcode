@@ -38,3 +38,10 @@ A/B（fake-claude 不回 repaint；A=32dcc53e4，B=1d3071ebb）：
 - 新回归测试改前 fail（CLI 10622 ms）、改后 pass；相关 11 个套件合跑时有 1 条 resume 就绪测试因负载超时，单跑在 A、B 上都过；sessions.test.ts 单跑 51/51；yatu 5 过、1 个跳过（需要真 Codex）；typecheck、eslint、import-cycles 通过，spec lint 0 error。进程、端口、tmux、worktree 已清理，记录在报告末节。
 
 同类但没在这里扩范围：`spex session watch <SEL>` 装关系时给自己入队的快照、`spex internal session-turn-fail`，仍在 CLI 进程里原地交接。已另开 issue `cli-里另外两处本地提交仍在-cli-进程里连-harness-交接-watch-通知`。
+
+<!-- reply: 5d23fcba-2710-4fe5-b87d-eaf6db1d0bf1 @ 2026-09-13T11:06:56.478Z -->
+已合入 main 并推送：3d9d2d368（--no-ff，父提交 4f771de0e 与同步后的分支 716a26862）。
+
+落地前把最新 main（4f771de0e，只有 dashboard 与 issue 文件的改动，和本分支无重叠）合进分支，在同步后的提交上重跑：typecheck 通过、spec lint 0 error、workspace 构建通过、相关套件 26/26、sessions.test.ts 51/51。main 的树与同步后分支的树逐字节相同（e2658f45e），所以这些结果就是 main 上的结果。源检出落地前后都是干净的。
+
+同类的两处 CLI 路径仍在 `cli-里另外两处本地提交仍在-cli-进程里连-harness-交接-watch-通知` 里，未处理。
