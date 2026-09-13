@@ -2,7 +2,7 @@
 title: forge-cli
 status: active
 hue: 280
-desc: Exposes spec-forge's reads on the real `spex` CLI — `spex issue links` (node → linked issues/PRs) and `spex issue links --pending` (node → evaluation owed). Read-only; reading is live.
+desc: Exposes spec-forge's live read on the real `spex` CLI — `spex issue links` (node → linked issues/PRs). Read-only; reading is live.
 code:
   - spec-forge/src/cli.ts
 related:
@@ -22,13 +22,7 @@ forge is a value (`--store <host>`), never a command drawer ([[cli-surface]]).
   header line reports both the link counts and how many issue/PR records were traced (so an empty result is
   legible: nothing linked vs nothing to trace). `--node` narrows to one node; `--json` emits the raw
   resolved structure.
-- `spex issue links --pending [--store github] [--node <id>] [--json]` — the same read, resolved instead to the
-  open issues flagged `review-needed`, printed as `node → evaluation owed` with the same header and
-  `--node`/`--json` flags so the two reports read alike. The flag-recognition and node-resolution semantics
-  are review-needed's; this is only its CLI exposure. `--json` emits the raw `NodeEvalPending[]` —
-  the shape `measurement lint` consumes.
-
-Both verbs share one read — select the host's driver **through the `ForgeDriver` port** (a registry keyed by
+The verb selects the host's driver **through the `ForgeDriver` port** (a registry keyed by
 each driver's own `host`, never a hardcoded vendor branch — a second host is one registry entry), load the
 canonical node ids, fetch the host's open issues/PRs — factored into `readForge`, so a third verb is just a
 resolver plus a printer.

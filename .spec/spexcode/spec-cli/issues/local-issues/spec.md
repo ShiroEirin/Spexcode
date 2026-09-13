@@ -69,7 +69,9 @@ it to `.spec/.issues` on its first store touch after a toolchain update — the 
   [[issues]] / video evidence). The sentinel is **unforgeable**: user body text is
   neutralized on write, so a body that itself contains that marker can't spawn a phantom reply or truncate
   the thread.
-- **Own lifecycle status**, store-authored never git-derived: `open` → `landed`.
+- **Own lifecycle status**, store-authored never git-derived: current writes have one terminal state, `open` →
+  `landed`. A legacy terminal `rejected` value is preserved as a distinct closed reading, so "we decided not
+  to" is never rendered as "it shipped" and never reappears in the open drain.
 - **The local issue store lives on the trunk, not per-branch.** A write reads and commits **straight to the main
   checkout's `.spec/.issues/`** — a local-issue file is data, not contract, and the write below commits it with
   `--no-verify` (provably a single `.spec/.issues/` path), so it lands on the trunk without needing any

@@ -27,7 +27,8 @@ registration scheme that multiplies per spec file buys blindness rather than fre
 ## expanded spec
 
 graph-stream is the graph's live-delivery channel: `GET /api/graph/stream`, a server-sent-events stream a
-dashboard opens once, server→client only. It speaks two protocols on one route. **Plain mode** (no query) is
+dashboard opens once, server→client only. The implementation and clients name the plain notification
+`graph-changed` consistently. It speaks two protocols on one route. **Plain mode** (no query) is
 the legacy contract, kept verbatim for old clients: a bare `graph-changed` signal, the client refetches
 `/api/graph` on its ETag/304 path. **Delta mode** (`?mode=delta`) inverts who fetches: the server sends a
 full snapshot on every (re)connect (`graph-full {to, graph}`), then per change either the hash-chained patch

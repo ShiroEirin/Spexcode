@@ -88,6 +88,19 @@ type Backend = { port: number; child: ChildProcess }
 let current: Backend | null = null   // which internal port new proxy connections forward to
 let reloading = false                // single-flight guard for reload()
 let pending = false                  // a code change arrived mid-reload → reload again when done
+let restartRetryTimer: NodeJS.Timeout | undefined
+let restartRetryAttempt = 0
+
+function scheduleRestartRetry(): void {
+  if (restartRetryTimer) return
+  const delay = Math.min(30_000, 1_000 * 2 ** Math.min(restartRetryAttempt++, 5))
+  console.error(`[supervisor] replacement retry scheduled in ${delay}ms`)
+  restartRetryTimer = setTimeout(() => {
+    restartRetryTimer = undefined
+    void reload('restart retry')
+  }, delay)
+  restartRetryTimer.unref()
+}
 
 // grab an ephemeral port by binding :0, then release it for the child to claim (negligible rebind race).
 function freePort(): Promise<number> {
@@ -143,9 +156,19 @@ async function reload(reason: string): Promise<void> {
   try {
     do {
       pending = false
-      if (!buildWorkspace()) break
+      const needsBuild = reason !== 'crash' && reason !== 'restart retry'
+      if (needsBuild && !buildWorkspace()) {
+        if (!current) scheduleRestartRetry()
+        break
+      }
       const next = await boot()
-      if (!next) { console.error(`[supervisor] new backend failed health check (${reason}) — keeping current`); break }
+      if (!next) {
+        console.error(`[supervisor] new backend failed health check (${reason}) — keeping current`)
+        if (!current) scheduleRestartRetry()
+        break
+      }
+      if (restartRetryTimer) { clearTimeout(restartRetryTimer); restartRetryTimer = undefined }
+      restartRetryAttempt = 0
       const old = current
       current = next   // atomic flip: new connections now route to `next`
       console.log(`[supervisor] reloaded (${reason}) → backend :${next.port}`)
@@ -210,7 +233,7 @@ function dropEndpoint(): void {
   try { dropOwnEndpoint(instanceId, projectRoot) } catch { /* not ours / already gone */ }
 }
 
-const shutdown = () => { dropEndpoint(); unregisterBackendInstance(instanceId); try { current?.child.kill('SIGTERM') } catch { /* */ } process.exit(0) }
+const shutdown = () => { if (restartRetryTimer) clearTimeout(restartRetryTimer); restartRetryAttempt = 0; dropEndpoint(); unregisterBackendInstance(instanceId); try { current?.child.kill('SIGTERM') } catch { /* */ } process.exit(0) }
 process.on('SIGINT', shutdown)
 process.on('SIGTERM', shutdown)
 

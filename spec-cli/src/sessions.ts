@@ -43,6 +43,17 @@ const HARNESS = defaultHarness
 const DEFAULT_MAX_ACTIVE = 8
 
 const worktreeTrashDir = (root: string): string => join(root, '.worktrees', '.trash')
+const revokedSenderRoot = (): string => join(runtimeRoot(), '.revoked-senders')
+const revokedSenderPath = (id: string): string => join(revokedSenderRoot(), createHash('sha256').update(id).digest('hex'))
+export function revokeSenderDelivery(id: string): void {
+  mkdirSync(revokedSenderRoot(), { recursive: true })
+  writeFileSync(revokedSenderPath(id), `${id}\n`)
+}
+const senderDeliveryRevoked = (id: string): boolean => existsSync(revokedSenderPath(id))
+const managedWatchMessage = (message: { idempotencyKey?: string | null }): boolean => {
+  const key = message.idempotencyKey ?? ''
+  return key.startsWith('watch-event:') || key.startsWith('watch-initial:') || key.startsWith('watch-reparent:')
+}
 const pendingTrashDeletes: string[] = []
 let trashDeleteRunning = false
 let trashDeleteScheduled = false
@@ -241,7 +252,7 @@ export async function subscribeSessionWatch(watcher: string, targets: string[], 
       kind: 'session.prompt.v1',
       body: Buffer.from(message, 'utf8'),
       senderSessionId: target,
-      idempotencyKey: digest(`watch-initial-snapshot\0${watcher}\0${target}\0${source}\0${message}`),
+      idempotencyKey: `watch-initial:${watcher}:${target}:${source}:${digest(`watch-initial-snapshot\0${watcher}\0${target}\0${source}\0${message}`)}`,
     })
     const history = application.readEvents(target)
     application.advanceFollowCursor(watcher, target, history.at(-1)?.eventSeq ?? 0)
@@ -282,8 +293,9 @@ export function cancelSessionWatch(watcher: string, targets: string[]): number {
 export type SessionReparentResult = { children: string[]; parent: string | null; notified: string[] }
 
 async function withRecordLocks<T>(ids: string[], body: () => Promise<T>, index = 0): Promise<T> {
-  if (index >= ids.length) return body()
-  return withRecordLock(ids[index], () => withRecordLocks(ids, body, index + 1))
+  const unique = index === 0 ? [...new Set(ids)].sort() : ids
+  if (index >= unique.length) return body()
+  return withRecordLock(unique[index], () => withRecordLocks(unique, body, index + 1))
 }
 
 function assertReparentable(children: string[], parent: string | null, records: Map<string, SessRec>): void {
@@ -346,7 +358,7 @@ export async function reparentSessionRecords(rawChildren: string[], parent: stri
             kind: 'session.prompt.v1',
             body: Buffer.from(watchMessage(moved), 'utf8'),
             senderSessionId: id,
-            idempotencyKey: digest(`reparent-snapshot\0${change.event.eventId}`),
+            idempotencyKey: `watch-reparent:${change.event.eventId}`,
           })
           application.advanceFollowCursor(parent, id, change.event.eventSeq)
           notify.push(moved)
@@ -1271,11 +1283,20 @@ const requestQueueDrain = (): void => {
 setSessionApplicationCommitWake((recipients) => {
   const wakeRecipients = recipients.filter(recipient => !readinessWakeSuppressed.has(recipient))
   queueMicrotask(() => {
-    for (const recipient of wakeRecipients) {
-      void Promise.resolve().then(() => sessionHasPendingDelivery(recipient) ? drainSession(recipient) : undefined).catch((error) => {
-        console.error(`spex: canonical delivery wake failed for ${recipient}: ${error instanceof Error ? error.message : String(error)}`)
-      })
-    }
+    void Promise.resolve().then(async () => {
+      // Transition commits already carry the durable subject event. Reconcile that event into the watcher's
+      // ordinary conversation queue now, so a managed watch does not wait for the patrol tick to become a prompt.
+      await reconcileWatchDeliveries(configuredSessionApplication(), wakeRecipients)
+      for (const recipient of wakeRecipients) {
+        try {
+          if (sessionHasPendingDelivery(recipient)) await drainSession(recipient)
+        } catch (error) {
+          console.error(`spex: canonical delivery wake failed for ${recipient}: ${error instanceof Error ? error.message : String(error)}`)
+        }
+      }
+    }).catch((error) => {
+      console.error(`spex: canonical delivery wake failed: ${error instanceof Error ? error.message : String(error)}`)
+    })
   })
 })
 
@@ -1303,9 +1324,9 @@ function watchMessageFromEvent(event: { payload: Uint8Array }, subjectSessionId:
   return { text: `[spex watch] ${subjectSessionId} is ${label}${note}`, status, previousStatus: typeof body.previousStatus === 'string' ? body.previousStatus : null }
 }
 
-async function reconcileWatchDeliveries(application: ProductionSessionApplication): Promise<void> {
+async function reconcileWatchDeliveries(application: ProductionSessionApplication, requestedWatchers?: readonly string[]): Promise<void> {
   const watchers: string[] = []
-  for (const id of listSessionIds()) {
+  for (const id of requestedWatchers ?? listSessionIds()) {
     try {
       const rec = readRecord(id)
       if (rec?.governed && !rec.archived) watchers.push(id)
@@ -1327,12 +1348,16 @@ async function reconcileWatchDeliveries(application: ProductionSessionApplicatio
       application.advanceFollowCursor(item.watcherSessionId, item.subjectSessionId, item.event.eventSeq)
       continue
     }
-    application.enqueueMessage(item.watcherSessionId, {
-      kind: 'session.prompt.v1',
-      body: Buffer.from(rendered.text, 'utf8'),
-      senderSessionId: item.subjectSessionId,
-      idempotencyKey: `watch-event:${item.event.eventId}`,
-    })
+    const alreadyQueued = application.readPendingMessages(item.watcherSessionId)
+      .some(message => message.idempotencyKey === item.event.eventId || message.idempotencyKey === `watch-event:${item.event.eventId}`)
+    if (!alreadyQueued) {
+      application.enqueueConversationMessage(item.watcherSessionId, {
+        kind: 'session.prompt.v1',
+        body: Buffer.from(rendered.text, 'utf8'),
+        senderSessionId: item.subjectSessionId,
+        idempotencyKey: `watch-event:${item.event.eventId}`,
+      }, { text: rendered.text, from: item.subjectSessionId })
+    }
     application.advanceFollowCursor(item.watcherSessionId, item.subjectSessionId, item.event.eventSeq)
     drain.add(item.watcherSessionId)
   }
@@ -3538,7 +3563,11 @@ async function closeSessionUnlocked(id: string, source: CloseSource): Promise<bo
 }
 export const closeSession = (id: string, rawSource?: unknown): Promise<boolean> => {
   const source = normalizeCloseSource(rawSource)
-  return withSessionTransition(id, () => withRecordLock(id, () => closeSessionUnlocked(id, source)))
+  return withSessionTransition(id, () => withRecordLock(id, async () => {
+    const closed = await closeSessionUnlocked(id, source)
+    if (closed) revokeSenderDelivery(id)
+    return closed
+  }))
 }
 
 function quarantineRecord(id: string): string | null {
@@ -3621,10 +3650,14 @@ type SendTextOptions = {
 }
 export async function sendText(id: string, text: string, from?: string, opts: SendTextOptions = {}): Promise<AcceptedDispatch> {
   if (!text.trim()) return { ok: false, error: EMPTY_PROMPT_ERROR }
+  if (from && senderDeliveryRevoked(from)) return { ok: false, error: `sender session ${from} is closed; prompt NOT delivered` }
   const application = configuredSessionApplication()
-  let message: ReturnType<ProductionSessionApplication['protocol']['enqueue']>
-    let replayed = false
-    try {
+  let message: ReturnType<ProductionSessionApplication['protocol']['enqueue']> | undefined
+  let replayed = false
+  let recordless = false
+  try {
+    await withRecordLocks([id, ...(from ? [from] : [])], async () => {
+      if (from && senderDeliveryRevoked(from)) throw new ResourceConflict(`sender session ${from} is closed; prompt NOT delivered`)
       const rec = readRecord(id)
       if (!rec) {
         // A registered address with no record is a self-launched harness ([[self-launch-entry]]): it has a queue but
@@ -3634,7 +3667,9 @@ export async function sendText(id: string, text: string, from?: string, opts: Se
         const address = application.readAddress(id)
         if (!address || address.retiredAtMs !== null) throw new ResourceConflict(`no session record for ${id} — prompt NOT delivered`)
         const bare = application.enqueueMessage(id, { kind: MESSAGE_KINDS.SESSION_TEXT, body: Buffer.from(text, 'utf8'), senderSessionId: from ?? null })
-        return { ok: true, delivery: 'queued', messageId: bare.messageId, recordless: true }
+        message = bare
+        recordless = true
+        return
       }
       await opts.acceptGuard?.(rec)
       const prompt = await composeSessionPrompt(text, rec, {
@@ -3651,15 +3686,19 @@ export async function sendText(id: string, text: string, from?: string, opts: Se
         ? application.readMessageHistory(id).find(message => message.idempotencyKey === idempotencyKey)
         : undefined
       message = existing ?? application.enqueueConversationMessage(id, {
-          kind: 'session.prompt.v1',
-          body: Buffer.from(prompt.text, 'utf8'),
-          senderSessionId: from ?? null,
-          idempotencyKey,
-        }, { text, from: from ?? null, ...(prompt.replyVia ? { replyVia: prompt.replyVia } : {}) })
+        kind: 'session.prompt.v1',
+        body: Buffer.from(prompt.text, 'utf8'),
+        senderSessionId: from ?? null,
+        idempotencyKey,
+      }, { text, from: from ?? null, ...(prompt.replyVia ? { replyVia: prompt.replyVia } : {}) })
       replayed = !!existing
-    } catch (error) {
-      return { ok: false, error: `could not append the message to session ${id}'s application queue: ${error instanceof Error ? error.message : String(error)}` }
-    }
+    })
+  } catch (error) {
+    return { ok: false, error: error instanceof ResourceConflict ? error.message : `could not append the message to session ${id}'s application queue: ${error instanceof Error ? error.message : String(error)}` }
+  }
+  const accepted = message
+  if (!accepted) return { ok: false, error: `could not append the message to session ${id}'s application queue: no message was recorded` }
+  if (recordless) return { ok: true, delivery: 'queued', messageId: accepted.messageId, recordless: true }
     // Acceptance and handover are separate boundaries. A committed SQLite message remains a successful
     // command even when the runtime is currently unbound; binding/resume is the explicit event that makes
     // the durable debt drainable. Reporting the post-commit refusal as an append failure made command-box
@@ -3669,7 +3708,7 @@ export async function sendText(id: string, text: string, from?: string, opts: Se
         if (!(error instanceof ResourceConflict) || !/no bound spex-governed runtime/u.test(error.message)) throw error
       }
     }
-    const pending = application.readPendingMessages(id).some(candidate => candidate.messageId === message.messageId)
+    const pending = application.readPendingMessages(id).some(candidate => candidate.messageId === accepted.messageId)
     // Queue acceptance is not runtime activity. A prompt remains owed while the adapter is unbound,
     // restarting, or refusing the insert; only the handoff that removes this exact message may re-enter
     // a waiting session as active. This keeps a queued command from painting a dead pane as working.
@@ -3717,6 +3756,11 @@ export async function drainSession(id: string): Promise<void> {
     for (;;) {
       const msg = application.readPendingMessages(id)[0]
       if (!msg) return
+      if (msg.senderSessionId && senderDeliveryRevoked(msg.senderSessionId) && !managedWatchMessage(msg)) {
+        const removed = application.dequeuePendingMessage(id, msg.messageId)
+        if (!removed || removed.messageId !== msg.messageId) throw new ResourceConflict(`canonical queue head changed while revoking sender debt for ${id}`)
+        continue
+      }
       const text = canonicalMessageText(msg, rec)
       if (h.deliveryBlockedBy) {
         try {

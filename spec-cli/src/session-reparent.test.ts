@@ -12,6 +12,7 @@ import { dirname, join } from 'node:path'
 import { createRequire } from 'node:module'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { reparentSessionRecords } from './sessions.js'
 
 const pkgRoot = fileURLToPath(new URL('..', import.meta.url))
 const cli = fileURLToPath(new URL('./cli.ts', import.meta.url))
@@ -127,6 +128,43 @@ async function stop(server: ReturnType<typeof spawn>): Promise<void> {
   await once(server, 'close')
 }
 
+test('reparent deduplicates a former parent that is also in the moved child batch', { timeout: 60_000 }, async () => {
+  const home = mkdtempSync(join(tmpdir(), 'spex-reparent-overlap-'))
+  const previousHome = process.env.SPEXCODE_HOME
+  const previousDatabase = process.env.SPEX_SESSION_DATABASE_PATH
+  process.env.SPEXCODE_HOME = home
+  process.env.SPEX_SESSION_DATABASE_PATH = join(home, 'sessions.sqlite')
+  writeFileSync(`${process.env.SPEX_SESSION_DATABASE_PATH}.json-migration.json`, JSON.stringify({ version: 1, sourceDigest: 'reparent-overlap-fixture' }) + '\n')
+  const oldParent = 'overlap-old-parent'
+  const child = 'overlap-child'
+  const grandchild = 'overlap-grandchild'
+  const nextParent = 'overlap-next-parent'
+  try {
+    writeSession(home, oldParent, null)
+    writeSession(home, child, oldParent)
+    writeSession(home, grandchild, child)
+    writeSession(home, nextParent, null)
+    const application = openProjectSessionApplication({ databasePath: resolveDatabasePath(), locality: () => {} })
+    application.createSession({ sessionId: oldParent })
+    application.createSession({ sessionId: child, parentSessionId: oldParent })
+    application.createSession({ sessionId: grandchild, parentSessionId: child })
+    application.createSession({ sessionId: nextParent })
+    application.attachWatcher(oldParent, child, 'watch:parent')
+    application.attachWatcher(child, grandchild, 'watch:parent')
+    const result = await reparentSessionRecords([child, grandchild], nextParent)
+    assert.deepEqual(result.children, [child, grandchild])
+    assert.equal(application.readState(child)?.parentSessionId, nextParent)
+    assert.equal(application.readState(grandchild)?.parentSessionId, nextParent)
+    application.close()
+  } finally {
+    if (previousHome === undefined) delete process.env.SPEXCODE_HOME
+    else process.env.SPEXCODE_HOME = previousHome
+    if (previousDatabase === undefined) delete process.env.SPEX_SESSION_DATABASE_PATH
+    else process.env.SPEX_SESSION_DATABASE_PATH = previousDatabase
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
 test('session reparent rewrites parent/watch through live backend and only falls back after a local refusal', { timeout: 60_000 }, async () => {
   const home = mkdtempSync(join(tmpdir(), 'spex-reparent-'))
   const project = fixtureProject(home)
@@ -178,11 +216,17 @@ test('session reparent rewrites parent/watch through live backend and only falls
     assert.match(newParentTimelineAtHandoff, new RegExp(childB), 'reparent delivers an already-working child current-state snapshot')
     const manualWatchState = await runCli(['session', 'done', '--propose', 'merge', '--session', childA, '--api', `http://127.0.0.1:${port}`], env, project)
     assert.equal(manualWatchState.code, 0, manualWatchState.err)
-    await waitFor(async () => timelineText(sessionDir(home, oldParent, project)).length > oldParentTimelineBefore.length,
+    // WAIT FOR THE THING BEING ASSERTED. These waits used to accept "the timeline grew", which is a weaker
+    // condition than the `/review/` they guard: any other watch notice arriving first satisfies growth while
+    // the review transition is still in flight, and the assertion below then reads a timeline whose newest
+    // line is, say, `[spex watch] <child> is created`. That raced from the day it was written and started
+    // losing once transition commits began waking watchers immediately instead of on the one-second patrol.
+    await waitFor(async () => /review/.test(timelineText(sessionDir(home, oldParent, project))),
       'the former parent\'s overlapping manual watch must survive reparent')
-    await waitFor(async () => timelineText(sessionDir(home, newParent, project)).length > newParentTimelineAtHandoff.length,
+    await waitFor(async () => /review/.test(timelineText(sessionDir(home, newParent, project))),
       'the new parent must receive a later non-working child transition')
-    assert.match(timelineText(sessionDir(home, oldParent, project)), /review/)
+    assert.ok(timelineText(sessionDir(home, oldParent, project)).length > oldParentTimelineBefore.length)
+    assert.ok(timelineText(sessionDir(home, newParent, project)).length > newParentTimelineAtHandoff.length)
     assert.deepEqual(pendingFrom(childADir), [], 'a moved child does not retain an undelivered command from its former supervisor')
     const newParentTimeline = timelineText(sessionDir(home, newParent, project))
     assert.match(newParentTimeline, new RegExp(childA))

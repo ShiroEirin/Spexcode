@@ -25,7 +25,7 @@ messages remain opaque and do not become conversation history. The composition n
 opt-in compatibility switch. State replay folds `session.state.changed.v1` and passes over the conversation message
 fact recorded beside it; migrated legacy history carries its own ignorable types and is skipped by the same fold.
 
-Lifecycle transitions record the subject event only. The owner-side watch poll resolves watcher recipients by their durable channel: a `watch:parent` relation suppresses the
+Lifecycle transitions record the subject event and return the affected watcher ids as a post-commit wake list. The owner-side adopter resolves watcher recipients by their durable channel: a `watch:parent` relation suppresses the
 routine `active`/working transition, while `watch:manual` opts into the complete feed. A migrated `watch` channel
-is normalized by the importer. When both channels point at one watcher, the union emits one queue item. The poll reads a batch, commits, enqueues and attempts transport, then advances the cursor in a separate short transaction; event ids are idempotency keys, giving at-least-once delivery without duplicate prompts after a crash. A backend restart resumes from the durable cursor. Creation still publishes its initial
+is normalized by the importer. When both channels point at one watcher, the union emits one queue item. The post-commit adopter wake reads the affected cursors, commits, enqueues and attempts transport, then advances the cursor in a separate short transaction; the patrol is recovery only. Event ids are idempotency keys, giving at-least-once delivery without duplicate prompts after a crash. A backend restart resumes from the durable cursor. Creation still publishes its initial
 snapshot through the ordinary relation transaction; this policy applies to later transitions.

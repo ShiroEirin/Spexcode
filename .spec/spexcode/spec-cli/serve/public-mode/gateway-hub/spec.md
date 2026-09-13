@@ -29,6 +29,8 @@ internal services; the hub owns the outside.
   the shell is code, not data (the fallback's own posture), and every data call it makes re-enters the
   gated JSON route. All API fetches (`application/json`, `*/*`) keep the catalog envelope and its auth
   semantics, as does the bare hub with no fallback.
+- `/host/identity` — a public, identity-only probe for local desktop/CLI attachment. It returns the gateway
+  instance id and no host inventory; full `/host` facts remain behind the admin scope.
 - `DELETE /projects/:projectId` — an admin-scoped registration-removal route mounted by the host extension;
   the hub never treats it as filesystem deletion. The extension owns its exact confirmation and lifecycle
   guards, while this gateway supplies the single admin authorization boundary.
