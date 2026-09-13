@@ -1,7 +1,7 @@
 ---
 concern: 实测：托管 watch 通知在改动前后分别以什么形态进入 watcher 的 timeline / 收件箱
 by: 2499a20b-ae58-4074-87de-3753e02fe63b
-status: open
+status: landed
 nodes: session-follow, session-timeline, delivery-queue
 created: 2026-09-13T09:11:23.917Z
 ---
