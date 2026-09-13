@@ -77,7 +77,7 @@ export const currentSession = (): string => envSessionId() || 'unknown'
 const sleep = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
 
 // ── file format ──────────────────────────────────────────────────────────────────────────────────────
-// frontmatter (concern/by/status/nodes/evidence/created) + a prose body, then any replies — each
+// frontmatter (concern/by/status/nodes/evidence/created/closedAt) + a prose body, then any replies — each
 // preceded by a `<!-- reply: <by> @ <iso> -->` sentinel: invisible in rendered markdown, unambiguous to
 // parse. Only the store writes these files, so a fixed shape is safe. The sentinel is the reply's WHOLE
 // header — author and instant. A sentinel carrying a trailing ` :: <attrs>` tail (a shape older
@@ -111,6 +111,8 @@ function parse(id: string, text: string): Issue {
     status: fm.status === 'landed' || fm.status === 'rejected' ? fm.status : 'open',
     nodes: list(fm.nodes),
     created: fm.created || '',
+    // a thread closed before the store kept a close instant has no key: it reads null, never a guessed moment
+    closedAt: fm.closedAt || null,
     body: body.join('\n').trim(),
     replies: replies.map((r) => ({ ...r, body: r.body.trim() })),
     evidence: list(fm.evidence),
@@ -148,6 +150,7 @@ function serialize(p: Issue): string {
     p.parent ? `parent: ${safeScalar(p.parent)}` : '',
     p.relations.length ? `relations: ${p.relations.map((r) => `${r.type}:${r.id}`).join(', ')}` : '',
     `created: ${p.created}`,
+    p.closedAt ? `closedAt: ${safeScalar(p.closedAt)}` : '',
   ].filter(Boolean)
   let out = `---\n${fm.join('\n')}\n---\n\n${safeBody(p.body)}\n`
   for (const r of p.replies) out += `\n<!-- reply: ${safeScalar(r.by)} @ ${safeScalar(r.at)} -->\n${safeBody(r.body)}\n`
@@ -337,6 +340,7 @@ export function openIssue(concern: string, opts: { nodes?: string[]; body?: stri
       status: 'open',
       nodes: [...new Set([...explicit, ...parseMentions(`${concern}\n${opts.body || ''}`).nodes])],
       created: new Date().toISOString(),
+      closedAt: null,
       body: (opts.body || `(no detail given — ${concern})`).trim(),
       replies: [],
       evidence: opts.evidence || [],
@@ -411,6 +415,9 @@ export function closeLocalIssue(id: string, opts: { duplicateOf?: string } = {})
       loadOne(canonical)
       p.relations = [...p.relations.filter((r) => r.type !== 'duplicate'), { type: 'duplicate', id: canonical }]
     }
+    // the instant is stamped only on the way out of open: a repeat close keeps the first moment (and stays the no-op),
+    // and a thread closed before the key existed keeps reading null instead of a made-up close time.
+    if (p.status === 'open') p.closedAt = new Date().toISOString()
     p.status = 'landed'
     return p
   })

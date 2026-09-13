@@ -68,7 +68,7 @@ async function paged<T>(path: string): Promise<T[]> {
 
 type ApiIssue = {
   iid: number; title: string; description: string | null; web_url: string; state: string
-  labels: ({ name?: string; color?: string; text_color?: string } | string)[]; author: { username: string } | null; created_at: string; user_notes_count: number
+  labels: ({ name?: string; color?: string; text_color?: string } | string)[]; author: { username: string } | null; created_at: string; closed_at?: string | null; user_notes_count: number
 }
 
 async function toIssue(r: ApiIssue): Promise<ForgeIssue> {
@@ -81,6 +81,7 @@ async function toIssue(r: ApiIssue): Promise<ForgeIssue> {
     labels: forgeLabels(r.labels),
     author: r.author?.username ?? '',
     createdAt: r.created_at ?? '',
+    closedAt: r.closed_at ?? null,
     comments: r.user_notes_count > 0 ? await listNotes(r.iid) : [],
   }
 }

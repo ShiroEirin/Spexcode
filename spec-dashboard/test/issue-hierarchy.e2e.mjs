@@ -184,6 +184,18 @@ if (MODE === 'before') {
   check('the Sessions rail counts the sub-issue worker too', sessionsLabel === 'sessions · 2', sessionsLabel)
   const ledger = await page.locator('.fv-subissue-link:visible').allTextContents()
   check('each sub-issue opening is a thread ledger row', ledger.some((t) => t.includes('Kid A: list grouping')) && ledger.some((t) => t.includes('Kid B: detail section')), ledger.join(' | '))
+  // a close is a row of its own at the child's closedAt, naming no author; Kid A is still open, so it has none
+  const epicRead = await api(`/api/issues/${encodeURIComponent(T.epic)}`)
+  const subRows = await page.locator('.fv-declaration:visible:has(.fv-subissue-link)').evaluateAll((els) => els.map((el) => ({
+    word: el.querySelector('.fv-declaration-word')?.textContent.trim(), by: el.querySelector('.fv-reply-by')?.textContent.trim() ?? null,
+    at: el.querySelector('.fv-reply-at')?.textContent.trim(), child: el.querySelector('.fv-subissue-link')?.textContent.trim(),
+  })))
+  const closeRows = subRows.filter((r) => r.word === 'sub-issue closed')
+  const kidBOpened = subRows.findIndex((r) => r.word === 'opened a sub-issue' && r.child.includes('Kid B: detail section'))
+  check('a closed sub-issue adds its close as a row at its closedAt, after its opening, with no author',
+    closeRows.length === 1 && closeRows[0].child.includes('Kid B: detail section') && closeRows[0].at === epicRead.refs?.[T.kidB]?.closedAt
+      && closeRows[0].by === null && kidBOpened >= 0 && subRows.indexOf(closeRows[0]) > kidBOpened,
+    JSON.stringify(subRows))
   check('Close issue stays offered with children open or done', (await page.locator('.fv-life-close:visible').count()) === 1)
   await shot('detail-epic')
   await section.locator('button.ds-action', { hasText: 'Hide completed' }).click()

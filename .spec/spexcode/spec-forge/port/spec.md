@@ -17,10 +17,12 @@ drivers** behind it. The name is the seam, never the vendor.
 Unlike a projection, the port **reads the forge**. Its two verbs fetch a host's work objects —
 `listIssues() → ForgeIssue[]` (issues of **all** states, so closed work stays linkable, not just live
 issues) and `listPRs() → ForgePR[]` (open PRs). `ForgeIssue` is the small stable subset an
-issue collapses to on every host (number, title, body, url, state, labels, author, createdAt — each label keeps
+issue collapses to on every host (number, title, body, url, state, labels, author, createdAt, closedAt — each label keeps
 its name plus any host-provided background/text colors; the body is
-where the `Spec: <id>` marker lives; author/createdAt are what lets a forge issue stand beside a local issue
-thread as the same object in the unified Issue port, spec-cli's [[issues]], with a `by` and a `created`).
+where the `Spec: <id>` marker lives; author/createdAt/closedAt are what lets a forge issue stand beside a local issue
+thread as the same object in the unified Issue port, spec-cli's [[issues]], with a `by`, a `created` and a `closedAt`).
+`closedAt` is the host's own close time, `null` while the issue is open; each driver reads it from the list row it
+already fetches, never a second request.
 It also carries the issue's **comments** (`ForgeComment[]`: author, createdAt, body — exactly what becomes
 a unified Issue's `replies[]`), riding the same list reads, not a second fetch path: the gh list
 asks for the `comments` JSON field (heavier per call, covered by [[forge-cache]]'s TTL), and the incremental

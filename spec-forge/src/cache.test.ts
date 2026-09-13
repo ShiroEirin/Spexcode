@@ -4,7 +4,7 @@ import { ForgeCache } from './cache.js'
 import type { ForgeIssue, ForgePR } from './port.js'
 
 const issue = (number: number, over: Partial<ForgeIssue> = {}): ForgeIssue =>
-  ({ number, title: `i${number}`, body: '', url: `u${number}`, state: 'open', labels: [], author: 'a', createdAt: 't', comments: [], ...over })
+  ({ number, title: `i${number}`, body: '', url: `u${number}`, state: 'open', labels: [], author: 'a', createdAt: 't', closedAt: null, comments: [], ...over })
 const pr = (number: number): ForgePR => ({ number, title: `p${number}`, url: `u${number}`, state: 'open', headRefName: `node/x-${number}`, closesIssues: [] })
 
 test('cache: applyIssues merges an updated-since window (upsert, close-in-place, never removes)', () => {

@@ -51,6 +51,7 @@ test('gitlab driver reconciles its live REST shape into a content-versioned cach
   await cache.reconcile(gitlabDriver)
   assert.equal(cache.state().issues.length, 7)
   assert.deepEqual(new Set(cache.state().issues.map((issue) => issue.state)), new Set(['open']))
+  assert.deepEqual(new Set(cache.state().issues.map((issue) => issue.closedAt)), new Set([null]), 'a row without closed_at reads null')
   assert.ok(paths.includes('/api/v4/projects/group%2Fadopter-a/issues'))
   const seeded = cache.stateRevision()
 
