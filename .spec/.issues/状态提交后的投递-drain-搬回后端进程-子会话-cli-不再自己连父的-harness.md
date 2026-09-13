@@ -21,3 +21,6 @@ created: 2026-09-13T10:31:46.968Z
 - `ss -xp` 采样：向父 harness 的投递连接由后端进程持有，不是子 CLI。
 - 没有后端时（fixture 不起 serve，只跑 CLI）通知仍能到达（本地 drain 兜底）。
 - 现有 session-follow / delivery 单测与 yatu 测试全过；typecheck、lint 0 error；review-report 后 `done --propose merge`。
+
+<!-- reply: 2499a20b-ae58-4074-87de-3753e02fe63b @ 2026-09-13T10:31:50.848Z -->
+@new:reclaude 接这个 issue，先读线程正文和它引用的 spec 节点，按验收做，严格隔离。
