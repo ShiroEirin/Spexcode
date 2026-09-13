@@ -35,19 +35,25 @@ export function filterReviewItems(items, state, config, context = {}) {
     qs.every((q) => config.search(item, context).some((value) => text(value).includes(q)))
     && config.facets.every((facet) => {
       const selected = state[facet.key]
-      return selected == null || selected === '' || values(facet.values(item, context)).map(String).includes(String(selected))
+      if (selected == null || selected === '') return true
+      return facet.matches
+        ? facet.matches(item, selected, context)
+        : values(facet.values(item, context)).map(String).includes(String(selected))
     })
   ))
+  // a domain may ARRANGE the matched rows — which of them stand as rows, in what order — after matching and before
+  // counting, so a section count is always the number of rows that section shows.
+  const arrange = (rows) => (config.arrange ? config.arrange(rows, state, context) : rows)
   const sectionValue = config.section && state[config.section.key]
   const sectionMatch = (item, selected) => (config.section.matches
     ? config.section.matches(item, selected, context)
     : String(config.section.value(item, context)) === String(selected))
-  const shown = sectionValue == null || sectionValue === ''
+  const shown = arrange(sectionValue == null || sectionValue === ''
     ? faceted
-    : faceted.filter((item) => sectionMatch(item, sectionValue))
-  // a section count is ONE number: the section's matched rows under the REST of the query.
+    : faceted.filter((item) => sectionMatch(item, sectionValue)))
+  // a section count is ONE number: the section's shown rows under the REST of the query.
   const sections = config.section
-    ? Object.fromEntries(config.section.options.map((option) => [option.value, faceted.filter((item) => sectionMatch(item, option.value)).length]))
+    ? Object.fromEntries(config.section.options.map((option) => [option.value, arrange(faceted.filter((item) => sectionMatch(item, option.value))).length]))
     : {}
   const facets = Object.fromEntries(config.facets.map((facet) => [facet.key, {
     key: facet.key,
@@ -67,13 +73,40 @@ const issuePresent = (issue, sessions) => !!sessionPresent(sessions, issue.by)
 // join the Issues page draws its strip from, so `fleet:need` lists exactly the rows whose strip reads "needs you".
 const fleetFacet = () => ({
   key: 'fleet', label: 'reviewList.facetFleet', fixedValues: FLEET_STATES,
-  values: (issue, { sessions }) => fleetWorkState(issueFleet(issue.id, sessions).fleet),
+  values: (issue, { sessions }) => fleetWorkState(issueFleet(issue, sessions).fleet),
   labelValue: (value, { t }) => optionLabel(t, `reviewList.fleet${value[0].toUpperCase()}${value.slice(1)}`, value),
 })
 const presenceFacet = (valuesOf) => ({
   key: 'session', label: 'reviewList.facetSession', fixedValues: ['present', 'missing'],
   values: valuesOf,
   labelValue: (value, { t }) => optionLabel(t, value === 'present' ? 'reviewList.sessionPresent' : 'reviewList.sessionMissing', value),
+})
+
+// @@@ issue tree - the two DISPLAY dimensions of the sub-issue tree ([[issues-view]]): they select no row by a field,
+// they arrange the matched ones. A sub-issue is NESTED when its parent also matched. `sub:top` (the default) folds a
+// nested sub-issue into its parent's row; one whose parent this view does not match (another state, another node, a
+// search) still stands as its own row, so no view hides an issue it matched. `sub:all` lists every match flat.
+// `group:parent` draws the matched set as the tree: each nested issue follows its parent, carrying its `depth`. A walk
+// starts only at a row that is not nested, so pointers that loop among nested rows can never spin it.
+export function arrangeIssueTree(rows, { sub = '', group = '' } = {}) {
+  const matched = new Set(rows.map((issue) => issue.id))
+  const nested = (issue) => !!issue.parent && matched.has(issue.parent)
+  if (group !== 'parent') return sub === 'all' ? rows : rows.filter((issue) => !nested(issue))
+  const kids = new Map()
+  for (const issue of rows) if (nested(issue)) kids.set(issue.parent, [...(kids.get(issue.parent) || []), issue])
+  const out = []
+  const walk = (issue, depth) => {
+    out.push(depth ? { ...issue, depth } : issue)
+    for (const kid of kids.get(issue.id) || []) walk(kid, depth + 1)
+  }
+  for (const issue of rows) if (!nested(issue)) walk(issue, 0)
+  return out
+}
+// offered only while the data holds a tree to arrange; it never filters a row itself.
+const treeFacet = (key, value) => ({
+  key, label: `reviewList.facet${key[0].toUpperCase()}${key.slice(1)}`, fixedValues: [value], minValues: 1,
+  values: (issue) => (issue.parent ? value : null),
+  matches: () => true,
 })
 
 export function issueFilterState(raw = {}, { defaultSection = '' } = {}) {
@@ -85,6 +118,8 @@ export function issueFilterState(raw = {}, { defaultSection = '' } = {}) {
     author: raw.author || '', store: raw.store || '', node: raw.node || '', label: raw.label || '',
     session: raw.session || '',
     fleet: raw.fleet || '',
+    sub: raw.sub || '',
+    group: raw.group || '',
   }
 }
 
@@ -106,7 +141,10 @@ const ISSUE_CONFIG = {
     { key: 'label', label: 'reviewList.facetLabel', values: (issue) => (issue.labels || []).map((label) => typeof label === 'string' ? label : label?.name), minValues: 1 },
     presenceFacet((issue, { sessions }) => issuePresent(issue, sessions) ? 'present' : 'missing'),
     fleetFacet(),
+    treeFacet('sub', 'all'),
+    treeFacet('group', 'parent'),
   ],
+  arrange: (rows, state) => arrangeIssueTree(rows, state),
 }
 
 export function issueFilterModel(items, raw = {}, context = {}) {
@@ -154,6 +192,9 @@ const TOKEN_MAPS = {
     label: (v) => ({ label: v }),
     session: (v) => ({ session: v }),
     fleet: (v) => ({ fleet: v }),
+    // the defaults have spellings too, so a hand-typed `sub:top` or `group:none` is the default view, not a zero
+    sub: (v) => (v === 'all' ? { sub: 'all' } : v === 'top' ? { sub: '' } : null),
+    group: (v) => (v === 'parent' ? { group: 'parent' } : v === 'none' ? { group: '' } : null),
   },
 }
 

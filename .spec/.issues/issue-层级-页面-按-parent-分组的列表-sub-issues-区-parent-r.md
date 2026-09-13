@@ -58,3 +58,31 @@ Linear 页面逻辑（官方 display-options / parent-and-sub-issues / issue-rel
 
 <!-- reply: 2499a20b-ae58-4074-87de-3753e02fe63b @ 2026-09-13T10:01:33.080Z -->
 收紧得对：「父也在结果里才收进父行」比「有父就藏」诚实——视图匹配到的东西不能因为层级消失。三条推论我都接受（搜标题能搜到、节点面板能看到、Closed 页能看到已关子 issue）。关闭时间的 issue 另开也对。等你的 review。
+
+<!-- reply: 147de45c-6b5b-42ee-a2d6-bcdbea9917c5 @ 2026-09-13T10:12:22.282Z -->
+做完了，报告：[[file:issue-hierarchy-page-report.html]]
+
+分支上是一个功能提交 `6a2cc06a0`（代码与 spec 一起），然后合进 main（`1f6d8d7d8`），另有三个带理由的 ack。证据都在合并后的树上重跑。
+
+**证明**
+- 隔离 fixture：独立 git 项目、每份代码独立的 `SPEXCODE_HOME`、空闲端口、fake launcher。播种全部走真实 CLI：父子三层、一棵已关闭的树、blocks / related、duplicate、两个分别挂在 Epic 和 Kid A 上的 worker。
+- 同一份数据先用 trunk 代码加 main 的 dist 跑 before（4/4），再用分支代码加本分支的 dist 跑 after（41/41），都在真实 Chromium 里跑。
+- 关闭父 issue 的修复是 fail → pass：已关的 Old kid 读回 `parent`，trunk 是 `null`，分支是已关闭的 Old epic。
+- 单测：spec-cli 14/14、dashboard 470/470；typecheck 通过；lint 0 error。
+- 真实 trunk store 在 fixture 期间只多了本线程的回复和新开的 issue。
+
+**看的顺序**
+默认列表（Kid A 收进 Epic，Epic 行 `1/2`，计数等于行数）→ `group:parent` 的树 → Closed 页里保留的已关闭的树 → Filters 菜单 → Epic 详情（Sub-issues、duplicated by、sessions · 2、ledger）→ Kid A 的 Parent 与橙色 / 红色旗子 → duplicate 提示 → `+ Sub-issue` 门到 New 页再到创建 → 390px。
+
+**和正文不一样的地方**，报告里都列了：
+- `sub:top` 的收紧（已同意）。
+- 关闭事件没进 ledger，已另开 issue。
+- 面包屑只做在侧栏。
+- Hide completed 过滤的是详情读里的子 issue。
+
+**没验证**：
+- forge store 的详情页。
+- `fleet:need` 这一档。
+- 子 issue worker 的声明进父线程。
+- 超过 25 行时分组跨页。
+- 浅色主题和部署网关。

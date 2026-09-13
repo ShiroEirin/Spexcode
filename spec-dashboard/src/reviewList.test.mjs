@@ -436,9 +436,11 @@ test('list metadata keeps native controls beside the real detail anchor', () => 
   assert.match(css, /\.lp-row-link \{ position: absolute; inset: 0; z-index: 0;/)
   assert.match(css, /\.rl-row-grid \{ position: relative; z-index: 1;[\s\S]*pointer-events: none;/)
   assert.match(css, /\.rl-row-grid a, \.rl-row-grid button \{ pointer-events: auto; \}/)
-  assert.match(issues, /IssueLabels labels=\{th\.labels\} onSelect=\{\(name\) => surgery\('label', name\)\}/)
+  // the ONE issue row builder takes the chip's filter action from its list, which spends it on token surgery
+  assert.match(issues, /IssueLabels labels=\{th\.labels\} onSelect=\{onLabel\}/)
+  assert.match(issues, /onLabel: \(name\) => surgery\('label', name\)/)
   assert.match(issues, /<a className="rl-tag node" href=\{addressHash\(specAddress\(th\.nodes\[0\]\)\)\}>/)
-  assert.match(issues, /ISSUE_QUERY_KEYS = \['is', 'state', 'store', 'author', 'node', 'label', 'session', 'fleet'\]/)
+  assert.match(issues, /ISSUE_QUERY_KEYS = \['is', 'state', 'store', 'author', 'node', 'label', 'session', 'fleet', 'sub', 'group'\]/)
 })
 
 test('issue evidence media keeps intrinsic geometry — shrink-only, no flex-stretch', () => {

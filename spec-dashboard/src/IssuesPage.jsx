@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { loadIssue, loadSessionTimeline, postIssueClose, postIssuePromote, postIssueReply, postIssueThread } from './data.js'
-import { ledgerFromTimeline } from './issueLedger.js'
+import { ledgerFromChildren, ledgerFromTimeline } from './issueLedger.js'
 import { MENTION_RE, TriggerButton, typeTrigger, useMentionAutocomplete } from './mentions.jsx'
 import { ComposerSurface, ComposerTextarea, composingKey } from './Composer.jsx'
 import { SpecBody } from './NodeView.jsx'
 import { Replies, ReplyComposer, OriginatorLiveness } from './Thread.jsx'
 import { useWidgetHost } from './widgetHost.js'
 import { useT } from './i18n/index.jsx'
-import { DetailShell, FacetMenu, ListPage, ReviewListRow, ReviewState, SecondaryFilters, SideSection, SideValue } from './ReviewShell.jsx'
+import { DetailShell, FacetMenu, ListPage, ReviewListRow, ReviewRows, ReviewState, SecondaryFilters, SideSection, SideValue } from './ReviewShell.jsx'
 import { ISSUE_QUERY_DEFAULT, queryParam, readToken, reviewRouteQuery, setToken } from '@spexcode/spec-core/review'
 import { reviewActorName } from '@spexcode/spec-core/review'
 import { reviewPageNumber, useReviewPage } from './reviewPage.js'
@@ -55,7 +55,7 @@ const issueNumber = (id) => {
 
 // the page's recognized qualifier vocabulary — what the highlight overlay colors and the key
 // autocomplete offers; anything else stays plain and matches nothing.
-export const ISSUE_QUERY_KEYS = ['is', 'state', 'store', 'author', 'node', 'label', 'session', 'fleet']
+export const ISSUE_QUERY_KEYS = ['is', 'state', 'store', 'author', 'node', 'label', 'session', 'fleet', 'sub', 'group']
 
 // The LIST page (`#/issues[?q=<raw tokens>]`) requests one resident-source page from the server; the WHOLE
 // face is ONE visible token query ([[review-query]]) bridged into the
@@ -66,6 +66,44 @@ const facetOptions = (data, key, allLabel, labelValue = (value) => value) => (da
   value: option.value,
   label: option.value === '' ? allLabel : labelValue(option.value),
 }))
+
+// ONE issue row ([[issues-view]]): the list page and the detail's Sub-issues section draw an issue from the same facts
+// through this builder, so a sub-issue there reads exactly as it does in the list. A row the tree nests carries its
+// `depth`; a parent row counts its closed sub-issues beside the comment count.
+function issueRow(th, { t, sessions = [], stores = [], onLabel = null }) {
+  const status = th.status || 'open'
+  const closedKids = th.childCounts?.closed ?? 0
+  const kids = (th.childCounts?.open ?? 0) + closedKids
+  return {
+    key: th.id,
+    label: th.concern,
+    href: routeHash('issues', th.id),
+    content: (
+      <ReviewListRow
+        depth={th.depth || 0}
+        state={<ReviewState kind="issue" state={status} />}
+        title={<><span className="rl-row-title-text">{th.concern}</span><IssueLabels labels={th.labels} onSelect={onLabel} /></>}
+        meta={(
+          <>
+            <span data-tip={th.id}>{issueNumber(th.id)}</span>
+            {th.by && <span data-tip={th.by}>{t('reviewList.openedBy', { by: reviewActorName(th.by) })}</span>}
+            {th.created && <span>{t('reviewList.openedAt', { at: age(th.created) })}</span>}
+          </>
+        )}
+        aside={(
+          <>
+            {/* who is on it ([[issue-binding]]): the fleet strip, joined client-side against the board the page already holds */}
+            <FleetStrip fleet={issueFleet(th, sessions).fleet} />
+            {kids > 0 && <span className="rl-comments" data-tip={t('session.issuesSubCount', { closed: closedKids, total: kids })}><Icon name="list-checks" size={14} />{closedKids}/{kids}</span>}
+            {(th.replies?.length ?? 0) > 0 && <span className="rl-comments" data-tip={t('session.issuesReplies', { n: th.replies.length })}><Icon name="message-square" size={14} />{th.replies.length}</span>}
+            {stores.length > 1 && <span className={`rl-tag fv-store-${th.store === 'local' ? 'local' : 'forge'}`}>{th.store}</span>}
+            {th.nodes?.[0] && <a className="rl-tag node" href={addressHash(specAddress(th.nodes[0]))}>{th.nodes[0]}</a>}
+          </>
+        )}
+      />
+    ),
+  }
+}
 
 export function IssuesListPage({ data, loading, error, query, onQueryText, sessions = [] }) {
   const t = useT()
@@ -87,38 +125,7 @@ export function IssuesListPage({ data, loading, error, query, onQueryText, sessi
 
   // a row leads with the ISSUE (status mark + concern); store/replies are trailing quiet meta —
   // the store mini-tag renders only while stores are actually mixed ([[issues-view]]).
-  const rows = issues.map((th) => {
-    const status = th.status || 'open'
-    return {
-      key: th.id,
-      label: th.concern,
-      href: routeHash('issues', th.id),
-      content: (
-        <>
-          <ReviewListRow
-            state={<ReviewState kind="issue" state={status} />}
-            title={<><span className="rl-row-title-text">{th.concern}</span><IssueLabels labels={th.labels} onSelect={(name) => surgery('label', name)} /></>}
-            meta={(
-              <>
-                <span data-tip={th.id}>{issueNumber(th.id)}</span>
-                {th.by && <span data-tip={th.by}>{t('reviewList.openedBy', { by: reviewActorName(th.by) })}</span>}
-                {th.created && <span>{t('reviewList.openedAt', { at: age(th.created) })}</span>}
-              </>
-            )}
-            aside={(
-              <>
-                {/* who is on it ([[issue-binding]]): the fleet strip, joined client-side against the board the page already holds */}
-                <FleetStrip fleet={issueFleet(th.id, sessions).fleet} />
-                {(th.replies?.length ?? 0) > 0 && <span className="rl-comments" data-tip={t('session.issuesReplies', { n: th.replies.length })}><Icon name="message-square" size={14} />{th.replies.length}</span>}
-                {stores.length > 1 && <span className={`rl-tag fv-store-${th.store === 'local' ? 'local' : 'forge'}`}>{th.store}</span>}
-                {th.nodes?.[0] && <a className="rl-tag node" href={addressHash(specAddress(th.nodes[0]))}>{th.nodes[0]}</a>}
-              </>
-            )}
-          />
-        </>
-      ),
-    }
-  })
+  const rows = issues.map((th) => issueRow(th, { t, sessions, stores, onLabel: (name) => surgery('label', name) }))
 
   // New is a DOOR to its own page ([[issues-view]]'s compose address), so it is a REAL anchor — a click is
   // the same transaction the address bar produces, and middle-click/new-tab/copy-address come free.
@@ -134,6 +141,17 @@ export function IssuesListPage({ data, loading, error, query, onQueryText, sessi
   const fleetFacet = {
     label: t('reviewList.facetFleet'), value: readToken(text, 'fleet'),
     options: facetOptions(data, 'fleet', t('reviewList.all'), (value) => t(`reviewList.fleet${value[0].toUpperCase()}${value.slice(1)}`)),
+  }
+  // the sub-issue tree's two display dimensions ([[review-filters]] arranges them before paging) — the same menu
+  // grammar; a typed default spelling (`sub:top`, `group:none`) is the default, so the menu never counts it active.
+  const treeValue = (key, defaultSpelling) => { const value = readToken(text, key); return value === defaultSpelling ? '' : value }
+  const subFacet = {
+    label: t('reviewList.facetSub'), value: treeValue('sub', 'top'), clearLabel: t('reviewList.subTop'),
+    options: facetOptions(data, 'sub', t('reviewList.subTop'), () => t('reviewList.subAll')),
+  }
+  const groupFacet = {
+    label: t('reviewList.facetGroup'), value: treeValue('group', 'none'), clearLabel: t('reviewList.groupNone'),
+    options: facetOptions(data, 'group', t('reviewList.groupNone'), () => t('reviewList.groupParent')),
   }
 
   return (
@@ -168,6 +186,8 @@ export function IssuesListPage({ data, loading, error, query, onQueryText, sessi
       secondaryFilters={<SecondaryFilters label={t('reviewList.filters')} clearLabel={t('reviewList.all')} groups={[
         { label: sessionFacet.label, value: sessionFacet.value, active: !!sessionFacet.value, options: sessionFacet.options, onChange: (value) => surgery('session', value) },
         { label: fleetFacet.label, value: fleetFacet.value, active: !!fleetFacet.value, options: fleetFacet.options, onChange: (value) => surgery('fleet', value) },
+        { label: subFacet.label, value: subFacet.value, active: !!subFacet.value, options: subFacet.options, clearLabel: subFacet.clearLabel, onChange: (value) => surgery('sub', value) },
+        { label: groupFacet.label, value: groupFacet.value, active: !!groupFacet.value, options: groupFacet.options, clearLabel: groupFacet.clearLabel, onChange: (value) => surgery('group', value) },
       ]} />}
       rows={rows}
       pagination={data ? {
@@ -201,6 +221,73 @@ function useFleetLedger(fleet) {
   return ledger
 }
 
+// a linked issue as a rail value: its concern, led by its state mark (or by a relation's flag), its id on the tooltip.
+function IssueLink({ issue, flag = null, className = '' }) {
+  return (
+    <SideValue text={issue.concern || issue.id} tip={issue.id} href={routeHash('issues', issue.id)} className={className}
+      lead={flag || (issue.status ? <ReviewState kind="issue" state={issue.status} size={12} /> : null)} />
+  )
+}
+
+// the issue's RELATIONS as the read-time graph gives them, both directions ([[issues]]): what blocks it, what it blocks,
+// what relates either way, and the duplicate edge each way — one row per edge, deduplicated within its kind.
+const relationRows = (th) => {
+  const rows = []
+  const push = (kind, ids) => { for (const id of new Set(ids)) rows.push({ kind, id }) }
+  const out = (type) => (th.relations || []).filter((r) => r.type === type).map((r) => r.id)
+  push('blockedBy', th.blockedBy || [])
+  push('blocks', out('blocks'))
+  push('related', [...out('related'), ...(th.relatedBy || [])])
+  push('duplicateOf', th.duplicateOf ? [th.duplicateOf] : [])
+  push('duplicatedBy', th.duplicatedBy || [])
+  return rows
+}
+
+// the detail's SUB-ISSUES section ([[issues-view]]): progress over the issue's own child counts, the children as the
+// list page's own rows, a hide-completed switch over those rows of the one read, and the `+ Sub-issue` door — a real
+// anchor to the compose page with the parent filled in, offered only where the store takes a sub-issue (an open local
+// issue). The door prepares; the compose page writes.
+function SubIssues({ issue, kids, sessions }) {
+  const t = useT()
+  const [hideDone, setHideDone] = useState(false)
+  const closed = issue.childCounts?.closed ?? 0
+  const total = (issue.childCounts?.open ?? 0) + closed
+  const door = issue.store === 'local' && issue.status === 'open'
+    ? <a className="ds-action" href={routeHash('issues', NEW_PARAM, { parent: issue.id })}><Icon name="plus" size={12} />{t('session.issuesSubNew')}</a>
+    : null
+  if (!total && !door) return null
+  const shown = hideDone ? kids.filter((kid) => kid.status === 'open') : kids
+  const progress = t('session.issuesSubCount', { closed, total })
+  return (
+    <section className="fv-subissues" aria-label={t('session.issuesSubTitle')}>
+      <header className="fv-subissues-head">
+        <span className="ds-side-label">{t('session.issuesSubTitle')}</span>
+        {total > 0 && (
+          <>
+            <span className="fv-subissues-count" data-tip={progress}>{t('session.issuesSubProgress', { closed, total })}</span>
+            <span className="fv-progress" role="progressbar" aria-label={progress} aria-valuemin={0} aria-valuemax={total} aria-valuenow={closed}>
+              <span style={{ width: `${(closed / total) * 100}%` }} />
+            </span>
+          </>
+        )}
+        <span className="fv-subissues-actions">
+          {closed > 0 && (
+            <button type="button" className="ds-action" aria-pressed={hideDone} onClick={() => setHideDone((on) => !on)}>
+              {t('session.issuesSubHideDone')}
+            </button>
+          )}
+          {door}
+        </span>
+      </header>
+      {shown.length > 0 && (
+        <div className="rl-list fv-subissues-rows">
+          <ReviewRows rows={shown.map((kid) => issueRow(kid, { t, sessions }))} />
+        </div>
+      )}
+    </section>
+  )
+}
+
 // The DETAIL page (`#/issues/<id>`) — [[review-chrome]]'s GitHub-grammar skeleton: the concern ALONE as
 // the title, the status band under it, the markdown body + reply thread as the MAIN column with the
 // composer docked at its foot, and the store/originator/node/permalink metadata in the SIDE rail (reflowed
@@ -216,8 +303,13 @@ export function IssueDetailPage({ issue: th, specs, sessions, onOpenSession, onW
   const labels = Array.isArray(th.labels) ? th.labels : []
   const replies = Array.isArray(th.replies) ? th.replies : []
   const status = th.status || 'open'
-  const { fleet } = issueFleet(th.id, sessions)
+  const { fleet } = issueFleet(th, sessions)
   const ledger = useFleetLedger(fleet)
+  // every issue the hierarchy links is titled from the read's own `refs` ([[issues]]) — one read, no request per link
+  const refs = th.refs || {}
+  const kids = (th.children || []).map((id) => refs[id]).filter(Boolean)
+  const parent = th.parent ? refs[th.parent] : null
+  const relations = relationRows(th)
   // the thread is a home of the one widget host ([[widgets]]): its replies draft into, and send from, this composer
   const widgetHost = useWidgetHost()
   const [composeSeed, setComposeSeed] = useState(null)   // a rail door's trigger for the composer to type, consumed once
@@ -268,6 +360,20 @@ export function IssueDetailPage({ issue: th, specs, sessions, onOpenSession, onW
               <IssueLabels labels={labels} onSelect={(name) => onQueryText?.(setToken(ISSUE_QUERY_DEFAULT, 'label', name))} />
             </SideSection>
           )}
+          {/* the tree and the relation graph: the parent as a breadcrumb, then every edge led by its flag */}
+          {parent && (
+            <SideSection label={t('detail.sideParent')}>
+              <IssueLink issue={parent} />
+            </SideSection>
+          )}
+          {relations.length > 0 && (
+            <SideSection label={t('detail.sideRelations')}>
+              {relations.map(({ kind, id }) => (
+                <IssueLink key={`${kind}:${id}`} issue={refs[id] || { id }}
+                  flag={<><span className={`fv-originator-dot fv-rel-${kind}`} aria-hidden="true" /><span className="ds-side-label fv-rel-key">{t(`detail.rel${kind[0].toUpperCase()}${kind.slice(1)}`)}</span></>} />
+              ))}
+            </SideSection>
+          )}
           {/* the issue's FLEET ([[issue-binding]]): the sessions dispatched for it, as the one session forest with the
               one session menu, plus the dispatch door — the rail is where GitHub keeps assignees, and here the
               assignees are worktrees you can merge, relaunch, or close. */}
@@ -315,8 +421,16 @@ export function IssueDetailPage({ issue: th, specs, sessions, onOpenSession, onW
         />
       }
     >
+      {th.duplicateOf && (
+        <div className="fv-duplicate" role="note">
+          <Icon name="circle-minus" size={14} />
+          <span>{t('session.issuesDuplicateOf')}</span>
+          <a href={routeHash('issues', th.duplicateOf)}>{refs[th.duplicateOf]?.concern || th.duplicateOf}</a>
+        </div>
+      )}
       {th.body && <div className="fvd-body"><SpecBody body={th.body} /></div>}
-      <Replies replies={replies} sessions={sessions} ledger={ledger} widgetHost={widgetHost} />
+      <SubIssues issue={th} kids={kids} sessions={sessions} />
+      <Replies replies={replies} sessions={sessions} ledger={[...ledger, ...ledgerFromChildren(kids)]} widgetHost={widgetHost} />
     </DetailShell>
   )
 }
@@ -384,7 +498,7 @@ export default function IssuesPage({ param = null, query = EMPTY_QUERY, onOpenSe
   if (composing) {
     if (list.data && !list.data.enabled) return <div className="fv-note">{t('session.issuesOff')}</div>
     const writeStores = Array.isArray(list.data?.stores) && list.data.stores.length ? list.data.stores : [{ id: 'local', label: 'local', kind: 'local' }]
-    return <NewIssuePage specs={specs} sessions={sessions} stores={writeStores}
+    return <NewIssuePage specs={specs} sessions={sessions} stores={writeStores} parent={query.parent || null} issuesStamp={issuesStamp}
       // the created issue is where the writer belongs; the spent compose address REPLACES ([[side-nav]]:
       // automatic state-naming replaces, so Back returns to the list, not to an emptied form).
       onCreated={(id, outcomes) => { flash(outcomes); scope.open({ page: 'issues', param: id, query: null }, { replace: true }) }} />
@@ -420,8 +534,12 @@ const storeDisplayName = (id) => STORE_DISPLAY_NAMES[id] || id
 // post writes the `Spec:` marker from the same prose — and the rail SHOWS the links it will make, so no
 // separate node-ids field exists. Write/Preview renders the draft through the one SpecBody the detail page
 // renders it with, so what the writer proofreads is what the issue will look like.
-function NewIssuePage({ specs, sessions, stores, onCreated }) {
+function NewIssuePage({ specs, sessions, stores: allStores, parent = null, issuesStamp = null, onCreated }) {
   const t = useT()
+  // `?parent=<id>` composes a sub-issue: only the local store holds a tree, so the picker narrows to it, and the rail
+  // names the parent from its own addressed read.
+  const stores = useMemo(() => (parent ? allStores.filter((s) => s.kind === 'local') : allStores), [parent, allStores])
+  const parentIssue = useIssueDetail(parent, issuesStamp).issue
   const [store, setStore] = useState(stores[0]?.id || 'local')
   const [concern, setConcern] = useState('')
   const [body, setBody] = useState('')
@@ -445,7 +563,7 @@ function NewIssuePage({ specs, sessions, stores, onCreated }) {
     setBusy(true)
     setErr('')
     try {
-      const res = await postIssueThread({ concern: c, body: body.trim() || undefined, store })
+      const res = await postIssueThread({ concern: c, body: body.trim() || undefined, store, parent: parent || undefined })
       if (res?.ok && res.id) onCreated?.(res.id, res.outcomes || '')
       else setErr(res?.error || t('session.issuesPostFailed'))
     } finally { setBusy(false) }
@@ -461,6 +579,11 @@ function NewIssuePage({ specs, sessions, stores, onCreated }) {
       backLabel={t('detail.backToIssues')}
       side={
         <>
+          {parent && (
+            <SideSection label={t('detail.sideParent')}>
+              <IssueLink issue={parentIssue || { id: parent }} />
+            </SideSection>
+          )}
           <SideSection label={t('session.issuesStoreLabel')}>
             <label className="fv-store-pick">
               <span className="sr-only">{t('session.issuesStoreLabel')}</span>

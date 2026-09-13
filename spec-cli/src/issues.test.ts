@@ -5,14 +5,14 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { execFileSync } from 'node:child_process'
 
-import { fromForge, issueHierarchy, mergedIssues, type Issue } from './issues.js'
+import { fromForge, issueHierarchy, issueRefs, mergedIssues, type Issue } from './issues.js'
 import { closeLocalIssue, loadLocalIssues, loadOne, openIssue, relateLocalIssue, reparentLocalIssue } from './localIssues.js'
 
 // the stored shape a store read hands the merged read: every derived field at its empty value.
 const stored = (id: string, at: number, over: Partial<Issue> = {}): Issue => ({
   id, store: 'local', concern: id, by: 'test', status: 'open', nodes: [], created: `2026-09-13T00:00:${String(at).padStart(2, '0')}Z`,
   body: '', replies: [], evidence: [], labels: [],
-  parent: null, children: [], childCounts: { open: 0, closed: 0 },
+  parent: null, children: [], descendants: [], childCounts: { open: 0, closed: 0 },
   relations: [], blockedBy: [], relatedBy: [], duplicatedBy: [], duplicateOf: null,
   ...over,
 })
@@ -29,7 +29,7 @@ function withDisposableStore(fn: () => void): void {
   }
 }
 
-test('the issue tree is rebuilt at read: a child nests under an open present parent, else it is a root', () => {
+test('the issue tree is rebuilt at read: a child nests under a present parent, open or closed, else it is a root', () => {
   const out = byId(issueHierarchy([
     stored('epic', 1),
     stored('task', 2, { parent: 'epic' }),
@@ -45,8 +45,25 @@ test('the issue tree is rebuilt at read: a child nests under an open present par
   assert.deepEqual(out.get('epic')?.childCounts, { open: 1, closed: 1 })
   assert.deepEqual(out.get('task')?.children, ['step'])
   assert.equal(out.get('orphan')?.parent, null, 'a parent absent from the set promotes the child')
-  assert.equal(out.get('under-shipped')?.parent, null, 'a closed parent promotes the child')
-  assert.deepEqual(out.get('shipped')?.children, [])
+  assert.equal(out.get('under-shipped')?.parent, 'shipped', 'a closed parent keeps its child: a closed tree keeps its shape')
+  assert.deepEqual(out.get('shipped')?.children, ['under-shipped'])
+  assert.deepEqual(out.get('epic')?.descendants, ['task', 'step', 'done-task'], 'every issue below, depth-first, oldest sibling first')
+  assert.deepEqual(out.get('step')?.descendants, [])
+})
+
+test('refs give the detail read the compact face of every issue its hierarchy names, and nothing else', () => {
+  const merged = issueHierarchy([
+    stored('epic', 1),
+    stored('task', 2, { parent: 'epic', relations: [{ type: 'blocks', id: 'other' }] }),
+    stored('other', 3),
+    stored('dup', 4, { status: 'landed', relations: [{ type: 'duplicate', id: 'task' }] }),
+    stored('unrelated', 5),
+  ])
+  const task = byId(merged).get('task')!
+  const refs = issueRefs(task, merged)
+  assert.deepEqual(Object.keys(refs).sort(), ['dup', 'epic', 'other'])
+  assert.deepEqual(refs.epic, { id: 'epic', store: 'local', concern: 'epic', status: 'open', by: 'test', created: '2026-09-13T00:00:01Z', childCounts: { open: 1, closed: 0 }, descendants: ['task'] })
+  assert.equal(refs.dup.status, 'landed')
 })
 
 test('a parent cycle promotes its members to roots and keeps their descendants attached', () => {

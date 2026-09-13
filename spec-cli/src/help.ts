@@ -501,7 +501,7 @@ close — routes by the issue's own store too, so a thread ends where it lives. 
 closes a local issue as a duplicate of its canonical.
 
 reparent — moves a local issue under another OPEN local issue, or back to the top with --to none. The
-tree is rebuilt on every read: a child whose parent is closed or gone reads as a root.
+tree is rebuilt on every read: a closed parent keeps its children, and a child whose parent is gone reads as a root.
 
 relate — records an edge on the first issue: blocks, related, or duplicate (which is close
 --duplicate-of). Reverse edges are read-time, and a blocker that is no longer OPEN reads as related.

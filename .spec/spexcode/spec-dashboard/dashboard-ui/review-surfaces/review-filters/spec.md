@@ -55,6 +55,15 @@ The Issue adapter exposes forge label names as the exact-match high-cardinality 
 not a second client-only tag filter: token parsing, matching, options, counts, and the bounded server slice
 all travel through this engine. A local issue has no label values and therefore honestly cannot match one.
 
+The Issue adapter also carries the sub-issue tree's two DISPLAY dimensions. They select no row by a field: after
+matching and before counting, the adapter ARRANGES the matched rows (`arrangeIssueTree`, the engine's `arrange`
+hook). A sub-issue is nested when its parent also matched. `sub:top` (the default) folds a nested sub-issue into its
+parent's row, while a sub-issue whose parent the view does not match still stands as its own row — a search, a node
+pane or the Closed section never hides an issue it matched; `sub:all` lists every match flat; `group:parent` draws the
+matched set as a tree, each nested issue following its parent depth-first and carrying `depth`. Section counts are
+taken after the arrangement, so a tab's count is the rows it shows. Both facets offer options only while some issue
+has a parent, and `sub:top` / `group:none` spell the defaults.
+
 Canonical Issues opens on outstanding work (`is:issue state:open`). An active section or fixed-value facet
 choice stays selectable at zero rows so it can be cleared; a node-local list naturally omits the node facet
 because it has no choice — absence of data, not a special-case branch.

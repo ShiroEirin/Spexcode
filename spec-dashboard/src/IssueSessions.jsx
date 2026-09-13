@@ -75,7 +75,7 @@ function RailAction({ children, tone = '', ...props }) {
 // the picked row's CARD: the session's own facts as rail rows — status and note, branch, posted files / web
 // services / widgets as REAL anchors into the console surface that shows each ([[resource-tabs]]' address
 // grammar) — every fact already on the wire, no second viewer; then the console door.
-function FleetCard({ s, onOpenSession }) {
+function FleetCard({ s, issueId, onOpenSession }) {
   const t = useT()
   const d = sessionDisplayState(s)
   const files = s.files || []
@@ -86,6 +86,8 @@ function FleetCard({ s, onOpenSession }) {
   return (
     <div className="fv-fleet-card" role="region" aria-label={sessionHeadline(s)}>
       <SideValue lead={key(t('fleet.cardStatus'))} text={`${t(`status.${d.status}`)}${s.note ? ` · ${s.note}` : ''}`} />
+      {/* a parent issue's fleet holds its sub-issues' workers: the row names the issue it actually works */}
+      {s.issue && s.issue !== issueId && <SideValue lead={key(t('fleet.cardIssue'))} text={s.issue} mono href={routeHash('issues', s.issue)} />}
       {s.branch && <SideValue lead={key(t('fleet.cardBranch'))} text={s.branch} mono />}
       {files.map((p) => <SideValue key={p} lead={key(t('fleet.cardFiles'))} text={fileName(p)} tip={p} href={surfaceHref('file', p)} />)}
       {web.map((w) => <SideValue key={w.key} lead={key(t('fleet.cardWeb'))} text={webName(w.url)} tip={w.url} href={surfaceHref('web', w.key)} />)}
@@ -100,7 +102,7 @@ function FleetCard({ s, onOpenSession }) {
 
 export default function IssueSessions({ issue, sessions = [], onOpenSession, onWrite, onError, onCompose }) {
   const t = useT()
-  const { fleet } = issueFleet(issue.id, sessions)
+  const { fleet } = issueFleet(issue, sessions)
   // the originator has its own labelled rail row already; participants are the OTHER thread voices.
   const participants = issueParticipants(issue, sessions, fleet).filter((s) => s.id !== issue.by)
   const { expanded, toggle } = useFold()
@@ -177,7 +179,7 @@ export default function IssueSessions({ issue, sessions = [], onOpenSession, onW
                       </RailAction>
                     )}
                   </div>
-                  {open && <FleetCard s={s} onOpenSession={onOpenSession} />}
+                  {open && <FleetCard s={s} issueId={issue.id} onOpenSession={onOpenSession} />}
                 </div>
               )
             })}

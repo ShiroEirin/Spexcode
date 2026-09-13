@@ -19,6 +19,7 @@ related:
   - spec-dashboard/src/Thread.jsx
   - spec-dashboard/src/textarea.js
   - spec-dashboard/test/new-issue-page.e2e.mjs
+  - spec-dashboard/test/issue-hierarchy.e2e.mjs
 ---
 
 # issues-view
@@ -90,7 +91,11 @@ pooled Issues document tied to its own mounted route.
   (`session:present|missing` — [[live-session-filter]]); store stays directly reachable at 390px while
   presence lives in [[review-chrome]]'s semantic secondary Filters menu — filter/funnel + localized text
   + chevron, never a kebab/action affordance. Its stable active-group count reads the presence token. The same menu carries the fleet work-state facet
-  (`fleet:need|run|stopped|none`, [[issue-binding]]) beside presence.
+  (`fleet:need|run|stopped|none`, [[issue-binding]]) beside presence, and the sub-issue tree's two display
+  dimensions, which [[review-filters]] arranges before paging: `sub:top|all` — by default a sub-issue whose parent
+  also matched folds into that parent's row, while one whose parent this view does not match stands as its own row —
+  and `group:parent`, which draws the matched set as the tree, each nested issue indented under its parent. A typed
+  default spelling (`sub:top`, `group:none`) is the default view, never an active filter.
   At 390px an active Store face condenses visually to the selected store while retaining its fully
   qualified accessible name, so Open/Closed, Store, and Filters never overlap. Originator and spec node are HIGH-cardinality: `author:` /
   `node:` / `label:` tokens, hand-typed or completed from the input's bounded inline autocomplete — no enumerating
@@ -110,11 +115,12 @@ theatre is invented for a model that has none. An actually empty issue store say
   Primer's 16px `issue-opened` octicon in the semantic open green; every concluded state — local
   `landed`, forge `closed` — the `issue-closed` ring+check in the one closed purple; never a CSS dot),
   then the wrapping concern and its platform label chips; under it the real issue identity, originator, and opened time; at the right
-  the comment count and store/node facts that exist. A node fact is a real `specAddress` anchor into the
+  a parent's `closed/total` sub-issue count, the comment count, and store/node facts that exist. A node fact is a real `specAddress` anchor into the
   resident Spec document, never an inert tag; label chips are their own filter controls beside the row-detail anchor. At 390px those facts join the secondary line and the
   title may wrap without horizontal overflow. **The store is metadata, never identity**: it never leads a
   row and never sits on a title.
-- **The page shows the issue's FLEET ([[issue-binding]]).** Every list row's trailing meta carries the fleet strip —
+- **The page shows the issue's FLEET ([[issue-binding]])** — its own sessions and every sub-issue's, through the
+  read-time tree's `descendants`. Every list row's trailing meta carries the fleet strip —
   up to four status glyphs in the board's own STATUS_COLOR/STATUS_GLYPH, `+n` past that, toned by the fleet's
   rolled-up work state — joined client-side against the board `sessions` the page already holds (no request, no
   re-sort). The detail's status band carries the work-state word and the same strip beside the issue's own state
@@ -150,6 +156,17 @@ theatre is invented for a model that has none. An actually empty issue store say
   board issue-freshness stamp the list follows, which is how a second party's reply reaches a reader
   already sitting on the thread. Only a new ADDRESS may wipe it to the loading face; a stamp tick re-reads
   quietly behind the painted thread.
+- **The detail carries the issue tree.** The one addressed read carries `refs` ([[issues]]), so every issue the page
+  links is titled and marked from that read, never from a read per id. A duplicate opens its main column with a quiet
+  **Duplicate of** note linking the canonical. Between the body and the thread sits the **Sub-issues** section: a
+  `closed/total done` count with a progress bar over the issue's own `childCounts`, the children as the list page's
+  own rows (the one row builder over [[review-chrome]]'s anchor-row list), a **Hide completed** switch over those rows
+  of the one read, and the **+ Sub-issue** door — a real anchor to `#/issues/new?parent=<id>`, offered only on an open
+  local issue because no other issue takes one. The rail adds **Parent** (a linked value led by the parent's state
+  mark) and **Relations** (every edge in both directions as a linked value led by its flag: blocked by orange, blocks
+  red, related / duplicate of / duplicated by quiet). Nothing closes on its own: with every child done, Close issue
+  stays the human's press. Each sub-issue's opening joins the thread as a ledger row at its creation instant, wearing
+  the child's current state; a close carries no instant on the wire, so it shows as that state mark, not as a row.
 - **A human writes from here — to the issue's OWN store.** The composer is the ONE shared thread-composer
   (the thread detail docks the same component, `Thread.jsx`): a quiet bordered container, a borderless
   writing surface floored at two lines that auto-grows through [[composer]], the action row always visible —
@@ -211,6 +228,8 @@ theatre is invented for a model that has none. An actually empty issue store say
   it just made**: the response's id is navigated to with REPLACE ([[side-nav]]: automatic state-naming
   replaces), so the spent compose address leaves no emptied form in history and Back returns to the list.
   Cancel is the SAME derived list anchor the back anchor uses, never `history.back`; Esc routes nothing.
+  `?parent=<id>` composes a sub-issue: the rail names the **Parent** as a linked value from its own addressed read,
+  the store picker narrows to the local store (the only one holding a tree), and Create sends `parent` with the write.
 - **Issue cards enter this page, never the forge.** Every compact card in the node Issues tab is the SAME
   `IssueCard` whose canonical href is `#/issues/<issue-id>`; a forge permalink is
   detail-side metadata only. Long content clamps inside the card.

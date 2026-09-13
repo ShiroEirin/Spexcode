@@ -29,10 +29,11 @@ export type Issue = {
   labels: unknown[]
   url?: string
   // `parent` and `relations` are what a store holds; a store read hands the rest over empty. On the merged read
-  // all eight are issueHierarchy's projection, so `parent`/`relations` there are the EFFECTIVE values.
+  // all nine are issueHierarchy's projection, so `parent`/`relations` there are the EFFECTIVE values.
   parent: string | null
   relations: IssueRelation[]
   children: string[]
+  descendants: string[]
   childCounts: { open: number; closed: number }
   blockedBy: string[]
   relatedBy: string[]
@@ -96,6 +97,7 @@ export function fromForge(slice: ForgeSlice, nodeIds: string[]): Issue[] {
     parent: null,
     relations: [],
     children: [],
+    descendants: [],
     childCounts: { open: 0, closed: 0 },
     blockedBy: [],
     relatedBy: [],
@@ -106,8 +108,9 @@ export function fromForge(slice: ForgeSlice, nodeIds: string[]): Issue[] {
 
 // @@@ issue hierarchy - the read-time tree and relation graph over ONE merged set ([[issues]] / [[local-issues]]).
 // Stores keep only the forward facts: a direct `parent` pointer and the initiator's `relations`. Everything else is
-// rebuilt here on every read, the way the session forest is: a pointer holds only while it names another OPEN issue
-// in this set, so a closed or missing parent promotes its child to a root; a parent cycle promotes its members;
+// rebuilt here on every read, the way the session forest is: a pointer holds while it names another issue in this
+// set, whatever its status (a closed tree keeps its shape), so only a missing parent promotes its child to a root; a
+// parent cycle promotes its members;
 // an edge to an issue outside the set is dropped; and a `blocks` edge whose blocker is no longer open reads as
 // `related` — never rewritten in the store. Pure: the input objects are not touched.
 const isOpen = (i: Issue): boolean => i.status === 'open'
@@ -117,7 +120,7 @@ export function issueHierarchy(issues: Issue[]): Issue[] {
   const pointer = new Map<string, string>()
   for (const i of issues) {
     const p = i.parent ? byId.get(i.parent) : undefined
-    if (p && p.id !== i.id && isOpen(p)) pointer.set(i.id, p.id)
+    if (p && p.id !== i.id) pointer.set(i.id, p.id)
   }
   const inCycle = (id: string): boolean => {
     const seen = new Set<string>()
@@ -149,6 +152,8 @@ export function issueHierarchy(issues: Issue[]): Issue[] {
     if (p) add(children, p, i.id)
     for (const r of relationsOf.get(i.id) ?? []) add(reverse[r.type], r.id, i.id)
   }
+  // cycle members were cut from parentOf above, so the children graph is a forest and this walk ends.
+  const descendantsOf = (id: string): string[] => (children.get(id) ?? []).flatMap((k) => [k, ...descendantsOf(k)])
 
   return issues.map((i) => {
     const kids = children.get(i.id) ?? []
@@ -159,6 +164,7 @@ export function issueHierarchy(issues: Issue[]): Issue[] {
       parent: parentOf.get(i.id) ?? null,
       relations,
       children: kids,
+      descendants: descendantsOf(i.id),
       childCounts: { open: kids.length - closed, closed },
       blockedBy: reverse.blocks.get(i.id) ?? [],
       relatedBy: reverse.related.get(i.id) ?? [],
@@ -166,6 +172,21 @@ export function issueHierarchy(issues: Issue[]): Issue[] {
       duplicateOf: relations.find((r) => r.type === 'duplicate')?.id ?? null,
     }
   })
+}
+
+// the single-issue read's `refs` ([[issues]]): the compact face of every issue this one's hierarchy fields name —
+// parent, children, and both directions of each relation — taken from the SAME merged set, so a detail page can
+// title and mark each link it draws without a read per id.
+export type IssueRef = Pick<Issue, 'id' | 'store' | 'concern' | 'status' | 'by' | 'created' | 'childCounts' | 'descendants'>
+export function issueRefs(issue: Issue, merged: Issue[]): Record<string, IssueRef> {
+  const byId = new Map(merged.map((i) => [i.id, i]))
+  const named = [issue.parent, ...issue.children, ...issue.relations.map((r) => r.id), ...issue.blockedBy, ...issue.relatedBy, ...issue.duplicatedBy]
+  const refs: Record<string, IssueRef> = {}
+  for (const id of named) {
+    const i = id ? byId.get(id) : undefined
+    if (i) refs[i.id] = { id: i.id, store: i.store, concern: i.concern, status: i.status, by: i.by, created: i.created, childCounts: i.childCounts, descendants: i.descendants }
+  }
+  return refs
 }
 
 // the one merged read: local issue-store threads + the caller-supplied forge slice, ONE time line — the

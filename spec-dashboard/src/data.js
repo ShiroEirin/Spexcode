@@ -700,10 +700,10 @@ export async function postIssuePromote(id) {
   const res = await apiFetch(`/api/issues/${encodeURIComponent(id)}/promote`, { method: 'POST' })
   return res.json()
 }
-export async function postIssueThread({ concern, body, evidence, store }) {
+export async function postIssueThread({ concern, body, evidence, store, parent }) {
   const res = await apiFetch('/api/issues', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ concern, body, store, ...(evidence?.length ? { evidence } : {}) }),
+    body: JSON.stringify({ concern, body, store, ...(parent ? { parent } : {}), ...(evidence?.length ? { evidence } : {}) }),
   })
   return res.json()
 }

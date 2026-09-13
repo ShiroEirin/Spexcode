@@ -85,8 +85,8 @@ it to `.spec/.issues` on its first store touch after a toolchain update — the 
   its exact bytes: children, reverse edges, child counts and the closed-blocker downgrade are rebuilt on every
   merged read by [[issues]]'s hierarchy projection, the way [[session-nesting]] rebuilds the forest from `parent`
   pointers. The writes check what the store alone can check. A parent must be an existing OPEN local issue at the
-  moment the pointer lands (`open --parent`, `reparent --to`) — a pointer at a closed one would read as a root the
-  instant it was written — and `reparent` walks the stored pointers up from the new parent and refuses one that
+  moment the pointer lands (`open --parent`, `reparent --to`) — a sub-issue is new work, and new work never hangs
+  under finished work — and `reparent` walks the stored pointers up from the new parent and refuses one that
   would close a cycle; `--to none` removes the key. A sub-issue opened without its own `--node` takes its parent's
   `nodes:` as its explicit ids (its own `[[node]]` links still union in). `relate` needs an existing local target
   other than the issue itself and stores each edge once. `duplicate` is not a status: `close --duplicate-of
