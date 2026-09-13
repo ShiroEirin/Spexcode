@@ -97,6 +97,7 @@
     "spec-dashboard/test/timeline-chat-interaction.e2e.mjs": "dashboard-browser",
     "spec-dashboard/test/timeline-load-earlier-position.e2e.mjs": "dashboard-browser",
     "spec-dashboard/test/transcript-dedup.e2e.mjs": "dashboard-browser",
-    "spec-dashboard/test/transcript-fold-motion.e2e.mjs": "dashboard-browser"
+    "spec-dashboard/test/transcript-fold-motion.e2e.mjs": "dashboard-browser",
+    "spec-dashboard/test/watch-notice-system-row.e2e.mjs": "dashboard-browser"
   }
 }
