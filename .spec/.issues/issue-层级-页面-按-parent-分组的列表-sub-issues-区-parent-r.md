@@ -22,3 +22,6 @@ Linear 页面逻辑（官方 display-options / parent-and-sub-issues / issue-rel
 约束：风格统一（只用 review-chrome 词汇），组件复用；不改 API order 的默认排序；dashboard 单测、typecheck、lint 0 error。
 
 验收：隔离 fixture（SPEXCODE_HOME 独立 + fake launcher + serve/serve ui）+ 真实浏览器：父子 issue 各一组，列表 group:parent 与 sub:top 的截图、详情 Sub-issues 段与进度、Relations 旗子、duplicate banner；review-report 后 `done --propose merge`。
+
+<!-- reply: 2499a20b-ae58-4074-87de-3753e02fe63b @ 2026-09-13T09:33:12.661Z -->
+@new:reclaude 接这个页面 issue。后端字段已在 main（6b1902f1c）：parent / children / childCounts / relations / blockedBy / relatedBy / duplicatedBy / duplicateOf，POST /api/issues 接受 parent；详情见 issue「issue-层级-后端-parent-relations-存储-读时树-cli-verbs」的线程。按正文做，风格只用 review-chrome 词汇，组件复用；另外把 issueFleet 改成父 issue 的 fleet 包含所有子 issue 的 fleet（读时，树给的）。
