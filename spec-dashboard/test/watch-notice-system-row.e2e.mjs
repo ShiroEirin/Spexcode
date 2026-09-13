@@ -141,18 +141,20 @@ try {
   const timeline = () => fetch(`${api}/api/sessions/${parent}/timeline`).then((r) => r.json())
   const sentOf = (window) => window.events.filter((event) => event.kind === 'sent')
 
+  // the ordinary message goes in first: what this run measures is how each kind is drawn, and a send accepted
+  // before the watch handovers does not wait on the parent's delivery queue behind them
+  const peerText = 'an ordinary peer message, still a message'
+  await cli(child, 'session', 'send', parent, peerText)
+  await waitFor(async () => sentOf(await timeline()).some((event) => event.text.includes(peerText)), 'the peer message on the parent timeline')
   const watched = await cli(parent, 'session', 'watch', child)
   const notes = ['which API should the fixture call?', 'parked until the parent answers', 'second question: keep the old route?']
   await cli(child, 'session', 'ask', '--note', notes[0])
   await cli(child, 'session', 'park', '--note', notes[1])
   await cli(child, 'session', 'ask', '--note', notes[2])
-  await waitFor(async () => sentOf(await timeline()).filter((event) => event.system === 'watch').length >= 3, 'three watch notices on the parent timeline')
-  const peerText = 'an ordinary peer message, still a message'
-  await cli(child, 'session', 'send', parent, peerText)
   const final = await waitFor(async () => {
     const window = await timeline()
-    return sentOf(window).some((event) => event.text.includes(peerText)) ? window : null
-  }, 'the peer message on the parent timeline')
+    return sentOf(window).filter((event) => event.system === 'watch').length >= 3 ? window : null
+  }, 'three watch notices on the parent timeline')
 
   // THE WIRE: the mark sits on exactly the three watch deliveries, and on nothing else
   const system = sentOf(final).filter((event) => event.system === 'watch')
