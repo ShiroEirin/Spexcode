@@ -15,6 +15,7 @@ export const STATUS_COLOR = {
   unknown: 'var(--yellow)',   // liveness probe FAILED (box overloaded) — death unproven, so warn, never read as dead
   corrupt: 'var(--red)',      // the RECORD itself is unreadable — a broken thing to look at, not a dead agent
   retired: 'var(--muted)',    // the work merged and its worktree is gone: terminal, only `close` remains
+  archived: 'var(--muted)',   // shelved on purpose; a watch notice reports a child entering it
 }
 
 // compact one-line surfaces (the console's terminal-styled sidebar) render the status as a SINGLE glyph
@@ -25,7 +26,7 @@ export const STATUS_GLYPH = {
   asking: '?', review: '◑', done: '✓',
   error: '✕',
   idle: '·', starting: '◌', queued: '⋯', 'close-pending': '⊘', offline: '○', unknown: '⁇',
-  corrupt: '⚠', retired: '⚑',
+  corrupt: '⚠', retired: '⚑', archived: '▤',
 }
 
 // Fixed board buckets consume the status published by the session package. The dashboard does not replace an

@@ -10,6 +10,7 @@ import { MIGRATED_MESSAGE_EVENT, MIGRATED_STATE_EVENT } from '@spexcode/session-
 import { configuredSessionApplication, resetConfiguredSessionApplicationForTest } from './session-application.js'
 import {
   currentHumanTurn,
+  isManagedWatchKey,
   lastHumanSendVia,
   lastSendVia,
   readTimeline,
@@ -105,6 +106,34 @@ test('a canonical state transition notifies an attached watcher exactly once', a
   assert.equal(app().readPendingMessages(PARENT).length, before + 1)
   app().transitionSession(ID, { status: 'active', reason: 'timeline-test', recipientSessionIds: [] })
   assert.equal(app().readPendingMessages(PARENT).length, before + 1, 'working is not an actionable parent wake')
+})
+
+// A MANAGED WATCH DELIVERY IS MARKED BY ITS KEY, AT READ TIME. The `sent` fact carries no key, so the projection joins
+// the queued message's key for exactly the events it hands out — on a whole window and on a growth read alike — and
+// the same words under any other key stay an ordinary message.
+test('a managed watch delivery is marked system on the wire, and nothing else is', () => {
+  freshHome()
+  const say = (text: string, idempotencyKey: string | undefined, from: string | null) => app().enqueueConversationMessage(PARENT, {
+    kind: 'session.prompt.v1', body: Buffer.from(text), senderSessionId: from, ...(idempotencyKey ? { idempotencyKey } : {}),
+  }, { text, from })
+  say(`[spex watch] ${ID} is asking — which API?`, `watch-event:${'c'.repeat(32)}`, ID)
+  say(`[spex watch] ${ID} is asking — typed by a peer`, `${ID}:peer-message`, ID)
+  say('a human message', undefined, null)
+  const window = readTimeline(PARENT)!
+  const sentRows = (events: typeof window.events) => events.flatMap((event) => event.kind === 'sent' ? [[event.text, event.system ?? null]] : [])
+  assert.deepEqual(sentRows(window.events), [
+    [`[spex watch] ${ID} is asking — which API?`, 'watch'],
+    [`[spex watch] ${ID} is asking — typed by a peer`, null],
+    ['a human message', null],
+  ])
+
+  say(`[spex watch] ${ID} is working`, `watch-reparent:${'d'.repeat(32)}`, ID)
+  const grown = readTimeline(PARENT, { since: Number(window.stamp) })!
+  assert.equal(grown.offset, undefined, 'a growth read, not a whole window')
+  assert.deepEqual(sentRows(grown.events), [[`[spex watch] ${ID} is working`, 'watch']])
+
+  for (const key of ['watch-event:x', 'watch-initial:x', 'watch-reparent:x']) assert.equal(isManagedWatchKey(key), true, key)
+  for (const key of [null, undefined, '', 'watch:x', 'legacy:watch-event:x']) assert.equal(isManagedWatchKey(key), false, String(key))
 })
 
 test('human channel reconstruction reads only canonical conversation messages', () => {

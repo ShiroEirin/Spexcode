@@ -140,6 +140,8 @@ export interface ProductionSessionApplication extends SessionApplication {
   dequeueForRuntime(sessionId: string, namespace: string, expectedGeneration?: number, expectedMessageId?: string): Message | null
   readPendingMessages(sessionId: string): readonly Message[]
   readMessageHistory(sessionId: string): readonly Message[]
+  /** The idempotency key each named message was enqueued with (absent ids are simply missing): a scoped lookup, never a history replay. */
+  readMessageKeys(sessionId: string, messageIds: readonly string[]): ReadonlyMap<string, string | null>
   dequeuePendingMessage(sessionId: string, expectedMessageId: string): Message | null
   readState(sessionId: string): SessionState | null
   /** The protocol address row itself — present for every registered session, governed or not; null means never initialized. */
@@ -562,6 +564,26 @@ export function openProjectSessionApplication(options: ProjectSessionApplication
     readMessageHistory(sessionId) {
       requireId(sessionId, 'sessionId')
       return protocol.readMessages(sessionId)
+    },
+
+    readMessageKeys(sessionId, messageIds) {
+      requireId(sessionId, 'sessionId')
+      const ids = [...new Set(messageIds)]
+      const keys = new Map<string, string | null>()
+      if (ids.length === 0) return keys
+      protocol.withTransaction(tx => {
+        // chunked so a wide window never meets SQLite's bound-parameter ceiling
+        for (let start = 0; start < ids.length; start += 500) {
+          const chunk = ids.slice(start, start + 500)
+          const rows = tx.query(
+            `SELECT message_id, idempotency_key FROM protocol_messages
+              WHERE target_session_id=? AND message_id IN (${chunk.map(() => '?').join(',')})`,
+            sessionId, ...chunk,
+          )
+          for (const row of rows) keys.set(String(row.message_id), row.idempotency_key === null ? null : String(row.idempotency_key))
+        }
+      })
+      return keys
     },
 
     dequeuePendingMessage(sessionId, expectedMessageId) {

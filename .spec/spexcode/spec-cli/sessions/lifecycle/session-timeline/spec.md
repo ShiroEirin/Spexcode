@@ -42,8 +42,12 @@ The public event sequence has two kinds, one JSON line per event:
 - **status** `{ts, status, proposal, note}` — an authored-lifecycle transition, carrying the declaration
   note **in full** (the note IS the agent's reply to a reader who can't see the pane; [[state]] already
   guarantees notes are stored whole).
-- **sent** `{ts, mid, text, from, replyVia?}` — a message addressed to this session. `from` = the sending
-  session, null = a human. `mid` is a unique per-message id: it is what a reader's cursor names, so the
+- **sent** `{ts, mid, text, from, replyVia?, system?}` — a message addressed to this session. `from` = the sending
+  session, null = a human. `system: "watch"` marks a delivery a managed watch minted ([[session-follow]]): the
+  system describing another session's state, not anyone speaking. The mark is not stored on the line; it is the
+  message's own `watch-event:` / `watch-initial:` / `watch-reparent:` idempotency key, joined when the line is read,
+  so the same words under any other key (which any sender can type) never earn it. It is a reader's distinction
+  only: what the agent is delivered is unchanged. `mid` is a unique per-message id: it is what a reader's cursor names, so the
   same message can never be injected twice and never needs a separate idempotency ledger. The newest human
   `mid` and `ts` also bind the current live execution observation; they are derived from this durable log at
   read time, never cached as server-local state. The recorded
@@ -124,6 +128,9 @@ that grows for a week outgrows any one read, so the read is three, over one rout
   what precedes it strands every event before it with no way to say so and no way in.
 - `since=<stamp>` — only what the log grew by. The stamp is the log's SEQUENCE, and this read costs a
   sequence range scan rather than the whole history, which is what makes a poll cheap on a long record.
+  Anything the read adds to the events it hands out is looked up for those events alone — the `system` mark on a
+  `sent` line is one scoped lookup of exactly those messages' keys, never a replay of the session's messages — so a
+  poll's cost still grows only with what the log grew by.
   Growth beyond `limit` is answered with a whole window instead: a reader that far behind is cheaper to
   re-seat than to catch up event by event. An answer carrying `offset` is a whole window; one without it
   appends to what the reader already holds.

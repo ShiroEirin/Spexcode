@@ -19,6 +19,7 @@ related:
   - spec-dashboard/test/conversation-working-tail.e2e.mjs
   - spec-dashboard/test/seam-fold-motion.e2e.mjs
   - spec-dashboard/test/timeline-load-earlier-position.e2e.mjs
+  - spec-dashboard/test/watch-notice-system-row.e2e.mjs
   - spec-dashboard/src/CopyButton.jsx
   - spec-dashboard/src/clipboard.js
 ---
@@ -156,7 +157,7 @@ and time, then a disclosure line) made a real session show 26 bare `working` row
 chrome each, `working 1s → 11s → 4m 30s` stacked as three rows, a toggle at the far right whose content
 opened at the far left, the agent's report set as a blockquote though it is the page, and a terminal
 `error 80h 45m` that read as eighty hours of failing. A reader reads three things, and the page shows
-exactly those three:
+exactly those three — plus what a managed watch delivered, which is none of them and is drawn as the system:
 
 - A MESSAGE is anything said. The agent's note IS the page: no well, no rule, no indent, at the prose size
   (`--type-prose`, the one token this surface added) running the full measure, with one small status chip
@@ -227,6 +228,14 @@ exactly those three:
   `prefers-reduced-motion: reduce` the stretch arrives at its row in one frame, as it always did.
 - An EVENT is `error` or `corrupt`: one line in the content column — timestamp, glyph, word, note — with no
   duration, because it happened rather than lasted.
+- A NOTICE is what a managed watch delivered ([[session-timeline]]'s `system: "watch"`): the system reporting what
+  another session did. A supervisor watching four workers received them as a screen of chat bubbles that read as
+  the workers speaking, so a notice is never drawn in the person's grammar. It is one event line in the caption
+  voice — time, the watched session's headline, its state word in the board's own status colour and glyph, the
+  note held to one line — placed under the seam it arrived in, or between the messages it arrived between
+  ([[conversation-items]] decides which). Two or more in one run fold behind their count (`3 status notifications`)
+  in the seam's own quiet disclosure, trailing chevron and all: closed at first sight, opened in place, and the
+  choice survives a refresh. Folded is not hidden — what woke the agent must stay one press away, never filtered out.
 
 THE RULER. Message time lives in a 52px tabular gutter; user messages reverse the two columns so their time
 sits to the right of the right-aligned bubble, while event time stays inline at the start of the content column. THE MINUTE IS QUIET: a
