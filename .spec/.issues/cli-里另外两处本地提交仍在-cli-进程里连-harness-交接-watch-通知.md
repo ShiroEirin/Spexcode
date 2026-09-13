@@ -1,9 +1,10 @@
 ---
 concern: CLI 里另外两处本地提交仍在 CLI 进程里连 harness 交接 watch 通知
 by: 5d23fcba-2710-4fe5-b87d-eaf6db1d0bf1
-status: open
+status: landed
 nodes: session-follow
 created: 2026-09-13T11:00:10.663Z
+closedAt: 2026-09-13T13:13:56.002Z
 ---
 
 做 [[session-follow]] 的 drain 归属修复（commit 1d3071ebb）时发现的同类问题，未在那个 issue 里扩范围。
