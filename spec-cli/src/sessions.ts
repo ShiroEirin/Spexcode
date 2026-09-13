@@ -1278,6 +1278,15 @@ const requestQueueDrain = (): void => {
   })
 }
 
+// @@@ delivery handover - WHO drains a woken queue. The adapter channel belongs to the backend that owns the project
+// root ([[delivery-queue]]), so a commit made in that backend drains in place, and so does any process that never
+// said otherwise (a test, an embedding library). A process that is only that backend's guest — a CLI state producer
+// ([[remote-client]]) — installs its own handover: ask the owner to drain, and drain here only when none answers.
+let handOverDelivery: (id: string) => Promise<void> = (id) => drainSession(id)
+export function setDeliveryHandover(handover: (id: string) => Promise<void>): void {
+  handOverDelivery = handover
+}
+
 // Canonical state commits already own the durable recipient queue. This is only the post-commit wake that hands
 // each queued recipient to its existing runtime; a failed runtime leaves the message pending for retry, and a
 // recipient with no bound runtime (stopped, closed, not yet launched) is not woken until a launch binds it.
@@ -1290,7 +1299,7 @@ setSessionApplicationCommitWake((recipients) => {
       await reconcileWatchDeliveries(configuredSessionApplication(), wakeRecipients)
       for (const recipient of wakeRecipients) {
         try {
-          if (sessionHasPendingDelivery(recipient)) await drainSession(recipient)
+          if (sessionHasPendingDelivery(recipient)) await handOverDelivery(recipient)
         } catch (error) {
           console.error(`spex: canonical delivery wake failed for ${recipient}: ${error instanceof Error ? error.message : String(error)}`)
         }
@@ -1341,7 +1350,8 @@ async function reconcileWatchDeliveries(application: ProductionSessionApplicatio
       sources: readonly string[]
     }[]
   }).readWatchEvents(watchers)
-  const drain = new Set<string>()
+  // Translation only: both callers hand each woken queue over right after this returns, so draining here too
+  // would open a second handover on the same queue.
   for (const item of pending) {
     const rendered = watchMessageFromEvent(item.event, item.subjectSessionId)
     const parentOnly = item.sources.every(source => source === 'parent' || source === 'watch:parent')
@@ -1360,11 +1370,6 @@ async function reconcileWatchDeliveries(application: ProductionSessionApplicatio
       }, { text: rendered.text, from: item.subjectSessionId })
     }
     application.advanceFollowCursor(item.watcherSessionId, item.subjectSessionId, item.event.eventSeq)
-    drain.add(item.watcherSessionId)
-  }
-  for (const id of drain) {
-    try { if (sessionHasPendingDelivery(id, application)) await drainSession(id) }
-    catch (error) { console.error(`spex: managed watch handoff failed for ${id}: ${error instanceof Error ? error.message : String(error)}`) }
   }
 }
 

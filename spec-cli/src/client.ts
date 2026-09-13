@@ -6,7 +6,7 @@ import { resourceBudgets, type ResourceReport } from './host-resources.js'
 import { envSessionId, listSessionIds, readPublicRecordEntry } from '@spexcode/spec-core'
 import { cockpitReview, type CockpitReview } from './cockpit.js'
 import { configuredSessionApplication } from './session-application.js'
-import { apiBaseInfo, assertProjectMatch, displayStatusForProposal, optionArgv, toSession, type DisplayStatus, type Session, type DispatchResult } from './sessions.js'
+import { apiBaseInfo, assertProjectMatch, displayStatusForProposal, drainSession, optionArgv, toSession, type DisplayStatus, type Session, type DispatchResult } from './sessions.js'
 import { resolveSession, type Resolved } from './session-selectors.js'
 import { fromRaw } from './session-record.js'
 import { resolveMachinePeer } from './machine-peer.js'
@@ -308,6 +308,21 @@ export async function clientSend(id: string, text: string, from?: string): Promi
 export async function clientPushQueued(id: string): Promise<{ ok: boolean; error?: string }> {
   const r = await apiFetch(`/api/sessions/${seg(id)}/push`, post({}))
   return await r.json().catch(() => ({ ok: false, error: `bad backend response (${r.status})` })) as { ok: boolean; error?: string }
+}
+
+// A local commit's delivery wake is the poke half of the Owner role: the backend owns the recipient's channel, so
+// the caller asks it to drain and is done once the backend has taken the wake. Only a proven absence (ECONNREFUSED)
+// licenses handing the queue over in this process; any other answer belongs to the backend that gave it.
+export async function clientHandOverQueued(id: string): Promise<void> {
+  let pushed: { ok: boolean; error?: string }
+  try {
+    pushed = await clientPushQueued(id)
+  } catch (error) {
+    if (!backendConnectionRefused(error)) throw error
+    await drainSession(id)
+    return
+  }
+  if (!pushed.ok) throw new BackendError(`the backend did not take the delivery wake for ${id}: ${pushed.error ?? 'no reason given'}`)
 }
 
 // @@@--ssh is spelling, the route is the mechanism - a peer's loopback port is an SSH forward onto that

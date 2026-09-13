@@ -21,7 +21,7 @@ import { cockpitReview } from './cockpit.js'
 import { EMPTY_PROMPT_ERROR, listSessions, listArchivedSessionIndex, sendText, drainSession, markHumanPromptActive, interruptSession, rawKey, stopSession, closeSession, resumeSession, captureSessionResult, sessionPrompt, renameSession, setSessionSort, linkZCodeChildSession, projectCreatedSession, sessionCreateRequest, superviseQueue, superviseTurnFailures, superviseDelivery, reconcileLaunchedRuntimes, startWorktreeTrashReaper } from './sessions.js'
 import { mergeSession, retractDiffComment, saveDiffComment, sendDiffComments, sessionDiff } from './session-review.js'
 import { sessionHost } from './session-host.js'
-import { quarantineCorruptRecord, restoreQuarantinedRecord, SessionRecordUnusable, withRecordLock, withSessionRecordLockSync } from './session-record.js'
+import { quarantineCorruptRecord, readRecord, restoreQuarantinedRecord, SessionRecordUnusable, withRecordLock, withSessionRecordLockSync } from './session-record.js'
 import { readTimeline } from './session-timeline.js'
 import { readSessionTranscript, readSessionTranscriptTool, sessionTranscriptStream } from './session-transcript.js'
 import { defaultHarness, HARNESSES, launcherList, launcherDefault } from './harness.js'
@@ -979,14 +979,14 @@ app.post('/api/sessions/:id/input', async (c) => {
   }
   return c.json({ error: 'input needs kind: "text" | "command" | "keys"' }, 400)
 })
-app.post('/api/sessions/:id/push', async (c) => {
+// A delivery wake from a process that does not own the channel ([[delivery-queue]]). `ok` means this backend has
+// taken the wake, not that the prompt reached the agent: the drain runs on, so the caller never waits on a harness.
+// A session this backend holds no record for is one it cannot drain, and saying so keeps a misrouted wake loud.
+app.post('/api/sessions/:id/push', (c) => {
   const id = c.req.param('id')
-  try {
-    await drainSession(id)
-    return c.json({ ok: true })
-  } catch (error) {
-    return c.json({ ok: false, error: error instanceof Error ? error.message : String(error) }, 502)
-  }
+  if (!readRecord(id)) return c.json({ ok: false, error: `no session record for ${id} on this backend` }, 404)
+  void drainSession(id).catch((error) => console.error(`spex: pushed delivery for ${id} deferred: ${error instanceof Error ? error.message : String(error)}`))
+  return c.json({ ok: true })
 })
 app.post('/api/sessions/reparent', async (c) => {
   const result = await reparentRequest(await c.req.json().catch(() => null))

@@ -18,6 +18,10 @@ An agent writes its own [[state]] through `spex session done|ask|park|state`. Th
 handler's conversation with the author — the confirmation, the note, the diagnosis when the record is not where
 the author stands — every one of them a nudge riding the confirmation, never a gate.
 
+The declaration's own write is local, but the watch notice its commit wakes is not this process's to deliver: the
+shared state kit, also used by the machine lifecycle producers under `spex internal`, installs the owner-first
+handover ([[remote-client]]), so a declaration returns without waiting on any watcher's harness.
+
 A declaration echoes a one-line confirmation — recorded for
 the dashboard, after which the next tool call (via mark-active) flips the record back to `active`, so an agent never reads
 that re-flip as a lost proposal. Every note-carrying declaration (`done`/`ask`/`park`/`state`, all of which
