@@ -1,6 +1,6 @@
 {
   "name": "spexcode",
-  "version": "0.7.0-next.21",
+  "version": "0.7.0-next.22",
   "type": "module",
   "description": "SpexCode \u2014 a spec-driven, self-developing dev tool. The `spex` CLI + spec server reads the .spec tree and its git history, and serves the dashboard.",
   "license": "MIT",
@@ -49,7 +49,7 @@
     "test:clean-init": "node scripts/clean-init-smoke.mjs"
   },
   "dependencies": {
-    "@spexcode/spec-cli": "0.7.0-next.21"
+    "@spexcode/spec-cli": "0.7.0-next.22"
   },
   "publishConfig": {
     "access": "public"
