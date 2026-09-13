@@ -470,10 +470,10 @@ edit the spec instead — same commit as the code.`,
     line: 'issue <verb>          concern threads, local + forge merged: ls · show · open · reply · close · reparent · relate · promote · links',
     body: `Usage: spex issue ls [--node <id>] [--store local|<host>] [--all] [--json]
        spex issue show <id> [--json]
-       spex issue mine [--json]              the issue THIS session is bound to, with its thread (the worker's first read)
+       spex issue mine [--json]
        spex issue open "<concern>" [--store local|<host>] [--parent <id>] [--node <id>…] [--evidence <hash>…] [--body -|<text>]
        spex issue reply <id> --body -|<text> [--evidence <hash>…]
-       spex issue assign <id> <SEL>          bind an existing session to the issue and tell it (SEL = id | id-prefix | branch)
+       spex issue assign <id> <SEL>
        spex issue close <id> [--duplicate-of <canonical-id>]
        spex issue reparent <id> --to <parent-id|none>
        spex issue relate <id> blocks|related|duplicate <other-id>
@@ -504,6 +504,10 @@ relate — records an edge on the first issue: blocks, related, or duplicate (wh
 promote — moves an OPEN local issue to the forge as one recorded action.
 
 links — the read-only forge trace: which open forge issues/PRs serve which spec node.
+
+mine — the issue THIS session is bound to, with its thread: the worker's first read ([[issue-binding]]).
+
+assign — bind an existing session to the issue and tell it; SEL = id | id-prefix | branch (\`.\` = this session).
 
 The issues workflow's on/off switch is the \`issues.enabled\` key in .spec/spexcode.json (no CLI toggle
 verb — edit the JSON; \`spex doctor\` reports its state).
