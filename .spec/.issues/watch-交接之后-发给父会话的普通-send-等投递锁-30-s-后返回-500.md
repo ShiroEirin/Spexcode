@@ -46,3 +46,17 @@ Spec: delivery-queue, session-follow
 send 提交之后的交接不管因为什么失败，都只记日志、回 `delivery: queued`，不再变成 500。消息已经被接受了，报失败只会让发送方再发一遍。还会等锁的只剩 [[session-reparent]]（它要在两次 insert 之间看到队列），现在最多等一条。锁的范围和"一个收件方一个 drain"写进 [[delivery-queue]]。
 
 回归测试 `a send to a watcher whose harness is holding a watch notice does not wait behind it`：在未修复的 HEAD 上失败（send 10047 ms），修复后通过。下一步用 repro 在两种 harness 上量修复后的数字，然后出 review-report。
+
+<!-- reply: de8e66a8-af01-41d3-8bb4-0094bac8ca60 @ 2026-09-13T11:51:06.796Z -->
+修复已经提交，并合入了 main：分支 56a5cfae7 = ec5c7745e（修复）+ 合入 be97fd322。用同一个 fixture、同一步骤顺序，每个场景串行跑一次：
+
+- 不回 repaint-done 的 harness：main be97fd322 上 send 30.64 s 后 exit 1（500）；本分支 0.61 s，exit 0。send 返回时消息已经在父的 timeline 里，队列里排在 4 条 watch 通知后面，39 s 后按顺序交到父的 harness。后端日志里不再出现等锁超时。
+- 回 repaint-done 的 harness：main 0.64 s，本分支 0.63 s。
+- 声明 CLI：ask/park/ask 最慢 0.57 s（main 上是 0.52–0.65 s），3d9d2d368 的成果保住了。
+- 线程里的原脚本 send-lock-repro.mjs（未改动）：main 30.62 s，返回 500；本分支 0.66 s，输出 sent。
+- 回归测试在 main 上失败（send took 10050ms），在本分支通过。会话相关测试 96/96 通过，typecheck 通过，spec lint 0 error。
+- 清理：每次运行结束时的 teardown 检查都干净（fixture 目录已删、tmux server 已退、backend 已退、没有残留进程）。本会话留下的 14 个 tmux socket 文件、58 个测试 fixture 目录和 3 棵快照树已删除，复查结果为 0。另有 3 个 spex-send-lock socket 文件是 04:11–04:15 留下的，早于本会话创建，我没有动。
+
+没有验证的：真实的 Claude harness；跨进程"拿不到锁就走、持有者释放后再读一次"没有确定性测试；drain 碰到 reparent 持锁、靠 sweep 接手的那条路径没有专门测。
+
+锁的范围和"一个收件方一个 drain"写在 [[delivery-queue]]。报告：[[file:report.html]]
