@@ -289,7 +289,7 @@ export function IssueDetailPage({ issue: th, specs, sessions, onOpenSession, onW
       }
     >
       {th.body && <div className="fvd-body"><SpecBody body={th.body} /></div>}
-      <Replies replies={replies} />
+      <Replies replies={replies} sessions={sessions} />
     </DetailShell>
   )
 }

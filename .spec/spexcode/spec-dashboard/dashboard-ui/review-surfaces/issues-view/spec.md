@@ -161,7 +161,7 @@ theatre is invented for a model that has none. An actually empty issue store say
   through the ONE store-routed verb; sign/accept/reject are not product verbs. Replies post as `'human'`
   via `replyIssue` — a local reply git-commits, a forge reply posts a REAL comment — then the list
   refetches. A reply renders as author · time · prose ([[reply-thread]]) — no per-reply verb, no state
-  badge; a `▶m:ss · step` first line is a time anchor; attached blobs render through the one shared evidence
+  badge; a `[[widget:<name>]]` written by a board session draws that session's widget in place ([[issue-binding]]); a `▶m:ss · step` first line is a time anchor; attached blobs render through the one shared evidence
   renderer. An `@session` in any composer is a passive [[mentions]] reference retained in the posted prose;
   an exact `@new` dispatches a fresh worker after the write is durable and flashes its creation outcome through
   [[transient-notices]]. A draft that names a retained session by exact `@<id>` grows one explicit **Send to @x**

@@ -47,6 +47,10 @@ byte-identical copies of `fl` existed while the surface was split across two mod
 remains. A helper that both this module and a store module need is a signal to re-examine which of them is
 really asking, not a reason to widen a store module's exports.
 
+**`mine` is the worker's first read.** `spex issue mine [--json]` prints the issue the caller's session record points at
+([[issue-binding]]), through the same merged read `show` uses; no session identity, or a session bound to no issue, is
+said plainly with the way to bind one (`spex issue assign <id> .`), never guessed from prompt text.
+
 **`assign` binds an existing session to an issue.** `spex issue assign <issue-id> <SEL>` is the CLI leg of the one
 assign verb ([[issue-binding]]'s `assignIssueSession`, the same function `POST /api/issues/:id/assign` runs): the
 issue is read through the same merged read `show` uses (a forge id pulls the live slice), the session through the

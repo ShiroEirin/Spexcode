@@ -92,6 +92,23 @@ async function issueVerbs(args: string[]): Promise<number> {
     console.log(hasFlag(args, 'json') ? JSON.stringify(t, null, 2) : renderIssue(t))
     return 0
   }
+  if (args[0] === 'mine') {
+    // the caller's OWN issue ([[issue-binding]]): the record's pointer, read through the same merged read `show`
+    // uses — the first thing the issue-driven-development skill tells a worker to run. No session identity, or a
+    // session with no pointer, is said plainly with the way to bind one; never a guess from the prompt text.
+    const own = envSessionId()
+    if (!own) { console.error('spex issue mine: no session identity in this shell (SPEXCODE_SESSION_ID) — run it inside a session, or read a thread with `spex issue show <id>`'); return 2 }
+    const { readRecord } = await import('./session-record.js')
+    const rec = readRecord(own)
+    if (!rec?.issue) {
+      console.log(hasFlag(args, 'json') ? 'null' : `session ${own.slice(0, 8)} is bound to no issue — bind one with \`spex issue assign <issue-id> .\``)
+      return hasFlag(args, 'json') ? 0 : 1
+    }
+    const t = findIssue(rec.issue, rec.issue.includes('#') ? await liveForgeSlice('mine') : null, loadSpecsLite().map((s) => s.id))
+    if (!t) { console.error(`spex issue mine: bound to '${rec.issue}' but no such issue is readable (see \`spex issue ls --all\`)`); return 1 }
+    console.log(hasFlag(args, 'json') ? JSON.stringify(t, null, 2) : renderIssue(t))
+    return 0
+  }
   if (args[0] === 'links') {
     const { runIssueLinks } = await import('@spexcode/spec-forge/cli')
     return runIssueLinks(args.slice(1))
@@ -126,7 +143,7 @@ async function issueVerbs(args: string[]): Promise<number> {
     }
   }
   if (args[0] !== 'ls') {
-    console.error(`spex issue: unknown verb '${args[0]}' — ls | show | open | reply | assign | close | promote | links  (spex help issue)`)
+    console.error(`spex issue: unknown verb '${args[0]}' — ls | show | mine | open | reply | assign | close | promote | links  (spex help issue)`)
     return 2
   }
   args = args.slice(1)
@@ -176,6 +193,19 @@ const repeated = (args: string[], name: string): string[] =>
 // the local-issue WRITE verbs of the issue drawer (`spex issue <verb>`): open "<concern>" [--store local|<host>] [--node id…]
 // [--evidence hash…] [--body -|text], and the id-based reply. Store is a property of the issue,
 // never a second command — open and reply route by it (issues.ts createIssue/replyIssue).
+
+// try the backend leg of an issue write; `null` means "no backend answered — write locally", while a backend that
+// answered (any status) is the authority and its receipt is returned as is. A refused connection is the one
+// fallback signal; every other failure is loud, because a half-reachable backend must not be silently bypassed.
+async function backendIssueWrite<T>(run: () => Promise<T>): Promise<T | null> {
+  try { return await run() }
+  catch (error) {
+    const { backendConnectionRefused } = await import('./client.js')
+    if (backendConnectionRefused(error)) return null
+    throw error
+  }
+}
+
 export async function runIssueWrite(args: string[]): Promise<number> {
   const sub = args[0]
   try {
@@ -183,8 +213,17 @@ export async function runIssueWrite(args: string[]): Promise<number> {
       const id = bare(args.slice(1))[0]
       const body = readBody(args)
       if (!id || !body) { console.error('usage: spex issue reply <issue-id> --body -|<text> [--evidence <hash>…]'); return 2 }
-      // the ONE store-routed reply verb ([[issues]]): a forge id posts a real comment through the driver,
-      // a local id commits to the store — the same command either way (dynamic import: no static cycle).
+      // BACKEND FIRST ([[issue-binding]]): the running backend serves the trunk checkout and owns the store write, so a
+      // worker in a linked worktree reports on its thread through it, signed with its own session id. Only when no
+      // backend answers does the write run here — the ONE store-routed reply verb ([[issues]]): a forge id posts a
+      // real comment through the driver, a local id commits to the store (dynamic import: no static cycle).
+      const viaBackend = await backendIssueWrite(() => import('./client.js').then((m) => m.clientIssueReply(id, body, repeated(args, 'evidence'), envSessionId() || undefined)))
+      if (viaBackend) {
+        if (viaBackend.error || viaBackend.ok === false) { console.error(`spex issue reply: ${viaBackend.error || 'refused by the backend'}`); return 1 }
+        console.log(viaBackend.url ? `commented on '${id}' — ${viaBackend.url}` : `replied to '${id}' — ${viaBackend.replies?.length ?? '?'} post(s) in thread (via the backend)`)
+        if (viaBackend.outcomes) console.log(`  ${viaBackend.outcomes}`)
+        return 0
+      }
       const r = await (await import('./loop-in.js')).replyIssueWithLoopIn(id, body, { evidence: repeated(args, 'evidence') })
       console.log(r.store === 'local'
         ? `replied to '${id}' — ${r.replies?.length} post(s) in thread`
@@ -216,11 +255,21 @@ export async function runIssueWrite(args: string[]): Promise<number> {
       console.error('usage: spex issue open "<concern>" [--store local|<host>] [--node <id>…] [--evidence <hash>…] [--body -|<text>]\n       spex issue reply|assign|close|promote <issue-id> …')
       return 2
     }
+    const input = { concern, store: fl(args, 'store'), nodes: repeated(args, 'node'), body: readBody(args), evidence: repeated(args, 'evidence') }
+    const opened = await backendIssueWrite(() => import('./client.js').then((m) => m.clientIssueOpen(input, envSessionId() || undefined)))
+    if (opened) {
+      if (opened.error || opened.ok === false) { console.error(`spex issue open: ${opened.error || 'refused by the backend'}`); return 1 }
+      console.log(opened.store === 'local' || !opened.store
+        ? `opened '${opened.id}' — committed to the local issue store (via the backend); read it with \`spex issue ls\``
+        : `opened '${opened.id}' on ${opened.store} — ${opened.url}`)
+      if (opened.outcomes) console.log(`  ${opened.outcomes}`)
+      return 0
+    }
     const r = await (await import('./issues.js')).createIssue(concern, {
-      store: fl(args, 'store'),
-      nodes: repeated(args, 'node'),
-      body: readBody(args),
-      evidence: repeated(args, 'evidence'),
+      store: input.store,
+      nodes: input.nodes,
+      body: input.body,
+      evidence: input.evidence,
     })
     const re = r.nodes.length ? ` (re: ${r.nodes.join(', ')})` : ''
     console.log(r.store === 'local'

@@ -1,13 +1,12 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { apiFetch, postIssueAssign, postIssueReply } from './data.js'
-import { Icon } from './icons.jsx'
-import { SessionConsoleTreeRow, useFold } from './SessionWindow.jsx'
+import { Icon, IconButton } from './icons.jsx'
 import SessionContextMenu from './SessionContextMenu.jsx'
 import SessionPicker from './SessionPicker.jsx'
 import Modal from './Modal.jsx'
 import { SideSection, SideValue } from './ReviewShell.jsx'
-import { STATUS_COLOR, fleetWorkState, isArchived, issueFleet, issueParticipants, sessionDisplayState, sessionForest, sessionHeadline } from './session.js'
+import { fleetWorkState, isArchived, issueFleet, issueParticipants, sessionDisplayState, sessionForest, sessionHeadline } from './session.js'
 import { fileName, webName } from './resourceCatalog.js'
 import { resourceSurface, resourceTabKey } from './sessionSurface.js'
 import { useLaunchers } from './launch.js'
@@ -15,39 +14,47 @@ import { useT } from './i18n/index.jsx'
 import { useEscLayer } from './escStack.js'
 import { routeHash } from './route.js'
 import { isNewTabGesture, openNewTab } from './tabs.js'
+import { useFold } from './SessionWindow.jsx'
 
 // The issue's FLEET on the Issues page ([[issue-binding]]): the sessions bound to this issue, read through the
-// ONE join session.js owns, drawn with the ONE session row every list surface draws, and acted on through the
-// ONE session context menu every list surface opens. This file adds no second session model: it is a rail
-// section (the forest + one state-gated action per row + a card under the picked row + the dispatch and
-// assign doors) and a list-row strip over the same `fleet`.
+// ONE join the review package owns and drawn in [[review-chrome]]'s OWN vocabulary — every row is the rail's
+// SideValue (a status dot leading a truncating text), every control is the one `ds-action` button, every fact
+// in a row's card is another SideValue. Nothing here borrows the console sidebar's row: the rail is a document
+// margin, and it reads like the metadata rows around it. Acting on a row goes through the one session context
+// menu every list surface opens.
 
 const STRIP_MAX = 4
 
-// the compact list-row / status-band face: up to STRIP_MAX status glyphs painted by STATUS_COLOR, the rest a
-// count, the whole chip toned by the fleet's rolled-up work state. Hover names every session and its status.
-export function FleetStrip({ fleet = [], className = '' }) {
+// the status DOT — the same lead the originator chip wears, painted by the board's STATUS_COLOR.
+const StatusDot = ({ s }) => {
+  const d = sessionDisplayState(s)
+  return <span className="fv-originator-dot" style={{ background: d.color }} aria-hidden="true" />
+}
+
+// the compact list-row / status-band face: the row-aside TAG primitive (`rl-tag`) carrying up to STRIP_MAX
+// status glyphs in the board's own colours, `+n` past that, toned by the fleet's rolled-up work state.
+export function FleetStrip({ fleet = [] }) {
   const t = useT()
   if (!fleet.length) return null
   const state = fleetWorkState(fleet)
   const tip = fleet.map((s) => `${sessionHeadline(s)} · ${t(`status.${sessionDisplayState(s).status}`)}`).join('  /  ')
   return (
-    <span className={`fv-fleet fv-fleet-${state} ${className}`} data-tip={tip} aria-label={t(`fleet.${state}`, { n: fleet.length })}>
+    <span className={`rl-tag fv-fleet fv-fleet-${state}`} data-tip={tip} aria-label={t(`fleet.${state}`, { n: fleet.length })}>
       {fleet.slice(0, STRIP_MAX).map((s) => {
         const d = sessionDisplayState(s)
         return <span key={s.id} className="fv-fleet-glyph" style={{ color: d.color }} aria-hidden="true">{d.glyph}</span>
       })}
-      {fleet.length > STRIP_MAX && <span className="fv-fleet-more">+{fleet.length - STRIP_MAX}</span>}
+      {fleet.length > STRIP_MAX && <span>+{fleet.length - STRIP_MAX}</span>}
     </span>
   )
 }
 
-// the work-state word beside the issue's own open/closed mark — derived from the fleet, stored nowhere.
+// the work-state word beside the issue's own open/closed mark — the same tag primitive, derived, stored nowhere.
 export function FleetWorkState({ fleet = [] }) {
   const t = useT()
   if (!fleet.length) return null
   const state = fleetWorkState(fleet)
-  return <span className={`fv-work fv-work-${state}`}>{t(`fleet.${state}`, { n: fleet.length })}</span>
+  return <span className={`rl-tag fv-work fv-work-${state}`}>{t(`fleet.${state}`, { n: fleet.length })}</span>
 }
 
 // ONE action per row, gated by the same state facts the console's toolbar gates on (sessionCommands.js):
@@ -61,27 +68,31 @@ export const railAction = (s) => {
   return null
 }
 
-// the picked row's CARD: the session's own facts, every one already on the wire — status and declaration note,
-// branch, and its posted files / web services / widgets as REAL anchors into the console surface that shows
-// each ([[resource-tabs]]' address grammar), never a second viewer. "Open console" is the same door a row
-// click used to be.
+// the ONE rail control: a quiet outlined button in the rail's own type, a `danger` tone for the destructive verb.
+function RailAction({ children, tone = '', ...props }) {
+  return <button type="button" className={`ds-action${tone ? ` ${tone}` : ''}`} onMouseDown={(e) => e.preventDefault()} {...props}>{children}</button>
+}
+
+// the picked row's CARD: the session's own facts as rail rows — status and note, branch, posted files / web
+// services / widgets as REAL anchors into the console surface that shows each ([[resource-tabs]]' address
+// grammar) — every fact already on the wire, no second viewer; then the console door.
 function FleetCard({ s, onOpenSession }) {
   const t = useT()
   const d = sessionDisplayState(s)
   const files = s.files || []
   const web = s.web || []
   const widgets = s.widgets || []
+  const key = (label) => <span className="ds-side-label fv-card-key">{label}</span>
   const surfaceHref = (kind, value) => routeHash('sessions', s.id, { surface: resourceSurface(resourceTabKey(s.id, kind, value)) })
   return (
     <div className="fv-fleet-card" role="region" aria-label={sessionHeadline(s)}>
-      <span className="k">{t('fleet.cardStatus')}</span>
-      <span className="v"><span style={{ color: d.color }}>{t(`status.${d.status}`)}</span>{s.note ? ` · ${s.note}` : ''}</span>
-      {s.branch && <><span className="k">{t('fleet.cardBranch')}</span><span className="v">{s.branch}{s.merges ? ` · ${s.merges}×merged` : ''}</span></>}
-      {files.length > 0 && <><span className="k">{t('fleet.cardFiles')}</span><span className="v fv-fleet-links">{files.map((p) => <a key={p} href={surfaceHref('file', p)} data-tip={p}>{fileName(p)}</a>)}</span></>}
-      {web.length > 0 && <><span className="k">{t('fleet.cardWeb')}</span><span className="v fv-fleet-links">{web.map((w) => <a key={w.key} href={surfaceHref('web', w.key)} data-tip={w.url}>{webName(w.url)}</a>)}</span></>}
-      {widgets.length > 0 && <><span className="k">{t('fleet.cardWidgets')}</span><span className="v">{widgets.map((w) => w.name).join(', ')}</span></>}
-      {!files.length && !web.length && !widgets.length && <><span className="k" /><span className="v fv-fleet-empty">{t('fleet.cardNothing')}</span></>}
-      <a className="fv-close-issue fv-fleet-open" href={routeHash('sessions', s.id)} onClick={(e) => { if (isNewTabGesture(e)) return; e.preventDefault(); onOpenSession?.(s.id) }}>
+      <SideValue lead={key(t('fleet.cardStatus'))} text={`${t(`status.${d.status}`)}${s.note ? ` · ${s.note}` : ''}`} />
+      {s.branch && <SideValue lead={key(t('fleet.cardBranch'))} text={s.branch} mono />}
+      {files.map((p) => <SideValue key={p} lead={key(t('fleet.cardFiles'))} text={fileName(p)} tip={p} href={surfaceHref('file', p)} />)}
+      {web.map((w) => <SideValue key={w.key} lead={key(t('fleet.cardWeb'))} text={webName(w.url)} tip={w.url} href={surfaceHref('web', w.key)} />)}
+      {widgets.length > 0 && <SideValue lead={key(t('fleet.cardWidgets'))} text={widgets.map((w) => w.name).join(', ')} />}
+      {!files.length && !web.length && !widgets.length && <SideValue lead={key('')} text={t('fleet.cardNothing')} dim />}
+      <a className="ds-action" href={routeHash('sessions', s.id)} onClick={(e) => { if (isNewTabGesture(e)) return; e.preventDefault(); onOpenSession?.(s.id) }}>
         <Icon name="terminal" size={12} />{t('fleet.openConsole')}
       </a>
     </div>
@@ -145,17 +156,10 @@ export default function IssueSessions({ issue, sessions = [], onOpenSession, onW
       else onError?.(res?.error || t('fleet.refused', { what: t('fleet.assign') }))
     } finally { setBusy('') }
   }
-  // a plain click opens the row's card in place; ctrl/⌘ still opens the console in a new tab ([[tab-strip]]).
-  const pick = (s) => (e) => {
-    if (isNewTabGesture(e)) { openNewTab('sessions', s.id); return }
-    setPicked((cur) => (cur === s.id ? null : s.id))
-  }
-  const chip = (s) => {
-    const d = sessionDisplayState(s)
-    const dot = <span className="fv-originator-dot" style={{ background: STATUS_COLOR[d.status] || STATUS_COLOR.idle }} aria-hidden="true" />
-    return <SideValue key={s.id} text={sessionHeadline(s)} lead={dot} tip={`${s.id} · ${t(`status.${d.status}`)}`} label={sessionHeadline(s)}
-      className="fv-originator alive openable" onClick={() => onOpenSession?.(s.id)} />
-  }
+  const chip = (s) => (
+    <SideValue key={s.id} text={sessionHeadline(s)} lead={<StatusDot s={s} />} tip={`${s.id} · ${t(`status.${sessionDisplayState(s).status}`)}`}
+      label={sessionHeadline(s)} className="fv-originator alive openable" onClick={() => onOpenSession?.(s.id)} />
+  )
   return (
     <>
       <SideSection label={fleet.length ? `${t('detail.sideSessions')} · ${fleet.length}` : t('detail.sideSessions')}>
@@ -167,20 +171,20 @@ export default function IssueSessions({ issue, sessions = [], onOpenSession, onW
               const status = t(`status.${sessionDisplayState(s).status}`)
               const open = picked === s.id
               return (
-                <div key={s.id} role="listitem">
-                  <div className="fv-fleet-row">
-                    <SessionConsoleTreeRow item={item} activeId={open ? s.id : null} onToggleFold={() => toggle(s.id)} rowProps={{
-                      'data-sid': s.id,
-                      'data-tip': s.note ? `${status} · ${s.note}` : status,
-                      'aria-expanded': open,
-                      onClick: pick(s),
-                      onContextMenu: (e) => { e.preventDefault(); e.stopPropagation(); setMenu({ x: e.clientX, y: e.clientY, session: s }) },
-                    }} />
+                <div key={s.id} role="listitem" className="fv-fleet-item" style={{ '--fleet-depth': item.depth }}>
+                  <div className={`fv-fleet-row${open ? ' open' : ''}`} data-sid={s.id}
+                    onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setMenu({ x: e.clientX, y: e.clientY, session: s }) }}>
+                    {/* the fold is the icon-system's chevron, present only where there is a subtree to fold */}
+                    {item.expandable
+                      ? <IconButton icon={item.expanded ? 'chevron-down' : 'chevron-right'} size={12} className="fv-fleet-fold" label={`${item.expanded ? '−' : '+'} ${item.kin}`} onClick={() => toggle(s.id)} />
+                      : <span className="fv-fleet-fold" aria-hidden="true" />}
+                    {/* a plain click opens the row's card in place; ctrl/⌘ still opens the console in a new tab ([[tab-strip]]) */}
+                    <SideValue text={sessionHeadline(s)} lead={<StatusDot s={s} />} tip={s.note ? `${status} · ${s.note}` : status} label={sessionHeadline(s)}
+                      className="fv-fleet-name" onClick={(e) => { if (isNewTabGesture(e)) openNewTab('sessions', s.id); else setPicked((cur) => (cur === s.id ? null : s.id)) }} />
                     {action && (
-                      <button type="button" className={`fv-close-issue fv-life-${action} fv-fleet-act`} disabled={!!busy}
-                        data-tip={t(`fleet.${action}Title`)} onMouseDown={(e) => e.preventDefault()} onClick={act(action, s)}>
+                      <RailAction tone={action === 'close' ? 'danger' : ''} disabled={!!busy} data-tip={t(`fleet.${action}Title`)} onClick={act(action, s)}>
                         {busy === `${action}:${s.id}` ? t('session.issuesActing') : t(`fleet.${action}`)}
-                      </button>
+                      </RailAction>
                     )}
                   </div>
                   {open && <FleetCard s={s} onOpenSession={onOpenSession} />}
@@ -188,22 +192,20 @@ export default function IssueSessions({ issue, sessions = [], onOpenSession, onW
               )
             })}
           </div>
-        ) : <span className="fv-fleet-empty">{t('fleet.none')}</span>}
+        ) : <SideValue text={t('fleet.none')} dim />}
         <div className="fv-fleet-doors">
-          <button type="button" className="fv-close-issue fv-life-new" disabled={!!busy} data-tip={t('fleet.newWorkerTitle')}
-            onMouseDown={(e) => e.preventDefault()} onClick={dispatch}>
+          <RailAction disabled={!!busy} data-tip={t('fleet.newWorkerTitle')} onClick={dispatch}>
             <Icon name="plus" size={12} />{busy === 'new' ? t('session.issuesActing') : t('fleet.newWorker')}
-          </button>
+          </RailAction>
           {launchers.length > 1 && (
-            <select className="fv-fleet-launcher" value={launcher || ''} aria-label={t('fleet.launcher')} disabled={!!busy}
+            <select className="ds-select" value={launcher || ''} aria-label={t('fleet.launcher')} disabled={!!busy}
               onChange={(e) => pickLauncher(e.target.value)}>
               {launchers.map((l) => <option key={l.name} value={l.name}>{l.name}</option>)}
             </select>
           )}
-          <button type="button" className="fv-close-issue fv-life-assign" disabled={!!busy} data-tip={t('fleet.assignTitle')} aria-haspopup="dialog"
-            onMouseDown={(e) => e.preventDefault()} onClick={() => setAssigning(true)}>
+          <RailAction disabled={!!busy} data-tip={t('fleet.assignTitle')} aria-haspopup="dialog" onClick={() => setAssigning(true)}>
             {busy === 'assign' ? t('session.issuesActing') : t('fleet.assign')}
-          </button>
+          </RailAction>
         </div>
       </SideSection>
       {participants.length > 0 && (
@@ -211,15 +213,14 @@ export default function IssueSessions({ issue, sessions = [], onOpenSession, onW
           {participants.map(chip)}
         </SideSection>
       )}
-      {/* the assign door is the ONE session picker ([[session-picker]]) in a modal: pick a retained board session
-          that is not yet on this issue; the server binds it and tells it. */}
-      {/* portaled to the body: the rail is a sticky overflow scroller under the sticky composer's stacking order, and a
-          modal drawn inside it would paint behind the compose box — as it did. */}
+      {/* the assign door is the ONE session picker ([[session-picker]]) in the one modal, portaled to the body:
+          the rail is a sticky overflow scroller painted under the sticky composer, so a modal drawn inside it
+          would sit behind the compose box — as it did. */}
       {assigning && createPortal(
         <Modal title={t('fleet.assignPick')} closeLabel={t('session.issuesCancel')} onClose={() => setAssigning(false)} className="fv-assign-modal">
           {assignable.length
             ? <SessionPicker sessions={assignable} value="" onChange={assign} filter={assignable.length > 5} compact autoFocus ariaLabel={t('fleet.assignPick')} />
-            : <span className="fv-assign-none">{t('fleet.assignNone')}</span>}
+            : <SideValue text={t('fleet.assignNone')} dim />}
         </Modal>,
         document.body,
       )}
