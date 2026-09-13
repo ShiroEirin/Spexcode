@@ -60,7 +60,7 @@ cd your-repo
 spex init --harness claude,codex,opencode,pi,zcode,claude-headless,opencode-headless,pi-headless,codex-headless   # 创建 .spec/、安装 git 钩子、物化 agent 契约
 ```
 
-引入到这里就完成了。示例列出了全部内建 harness,不用的删掉就行,`--harness` 必填,接受任意一个 id 或逗号分隔的子集。只想要 spec 这份资产、不想往任何 agent 里写东西,就用 `--harness none`:只引入 L0,不往任何 agent 的配置里写一个字节。只想要一个 spec 架子、连 git 钩子也不要,就用 `spex init --pure`:只写 `.spec/spexcode.json` 和根节点 spec,别的一概不动;以后再跑 `spex init --harness …` 会原样接管这棵树。`spex init` 是增量的:在任何现有 git 仓库上都能跑,绝不替换属于你的文件——harness 把钩子读在你自己的配置文件里时(`.claude/settings.json`、`.codex/hooks.json`),只有 SpexCode 自己的条目会被合进去,`spex uninstall` 时再原样摘走;和你已有的 skill/agent 同名时会跳过并报出来,不会覆盖。它只做三件事。它创建根节点 `.spec/project/spec.md` 和一份初始的 `.spec/spexcode.json`,安装 git 钩子,再把工作流规则**物化**进你的 agent 本来就会读的文件(`CLAUDE.md`、`AGENTS.md`):改动代码之前先读管辖它的 spec,spec 和代码在同一个 commit 里提交,只提出合并提议、不执行合并。任何打开这个仓库的 agent 都会自己发现这套工作流。
+引入到这里就完成了。示例列出了全部内建 harness,不用的删掉就行,`--harness` 必填,接受任意一个 id 或逗号分隔的子集。只想要 spec 这份资产、不想往任何 agent 里写东西,就用 `--harness none`:只引入 L0,不往任何 agent 的配置里写一个字节。只想要一个 spec 架子、连 git 钩子也不要,就用 `spex init --pure`:只写 `.spec/spexcode.json` 和根节点 spec,别的一概不动;以后再跑 `spex init --harness …` 会原样接管这棵树。`spex init` 是增量的:在任何现有 git 仓库上都能跑,绝不替换属于你的文件——harness 把钩子读在你自己的配置文件里时(`.claude/settings.json`、`.codex/hooks.json`),只有 SpexCode 自己的条目会被合进去,`spex uninstall` 时再原样摘走;和你已有的 skill/agent 同名时会跳过并报出来,不会覆盖。加上 `--title "你的项目名"`,这个名字会落到读者能看到它的两个地方:根节点自己的目录和 `spec.md`,以及 dashboard 的标题——不加的话,图谱顶上那个节点就叫 `project`,页面则以检出目录命名,而那个目录往往是 `repo` 或 `tmp`。它只做三件事。它创建根节点 `.spec/<名字>/spec.md` 和一份初始的 `.spec/spexcode.json`,安装 git 钩子,再把工作流规则**物化**进你的 agent 本来就会读的文件(`CLAUDE.md`、`AGENTS.md`):改动代码之前先读管辖它的 spec,spec 和代码在同一个 commit 里提交,只提出合并提议、不执行合并。任何打开这个仓库的 agent 都会自己发现这套工作流。
 
 需要看板(图谱、session)时,再启动运行时:
 
@@ -71,6 +71,40 @@ spex dashboard   # 本机唯一的 gateway,所有项目共用一个 URL
 ```
 
 dashboard 是单独的包,所以只写作的安装既不带前端构建产物,也不带服务端运行时(HTTP 服务和原生 PTY 模块)。一台机器起一个 `spex dashboard` 就够了:所有在跑的项目都会出现在它下面,`/projects` 页面直接在浏览器里管理它们。剩下的步骤见 [Getting started](https://spexcode.net/getting-started/)。
+
+## 从你的 agent 里开始,什么都不用装
+
+要最快看出一棵 spec 树值不值,就让你的 agent 画一棵出来。**atlas** 这个 skill 以插件形式发布给会装插件的
+agent,它通过 `npx` 调用 SpexCode——本机不用装任何东西,也不用配置。
+
+**Claude Code**
+
+```sh
+claude plugin marketplace add shuxueshuxue/spexcode-plugins
+claude plugin install atlas@spexcode
+```
+
+**Codex**
+
+```sh
+codex plugin marketplace add shuxueshuxue/spexcode-plugins
+codex plugin add atlas@spexcode
+```
+
+然后在任何一个仓库里,给 agent 一句话:
+
+> 给这个项目画一套规格图,我要那个能直接打开看的网页。
+
+它会把仓库读成一棵 spec 树,用 `spex init --pure --title <你的项目名>` 把树种下去,挑出值得画的部分逐个画图,
+每张图都跑到 `spex diagram check` 通过为止,提交 `.spec/`,最后交给你一个自包含的 HTML——整棵树,每个节点的图
+就在它正文上面,从磁盘双击就能打开。skill 会要求 agent 用你提问的语言来写这棵树。
+
+这时这个仓库已经在 L0 被引入了:它写出来的树,和 `spex init` 种下的是同一份资产,以后再跑
+`spex init --harness …` 会原样接管它,把机制装在它旁边。
+
+[`shuxueshuxue/spexcode-plugins`](https://github.com/shuxueshuxue/spexcode-plugins) 就是那个 marketplace,
+里面只有这些包,由本仓库的 `distribution/` 自动同步过去。ZCode、gugu、PenguinHarness 装的是同一个 skill,
+各走各的机制,`distribution/README.md` 里逐个写了。
 
 ## 这套系统是怎么工作的
 
@@ -97,7 +131,7 @@ spex session ls                  # 下面这张列表
 spex session watch stream        # 跟踪状态流转:working → review → done …
 spex session review uploader     # 领先主干的 commit、merge-base diff、合并/lint 闸门
 spex session merge uploader      # 把经过检查的合并交给该 session 自己的 agent 执行
-spex session close uploader      # 删除该会话的 worktree、分支和记录
+spex session close uploader      # 只移除 worktree;分支、记录和对话都还在,可以恢复
 ```
 
 <img src="readme-sessions.svg" alt="动画终端:spex session ls 列出 working、review、asking、done 各状态的五个会话">

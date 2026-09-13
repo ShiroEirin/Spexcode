@@ -451,7 +451,7 @@ export default {
     assign: 'Assign…',
     assignTitle: 'bind a session that already exists to this issue, and tell it',
     assignPick: 'pick the session to bind to this issue',
-    assignNone: 'every board session is already on this issue',
+    assignNone: 'every session is already on this issue',
     openConsole: 'Open console',
     cardStatus: 'status',
     cardBranch: 'branch',
