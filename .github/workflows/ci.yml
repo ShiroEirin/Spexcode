@@ -28,7 +28,7 @@ jobs:
         run: npm ci
       - name: Build internal workspace packages
         run: npm run build
-      - name: init-plugin parity + spec-lint (blocks on errors; coverage/drift are advisory warnings)
+      - name: init-plugin parity + dead-words + spec-lint (blocks on errors; coverage/drift are advisory warnings)
         run: npm run lint
       - name: Docs release producer
         run: npm run test:docs-release
@@ -36,15 +36,13 @@ jobs:
         run: npm run test:release-publish && npm run release:check
       - name: Host packages (the atlas for Claude Code, ZCode, gugu and PenguinHarness)
         run: npm run test:distribution
-      - name: dead-words gate (retired vocabulary must not resurface on command/route/label/file/node surfaces)
-        run: node scripts/dead-words.mjs
       - name: typecheck
         working-directory: spec-cli
         run: npx tsc --noEmit
       - name: Workspace suite parity (the list below is the whole set of workspaces that ship tests)
-        run: node --test scripts/ci-suite-parity.test.mjs
+        run: npm run test:ci-parity
       - name: Import-cycle gate (no module may need itself to finish loading)
-        run: node --test scripts/import-cycles.test.mjs
+        run: npm run test:import-cycles
       - name: Code lint (dead bindings and the correctness rules; style is out of scope)
         run: npm run lint:code
       - name: Workspace unit suites
@@ -63,4 +61,4 @@ jobs:
         working-directory: spec-cli
         run: npm test
       - name: Production clean-init smoke matrix (Python/TypeScript x Claude/Codex)
-        run: node scripts/clean-init-smoke.mjs
+        run: npm run test:clean-init

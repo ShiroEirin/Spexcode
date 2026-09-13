@@ -179,7 +179,7 @@ export default {
     invoked: 'Invoked on demand',
     bothSurfaces: 'skill + command',
     pickOne: 'Pick a plugin to read what it actually does.',
-    reading: 'reading…',
+    loading: 'loading…',
     openNode: 'open the spec node',
     factEvents: 'binds',
     factOrder: 'order',
