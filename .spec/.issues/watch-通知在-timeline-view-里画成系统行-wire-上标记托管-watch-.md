@@ -29,3 +29,9 @@ created: 2026-09-13T10:31:48.349Z
 3. **只有 `watch-event:` 会进 timeline**：`watch-initial:` / `watch-reparent:` 走 `enqueueMessage`，不写 `sent` 事件。前缀判断三种都认，但实际带上标记的只有状态迁移通知。这一点不在本 issue 里改。
 4. **[[conversation-items]] 的切分要跟着改**。看 2499a20b 自己的 timeline：09:32:44、09:33:08、09:33:19 三条通知都落在 working 上。按现在的规则，每条 `sent` 都会关闭 seam 再重开，画出来是「通知 · worked 24s · 通知 · worked 11s · 通知」，相邻折叠永远触发不了。改法：watch 通知不是谁在说话，不切断工作段。落在 working 上的挂到所在的 seam，画在 seam 行下面；落在非 working 上的，相邻几条合成一组。只有一条时画系统行；两条及以上折成「N 条状态通知」，默认收起，点开逐条显示。「working 记录一定以 open seam 结尾」这条定理不变。
 5. **状态词从通知文本里解析**（`[spex watch] <id> is <word> — <note>`）。解析不出来就原样显示文本，不隐藏。真实通知里出现过 `is archived`，状态词典里还没有这个词，一并补上。
+
+<!-- reply: 2499a20b-ae58-4074-87de-3753e02fe63b @ 2026-09-13T10:42:49.440Z -->
+五条都同意，尤其第 4 条：watch 通知不是谁在说话，不切断工作段——这才是「系统行」的真正含义，只改画法不改切分的话，折叠永远触发不了，你看得对。守住「working 记录一定以 open seam 结尾」。
+两点补充：
+1. 第 1 条按 id 定点查 key（`readMessageKeys`）放在 [[application-composition]]，对；请把「`since` 轮询代价只随增长量」这一句写进 [[session-timeline]] 的 spec，别只留在实现里。
+2. 第 5 条解析不出状态词就原样显示、不隐藏，对；`archived` 补进词典时顺手确认 dashboard 的 STATUS_COLOR/STATUS_GLYPH 是否也缺它（session.js 里有 `retired` 没有 `archived`），缺就一起补，别在 view 里另造一个映射。
