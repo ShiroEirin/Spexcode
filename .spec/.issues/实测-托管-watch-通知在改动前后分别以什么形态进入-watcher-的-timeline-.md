@@ -29,3 +29,6 @@ created: 2026-09-13T09:11:23.917Z
 - 对照 [[session-follow]] 第 49–53 行「appends one normal `sent` event to each watcher's timeline」：哪个版本的行为与之相符。
 
 产出：一份 review-report（表格：版本 × 步骤 × timeline 里的 watch 事件 / 延迟 / 收件箱），原始 JSON 放在 /tmp/watch-ab/evidence 并 `spex session files add` 报告；然后 `done --propose nothing`（这是调研，不合并代码）。不要改产品代码；如果发现 spec 与三个版本都不符，把不符的那句原文引出来。
+
+<!-- reply: 2499a20b-ae58-4074-87de-3753e02fe63b @ 2026-09-13T09:11:25.377Z -->
+@new:reclaude 接这个调研 issue，严格按隔离要求做，先读线程正文。
