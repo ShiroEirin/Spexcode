@@ -176,7 +176,7 @@ if (MODE === 'before') {
   check('the progress bar reads 1 of 2', bar.now === '1' && bar.max === '2' && bar.width === '50%', JSON.stringify(bar))
   const kidTitles = () => section.locator('.rl-row-title-text').allTextContents()
   check('the children render as list rows', JSON.stringify(await kidTitles()) === JSON.stringify(['Kid A: list grouping', 'Kid B: detail section']), JSON.stringify(await kidTitles()))
-  const door = await section.locator('a.ds-action').getAttribute('href')
+  const door = await sideSection('sub-issues').locator('a.ds-action').getAttribute('href')
   check('+ Sub-issue is a real anchor to the compose page with the parent', decodeURIComponent(door || '') === `#/issues/new?parent=${T.epic}`, door)
   const relationsText = (await sideSection('relations').textContent().catch(() => '')) || ''
   check('the rail lists the duplicate pointing here', relationsText.includes('duplicated by') && relationsText.includes('Duplicate report of the tree page'), relationsText)
@@ -242,11 +242,11 @@ if (MODE === 'before') {
   check('a closed child names its closed parent', (await sideSection('parent').locator('.ds-val-text').textContent()) === 'Old epic: shipped tree')
   await shot('detail-closed-child')
 
-  // — 10. the door writes nothing; the compose page does, with the parent, and lands on the sub-issue —
+  // — 10. the rail door writes nothing; the compose page does, with the parent, and lands back on the parent —
   await go(`#/issues/${encodeURIComponent(T.epic)}`)
   await detailSettled('Epic: issue tree page')
-  await until(async () => (await page.locator('.fv-subissues:visible a.ds-action').count()) > 0)
-  await page.locator('.fv-subissues:visible a.ds-action').click()
+  await until(async () => (await sideSection('sub-issues').locator('a.ds-action').count()) > 0)
+  await sideSection('sub-issues').locator('a.ds-action').click()
   await until(async () => (await page.locator('.fv-new-title:visible').count()) > 0)
   check('the door opens the compose page with the parent in the address', decodeURIComponent(await page.evaluate(() => location.hash)) === `#/issues/new?parent=${T.epic}`)
   await until(async () => (await sideSection('parent').locator('.ds-val-text').textContent()) === 'Epic: issue tree page')
@@ -256,17 +256,17 @@ if (MODE === 'before') {
   await page.locator('.fv-new-title:visible').fill('Kid C: opened through the door')
   await shot('compose-sub-issue')
   await page.locator('.fv-post:visible').click()
-  await until(async () => (await page.locator('.ds-title:visible').first().textContent())?.includes('Kid C: opened through the door'))
-  const createdId = decodeURIComponent((await page.evaluate(() => location.hash)).replace('#/issues/', ''))
-  const created = await api(`/api/issues/${encodeURIComponent(createdId)}`)
-  check('Create lands on the new sub-issue under the epic', created.parent === T.epic && JSON.stringify(created.nodes) === JSON.stringify(['project']), `parent=${created.parent} nodes=${JSON.stringify(created.nodes)}`)
-  await until(async () => (await sideSection('parent').count()) > 0)
+  const hash = async () => decodeURIComponent(await page.evaluate(() => location.hash))
+  await until(async () => (await hash()) === `#/issues/${T.epic}` && (await page.locator('.fv-subissues-count:visible').textContent()) === '1/3 done')
+  check('Create lands back on the parent, whose Sub-issues now count three', (await hash()) === `#/issues/${T.epic}` && (await page.locator('.fv-subissues-count:visible').textContent()) === '1/3 done', await hash())
+  const epicAfter = await api(`/api/issues/${encodeURIComponent(T.epic)}`)
+  const kidC = Object.values(epicAfter.refs || {}).find((r) => r.concern === 'Kid C: opened through the door')
+  const created = kidC ? await api(`/api/issues/${encodeURIComponent(kidC.id)}`) : {}
+  check('the new sub-issue hangs under the epic with its nodes', created.parent === T.epic && JSON.stringify(created.nodes) === JSON.stringify(['project']), `parent=${created.parent} nodes=${JSON.stringify(created.nodes)}`)
   await shot('created-sub-issue')
   await page.goBack()
-  await until(async () => (await page.evaluate(() => location.hash)).startsWith(`#/issues/${encodeURIComponent(T.epic)}`) || decodeURIComponent(await page.evaluate(() => location.hash)) === `#/issues/${T.epic}`)
-  check('Back from the created issue skips the spent compose page', decodeURIComponent(await page.evaluate(() => location.hash)) === `#/issues/${T.epic}`, decodeURIComponent(await page.evaluate(() => location.hash)))
-  await until(async () => (await page.locator('.fv-subissues-count:visible').textContent()) === '1/3 done')
-  check('the epic now counts three sub-issues', (await page.locator('.fv-subissues-count:visible').textContent()) === '1/3 done')
+  await page.waitForTimeout(600)
+  check('Back from the parent skips the spent compose page', !(await hash()).startsWith('#/issues/new'), await hash())
 
   // — 11. phone width: the same pages reflow without sideways scroll —
   await page.setViewportSize({ width: 390, height: 844 })
