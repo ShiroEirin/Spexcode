@@ -257,6 +257,12 @@ D-23 由此而来。
   **mbp**（z-code）工具链 `~/spexcode` 落后 **3629** 个提交（head 2026-08-14，**在 08-22 的 SQLite 切换之前**），也就是它的
   z-code store 还是 JSON 记录——更新它不是"npm install → materialize → 重启"，而是一次带备份与 plan 的 live cutover 维护操作。
   两台都不是可以无人值守夜里做的事：一台要碰用户未提交的文件，一台要迁数据。这里只记事实，不动。
+  **后续（同夜，人类拍板"删"）**：两处检出都量清后删除。macmini：gugu 实际跑的是 npm 全局 spexcode 0.7.0-next.20，
+  `~/specMech` 无人运行；其"脏"内容（main.js 的 macTabShortcuts 已在 main、terminal-ui 为过期 dist、780f 分支已合）不是新工作；
+  先用全局 spex 重新 materialize gugu（hooks 里一半 SPEX 路径原烤在 specMech），再卸掉两个指向它的 keytest LaunchAgent 与
+  `spex-upgrade.sh`，`rm -rf`。mbp：`~/spexcode` 只跑着一个没有后端的 dashboard（backend 自 08-28 被禁用），z-code hooks 烤的是
+  全局 0.6.5 路径；杀掉 zcode-web、在 `spex-boot.sh` 注释掉那行、`rm -rf`；`~/.spexcode` 的 JSON store（316 个项目目录）原样保留。
+  两台删后各自复核：gugu `/health` ok、hooks 无 specMech 引用；mbp 全局 `spex --version` 0.6.5 仍可用。
 - **路线图本身已不在树里**：`docs/session-platform-construction-roadmap.html` 等六份于 `a15028b59`（09-03）删除。
   本账引用的 M6 定义、删除表和合并公式取自 `a15028b59^` 那一版；`adopter-cutin` 节点里"the milestones named by the
   architecture ledger"这句现在指向一个不存在的文件。要不要把里程碑定义重新落在某个 spec 节点里，是人的决定。
