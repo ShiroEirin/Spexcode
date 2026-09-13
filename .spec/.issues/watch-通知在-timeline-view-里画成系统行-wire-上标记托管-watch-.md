@@ -1,9 +1,10 @@
 ---
 concern: watch 通知在 Timeline view 里画成系统行：wire 上标记托管 watch 消息，view 折叠而不隐藏
 by: 2499a20b-ae58-4074-87de-3753e02fe63b
-status: open
+status: landed
 nodes: session-timeline, conversation-items, session-follow, mobile-ui, rich-conversation
 created: 2026-09-13T10:31:48.349Z
+closedAt: 2026-09-13T13:08:34.502Z
 ---
 
 背景：托管 watch 的每次投递会在 watcher 的 timeline 追加一条 `sent` 事件（[[session-follow]] 的契约，35a0c5149 起真正实现），`from` 是被 watch 的子会话，text 形如 `[spex watch] <id> is asking — <note>`。Timeline view 把每个 `sent` 画成聊天气泡，于是这些系统通知看起来像「子会话对我说了一句 is working」，一个 supervisor watch 4 个 worker 时一屏都是它们。它们是系统在描述子会话的状态，不是子会话说的话；spec 只在 idempotency key 上标了 `watch-event:` / `watch-initial:` / `watch-reparent:` 前缀，wire 上没有任何区分字段。
