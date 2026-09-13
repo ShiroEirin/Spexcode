@@ -23,8 +23,8 @@ bridge; build the one object and let the stores be adapters.
 ## expanded spec
 
 **The core type.** An `Issue` is `{ id, store, concern, by, status, nodes[], created,
-body, replies[], evidence[], labels[], url?, parent, relations[], children[], childCounts, blockedBy[], relatedBy[],
-duplicatedBy[], duplicateOf }`. `store` names the adapter that holds it (`local`, or a forge host
+body, replies[], evidence[], labels[], url?, parent, relations[], children[], descendants[], childCounts, blockedBy[],
+relatedBy[], duplicatedBy[], duplicateOf }`. `store` names the adapter that holds it (`local`, or a forge host
 like `github`) — data, not a mode. There is deliberately **no content-kind taxonomy**: a field that does
 no mechanical work (nothing branches on it) is a label, not structure — what a thread *is* (a change
 suggestion, an annotation, a question) is what its prose says.
@@ -38,18 +38,23 @@ state bit and no per-reply lifecycle; what a reply is, its prose says.
 **The hierarchy is a projection over the merged set, rebuilt on every read.** A store holds two forward facts — an
 issue's direct `parent` pointer and the `relations` it initiated (`{type, id}`, type `blocks` / `related` /
 `duplicate`; [[local-issues]] owns how they are stored and written) — and `issueHierarchy`, a pure function over the
-whole merged set, derives the rest before any caller sees it. A pointer holds only while it names another OPEN issue
-present in the set; a closed or absent parent, or membership in a pointer cycle, reads as `parent: null` — the child
+whole merged set, derives the rest before any caller sees it. A pointer holds while it names another issue present
+in the set, whatever that issue's status — a closed tree keeps its shape, so the Closed view still nests and a closed
+child still names its parent. An absent parent, or membership in a pointer cycle, reads as `parent: null` — the child
 is promoted to a root with no child rewrite, the discipline of [[session-nesting]] (a cycle member's own descendants
 stay attached). `children` are the direct children in creation order, closed ones included, and `childCounts` splits
-them `{open, closed}`. An edge to an id outside the set is dropped, so every id a surface receives resolves; a
+them `{open, closed}`; `descendants` are every issue below through those pointers, depth-first in the same order —
+the set an issue's fleet is joined over ([[issue-binding]]). An edge to an id outside the set is dropped, so every id a surface receives resolves; a
 `blocks` edge whose initiator is no longer open reads as `related` and is never rewritten in the store; `blockedBy` /
 `relatedBy` / `duplicatedBy` are the reverse edges after that downgrade, and `duplicateOf` is the initiator's
 `duplicate` target. The projection writes nothing and triggers nothing: a parent never closes because its children
 did (closing stays a human act — [[state]]); the counts exist so a surface can show progress and offer Close. A forge
 issue stores none of this, so it arrives with `parent: null` and `relations: []` and is otherwise projected like any
 other issue. Every merged read carries the projection — `ls` / `show` / `mine`, the `GET /api/issues` rows,
-`GET /api/issues/:id`, and the board fold.
+`GET /api/issues/:id`, and the board fold. The single-issue HTTP read additionally carries `refs` (`issueRefs`): for
+every id its `parent`, `children` and relation fields name, that issue's compact `{id, store, concern, status, by,
+created, childCounts, descendants}` from the same merged set, so a detail page titles and marks every link it draws
+from the one read instead of a read per id.
 
 **Two stores, one translation rule.** The **local** store is the local issue store ([[local-issues]] owns its whole
 mechanism — venue, file format, lock, trunk commit); a local issue thread *is* a local Issue, its `store` implied

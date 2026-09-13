@@ -51,7 +51,8 @@ domain-only behavior stays in its page. No empty abstraction or page-local near-
   ONE bordered list. Its 48px header has counted section tabs left, invisible facet buttons right, and,
   whenever at least one REAL low-frequency/width-displaced facet has usable options (or an active value
   needs its off-switch), ONE semantic secondary **Filters** trigger — the
-  low-cardinality set only (state, store, source-session presence); this
+  low-cardinality set only (state, store, source-session presence, and a domain's display dimensions of the same
+  query, such as the issue tree's `sub:` / `group:`); this
   menu never houses commands or non-filter actions. The trigger is the same visual family as a facet
   button: the icon system's filter/funnel glyph, localized Filters text, and chevron-down — never a kebab,
   ellipsis, or "More actions" affordance. A stable badge counts ACTIVE filter GROUPS currently housed in
@@ -125,7 +126,9 @@ domain-only behavior stays in its page. No empty abstraction or page-local near-
   inside that anchor. Static row text passes through to the detail anchor; a dedicated metadata control keeps
   its own native href/button behavior. Their content is structured through the shared row primitive: a fixed state-icon box, a wrapping title,
   secondary identity/author/time metadata, then real right-side facts such as comments, store, evidence
-  kind, or scope. Desktop rows have GitHub's ~64px rhythm; at 390px the same markup grows vertically, moves
+  kind, or scope. The anchor-row list is ONE component (`ReviewRows`, with the row's own menu): the list page draws
+  its results through it, and a detail section listing the same objects (an issue's sub-issues) draws the same rows
+  through it. A row the list nests carries its depth and indents by it; nothing else in the grammar changes. Desktop rows have GitHub's ~64px rhythm; at 390px the same markup grows vertically, moves
   trailing facts under the title, allows long titles to wrap, and never widens the page. `j`/`k` still move
   a visual cursor and row-context `Enter` opens its href. Inputs/textareas/selects yield no list keys;
   buttons keep native Enter/Space while allowing `j`/`k`; a focused anchor's Enter follows its OWN href,
