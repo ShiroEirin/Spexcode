@@ -128,7 +128,9 @@ generalises to every read. The delivery wake such a write fires is not a produce
 notice the commit queued is the poke half of the **Owner** role. The producer therefore asks the running backend
 to drain that queue (`POST /api/sessions/:id/push`, answered once the drain has started) and returns, handing the
 queue over in-process only after an explicit `ECONNREFUSED`; any other failure is printed on stderr and leaves the
-notice owed to the backend's retry ([[delivery-queue]]).
+notice owed to the backend's retry ([[delivery-queue]]). The CLI's other local commits onto a watcher's queue take
+the same handover: `spex session watch` and `session new`'s parent watch queue the target's current state for the
+caller, and `spex internal session-turn-fail` commits a watched child's `error` ([[session-follow]]).
 
 **Degradation is never silent, and never invented.** An Owner verb that cannot prove the absence of an owner
 throws a clear `no backend reachable at <url>` with a non-zero exit. A Cache verb that fell back says which

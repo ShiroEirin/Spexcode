@@ -135,7 +135,7 @@ it watches the queues of its bound sessions, which is every running session what
 busy or restarting, or whose handover a concurrent connection displaced ([[claude-rendezvous]]), is delivered when
 it can be, rather than waiting for that agent to happen to take a turn or for the next message to arrive. A commit's
 post-commit wake keeps the same owner: inside that serve it drains the woken queue directly, while a process that is
-only its guest — a CLI state producer ([[remote-client]]) — asks it to drain with `POST /api/sessions/:id/push` and
+only its guest — a CLI command that committed locally ([[remote-client]]) — asks it to drain with `POST /api/sessions/:id/push` and
 drains locally only when that request's connection is refused, because then no serve is there to do it. The route
 answers once the drain has started, never after the handover, so no guest waits on an agent's harness; a serve that
 holds no record for the session answers `404` instead of an `ok` it cannot honour. A stopped

@@ -55,7 +55,11 @@ path projects those rows to unique watcher ids, appends one normal `sent` event 
 enqueues one ordinary prompt for adapter delivery. A busy or offline watcher therefore receives the next retry
 exactly like a normal `spex session send`; an available watcher receives a terminal insert in its current turn.
 Installing a source or reparenting a child directly enqueues the child's current authored state — a new supervisor
-needs that context even when it is routine `active`/working. Establishing the relation also initializes its durable
+needs that context even when it is routine `active`/working. That enqueue wakes the watcher's queue exactly as a state
+commit does, so the snapshot is handed over at once rather than left to the patrol. Every CLI command that commits onto
+a watcher's queue outside a declaration — `spex session watch`, the parent watch `session new` installs, and the
+headless turn-failure report `spex internal session-turn-fail` — takes the declaration's owner-first handover, so none
+of them waits on the watcher's harness. Establishing the relation also initializes its durable
 follow cursor to the subject's current event head, so the relation begins "from now" and does not replay history;
 the installation migration performs the same head seeding for watch edges that already exist. A missing cursor is
 therefore never interpreted as "nothing has ever been delivered" or as a request to start at sequence zero. Creation

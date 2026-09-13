@@ -257,6 +257,8 @@ export async function subscribeSessionWatch(watcher: string, targets: string[], 
     application.advanceFollowCursor(watcher, target, history.at(-1)?.eventSeq ?? 0)
     watched.push(target)
   }
+  // The raw enqueue fires no commit wake; the snapshot is owed like any committed notice, so it takes the same wake.
+  wakeCommittedRecipients([watcher])
   return { watched }
 }
 
@@ -1288,7 +1290,7 @@ export function setDeliveryHandover(handover: (id: string) => Promise<void>): vo
 // Canonical state commits already own the durable recipient queue. This is only the post-commit wake that hands
 // each queued recipient to its existing runtime; a failed runtime leaves the message pending for retry, and a
 // recipient with no bound runtime (stopped, closed, not yet launched) is not woken until a launch binds it.
-setSessionApplicationCommitWake((recipients) => {
+function wakeCommittedRecipients(recipients: readonly string[]): void {
   const wakeRecipients = recipients.filter(recipient => !readinessWakeSuppressed.has(recipient))
   queueMicrotask(() => {
     void Promise.resolve().then(async () => {
@@ -1306,7 +1308,8 @@ setSessionApplicationCommitWake((recipients) => {
       console.error(`spex: canonical delivery wake failed: ${error instanceof Error ? error.message : String(error)}`)
     })
   })
-})
+}
+setSessionApplicationCommitWake(wakeCommittedRecipients)
 
 let supervisingQueue = false
 export function superviseQueue(intervalMs = 3000): void {
