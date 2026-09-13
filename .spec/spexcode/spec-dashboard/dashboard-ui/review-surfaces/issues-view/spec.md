@@ -124,6 +124,12 @@ theatre is invented for a model that has none. An actually empty issue store say
   because one above the thread made the replies read as "the sub-issues". The `+ Sub-issue` door lives in the rail's
   **sub-issues** row beside Parent, with the closed/total count as its value. The thread carries its own heading
   (`Activity · N`) whenever it has replies or ledger rows, so it is never read as anything else.
+- **Who filed it is a VOICE in the Sessions section, never a bare id row.** The rail has no separate "opened by" row:
+  the originator is the first chip of the **on the thread** list under Sessions, tagged `opened`, and wears the one
+  session vocabulary — the headline with the board's status dot while it is a board session (click-through to its
+  console), its archived name with a `closed` tag once it has closed (read from the archive index, the short id only
+  when no name exists), a plain value when it is a human or a forge login. Other reply authors outside the fleet
+  follow as chips of the same kind ([[issue-binding]]).
 - **The page shows the issue's FLEET ([[issue-binding]])** — its own sessions and every sub-issue's, through the
   read-time tree's `descendants`. Every list row's trailing meta carries the fleet strip —
   up to four status glyphs in the board's own STATUS_COLOR/STATUS_GLYPH, `+n` past that, toned by the fleet's
@@ -148,10 +154,7 @@ theatre is invented for a model that has none. An actually empty issue store say
   foot**. SIDE rail — every value through [[review-chrome]]'s ONE SideValue metadata primitive
   (min-width:0 shrink, single-line ellipsis, full text on the tooltip; information type explicitly
   labeled, never guessed from a bare token): the issue's OWN id under a localized **Issue** label (the
-  full slug, truncatable — a bare `#slug` reads as a node), the store tag, the ORIGINATOR + liveness (a
-  local thread's `by` is a session id — a
-  live one is a click-through chip to `#/sessions/<id>`, painted by the board's STATUS_COLOR join; a
-  forge login stays a plain labeled value), the platform label chips under their localized label, the spec-node refs under their localized label (real
+  full slug, truncatable — a bare `#slug` reads as a node), the store tag (the originator is a voice in the Sessions section, above), the platform label chips under their localized label, the spec-node refs under their localized label (real
   `specAddress` anchors into the resident Spec document), and a forge permalink
   labeled with the store's concrete display name ("Open on GitHub"/"Open on GitLab" — canonical
   display-name data, never a URL sniff, never the word "forge"; a local issue renders none). At phone
