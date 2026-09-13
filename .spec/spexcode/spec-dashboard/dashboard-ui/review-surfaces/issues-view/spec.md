@@ -119,6 +119,11 @@ theatre is invented for a model that has none. An actually empty issue store say
   resident Spec document, never an inert tag; label chips are their own filter controls beside the row-detail anchor. At 390px those facts join the secondary line and the
   title may wrap without horizontal overflow. **The store is metadata, never identity**: it never leads a
   row and never sits on a title.
+- **Sub-issues are a block only when they exist.** The main column's Sub-issues section (progress, the children as
+  list rows, hide-completed) renders only for an issue that HAS children; a childless issue shows no header-only block,
+  because one above the thread made the replies read as "the sub-issues". The `+ Sub-issue` door lives in the rail's
+  **sub-issues** row beside Parent, with the closed/total count as its value. The thread carries its own heading
+  (`Activity · N`) whenever it has replies or ledger rows, so it is never read as anything else.
 - **The page shows the issue's FLEET ([[issue-binding]])** — its own sessions and every sub-issue's, through the
   read-time tree's `descendants`. Every list row's trailing meta carries the fleet strip —
   up to four status glyphs in the board's own STATUS_COLOR/STATUS_GLYPH, `+n` past that, toned by the fleet's
@@ -227,7 +232,10 @@ theatre is invented for a model that has none. An actually empty issue store say
   dispatch outcome uses [[transient-notices]]' shared short-lived stack. **Create lands on the issue
   it just made**: the response's id is navigated to with REPLACE ([[side-nav]]: automatic state-naming
   replaces), so the spent compose address leaves no emptied form in history and Back returns to the list.
-  Cancel is the SAME derived list anchor the back anchor uses, never `history.back`; Esc routes nothing.
+  Cancel is the SAME derived anchor the back anchor uses, never `history.back`; Esc routes nothing. **A sub-issue
+  composed from its parent (`?parent=<id>`) returns to the parent**: back anchor and Cancel point at the parent's
+  detail, and Create lands on the parent (REPLACE) — whose Sub-issues section now lists the new issue — instead of
+  on the child; without a parent the page returns to the list and lands on the created issue as before.
   `?parent=<id>` composes a sub-issue: the rail names the **Parent** as a linked value from its own addressed read,
   the store picker narrows to the local store (the only one holding a tree), and Create sends `parent` with the write.
 - **Issue cards enter this page, never the forge.** Every compact card in the node Issues tab is the SAME
