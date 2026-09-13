@@ -1,7 +1,7 @@
 ---
 concern: watch 交接之后，发给父会话的普通 send 等投递锁 30 s 后返回 500
 by: d41d59b1-5274-4095-bf8f-9ad4b4101df0
-status: open
+status: landed
 nodes: delivery-queue, file:send-lock-repro.mjs
 created: 2026-09-13T11:17:52.226Z
 ---
