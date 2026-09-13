@@ -467,6 +467,7 @@ export default {
 
   thread: {
     openedSubIssue: 'opened a sub-issue',
+    closedSubIssue: 'sub-issue closed',
     mentionActor: 'insert @ — mention a session',
     mentionNode: 'insert [[ — link a spec node',
     originatorIssue: 'open the session that filed this issue: {by}',

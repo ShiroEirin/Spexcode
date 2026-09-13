@@ -22,7 +22,7 @@ bridge; build the one object and let the stores be adapters.
 
 ## expanded spec
 
-**The core type.** An `Issue` is `{ id, store, concern, by, status, nodes[], created,
+**The core type.** An `Issue` is `{ id, store, concern, by, status, nodes[], created, closedAt,
 body, replies[], evidence[], labels[], url?, parent, relations[], children[], descendants[], childCounts, blockedBy[],
 relatedBy[], duplicatedBy[], duplicateOf }`. `store` names the adapter that holds it (`local`, or a forge host
 like `github`) — data, not a mode. There is deliberately **no content-kind taxonomy**: a field that does
@@ -34,6 +34,10 @@ contract holds here unchanged). `evidence[]` is a list of content-addressed evid
 target video evidence points at when a video finding routes to the responsible node's concern. A reply
 is `{by, at, body}` — author, instant, prose — and nothing more: there is one reply shape, no per-reply
 state bit and no per-reply lifecycle; what a reply is, its prose says.
+`created` and `closedAt` are the store's own instants. `closedAt` is when the issue left open — a local close stamps
+it ([[local-issues]]), a forge issue carries its host's close time — and `null` while the issue is open or when its
+store never recorded one (a local thread closed before the key existed). It is a timestamp beside `status`, not a
+second lifecycle: nothing reads open or closed from it, and it exists so a surface can place a close on a time line.
 
 **The hierarchy is a projection over the merged set, rebuilt on every read.** A store holds two forward facts — an
 issue's direct `parent` pointer and the `relations` it initiated (`{type, id}`, type `blocks` / `related` /
@@ -53,13 +57,13 @@ issue stores none of this, so it arrives with `parent: null` and `relations: []`
 other issue. Every merged read carries the projection — `ls` / `show` / `mine`, the `GET /api/issues` rows,
 `GET /api/issues/:id`, and the board fold. The single-issue HTTP read additionally carries `refs` (`issueRefs`): for
 every id its `parent`, `children` and relation fields name, that issue's compact `{id, store, concern, status, by,
-created, childCounts, descendants}` from the same merged set, so a detail page titles and marks every link it draws
+created, closedAt, childCounts, descendants}` from the same merged set, so a detail page titles and marks every link it draws
 from the one read instead of a read per id.
 
 **Two stores, one translation rule.** The **local** store is the local issue store ([[local-issues]] owns its whole
 mechanism — venue, file format, lock, trunk commit); a local issue thread *is* a local Issue, its `store` implied
 by where it lives, never written into the file. The **forge** store rides [[spec-forge]]'s tracer read:
-a `ForgeIssue` becomes an Issue at this boundary — id `<host>#<number>`, title → concern, state → status,
+a `ForgeIssue` becomes an Issue at this boundary — id `<host>#<number>`, title → concern, state → status, the host's close time → `closedAt`,
 its comments → `replies[]` (the SAME Reply shape a local issue thread carries — both stores' discussions are one
 thread type, so every surface renders one kind of thread), and its platform labels → `labels[]` (name plus the
 optional display colors the host supplied), and the host's node-naming conventions (`Spec:`

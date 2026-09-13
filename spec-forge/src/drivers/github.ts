@@ -16,8 +16,8 @@ export const githubDriver: ForgeDriver = {
   // fetch open and closed in separate `--limit 200` windows and merge, so a flood of closed issues can't crowd the open set out of one shared `--state all` limit
   async listIssues(): Promise<ForgeIssue[]> {
     const list = (state: string) =>
-      gh<{ number: number; title: string; body: string; url: string; state: string; labels: { name: string; color?: string }[]; author: { login: string } | null; createdAt: string; comments: { author: { login: string } | null; body: string; createdAt: string }[] }[]>(
-        ['issue', 'list', '--state', state, '--limit', '200', '--json', 'number,title,body,url,state,labels,author,createdAt,comments'],
+      gh<{ number: number; title: string; body: string; url: string; state: string; labels: { name: string; color?: string }[]; author: { login: string } | null; createdAt: string; closedAt: string | null; comments: { author: { login: string } | null; body: string; createdAt: string }[] }[]>(
+        ['issue', 'list', '--state', state, '--limit', '200', '--json', 'number,title,body,url,state,labels,author,createdAt,closedAt,comments'],
       )
     const [open, closed] = await Promise.all([list('open'), list('closed')])
     return [...open, ...closed].map((r) => ({
@@ -29,6 +29,7 @@ export const githubDriver: ForgeDriver = {
       labels: forgeLabels(r.labels),
       author: r.author?.login ?? '',
       createdAt: r.createdAt ?? '',
+      closedAt: r.closedAt ?? null,
       comments: (r.comments ?? []).map((c) => ({ author: c.author?.login ?? '', createdAt: c.createdAt ?? '', body: c.body ?? '' })),
     }))
   },
@@ -37,7 +38,7 @@ export const githubDriver: ForgeDriver = {
     type ApiRow = {
       number: number; title: string; body: string | null; html_url: string; state: string
       labels: ({ name?: string; color?: string } | string)[]; user: { login: string } | null; created_at: string
-      comments: number; pull_request?: unknown
+      closed_at: string | null; comments: number; pull_request?: unknown
     }
     const out: ApiRow[] = []
     for (let page = 1; page <= 20; page++) {
@@ -54,6 +55,7 @@ export const githubDriver: ForgeDriver = {
       labels: forgeLabels(r.labels),
       author: r.user?.login ?? '',
       createdAt: r.created_at ?? '',
+      closedAt: r.closed_at ?? null,
       comments: r.comments > 0 ? await listComments(r.number) : [],
     })))
   },

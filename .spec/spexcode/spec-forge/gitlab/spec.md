@@ -42,6 +42,8 @@ the driver rebuilds both, thinly:
   host and what a closes-reference names), never the instance-global id.
 - GitLab's open state says `opened`; it normalizes to the port's canonical `open`, which downstream
   filters compare against.
+- An issue's `closed_at` is the port's `closedAt`; a row without it (still open, or a host version that omits
+  the field) reads `null`.
 - A **merge request** is the port's PR: its source branch is the head ref (the `node/<id>`
   structural link), and the issues it closes come from the host's own closes-issues read per open
   MR — GitLab already resolved the description server-side, so the driver never regex-hunts for

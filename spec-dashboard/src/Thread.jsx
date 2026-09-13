@@ -83,16 +83,16 @@ export function Replies({ replies, sessions = [], ledger = [], widgetHost = null
   const isMobile = useIsMobile()
   return mergeThread(replies, ledger).map((r, i) => {
     const author = (sessions || []).find((s) => s.id === r.by)
-    // a sub-issue opening ([[issues-view]]'s ledger): the declaration row's shape, its body the child as a real anchor
-    // wearing the child's current state mark.
+    // a sub-issue opening or close ([[issues-view]]'s ledger): the declaration row's shape, its body the child as a real
+    // anchor wearing the child's current state mark. A close row has no author to show — the wire records when, not who.
     if (r.kind === 'sub-issue') {
       const href = routeHash('issues', r.id)
       return (
-        <div className="fv-reply fv-declaration" key={`c-${r.id}`}>
+        <div className="fv-reply fv-declaration" key={`${r.event}-${r.id}`}>
           <div className="fv-reply-meta">
-            <span className="fv-reply-by" data-tip={r.by}>{author ? sessionHeadline(author) : r.by}</span>
+            {r.by && <span className="fv-reply-by" data-tip={r.by}>{author ? sessionHeadline(author) : r.by}</span>}
             {r.at && <span className="fv-reply-at">{r.at}</span>}
-            <span className="fv-declaration-word">{t('thread.openedSubIssue')}</span>
+            <span className="fv-declaration-word">{t(r.event === 'closed' ? 'thread.closedSubIssue' : 'thread.openedSubIssue')}</span>
           </div>
           <a className="fv-subissue-link" href={href} onClick={(event) => newTabAnchor(event, href)}>
             <ReviewState kind="issue" state={r.status} size={14} />

@@ -14,12 +14,18 @@ export const ledgerFromTimeline = (sessionId, events = []) => (events || [])
   .filter((e) => e?.kind === 'status' && LEDGER_STATUSES.has(e.status))
   .map((e) => ({ kind: 'declaration', by: sessionId, at: e.ts, status: e.display || e.status, note: e.note || null }))
 
-// a sub-issue's OPENING is a ledger row too ([[issues-view]]): the parent's thread shows when each child was opened and
-// by whom, linked, wearing the child's current state. A close carries no instant on the wire, so a closed child reads
-// closed through that state mark rather than as a row of its own.
-export const ledgerFromChildren = (children = []) => (children || [])
-  .filter((c) => c?.id && c.created)
-  .map((c) => ({ kind: 'sub-issue', by: c.by, at: c.created, id: c.id, concern: c.concern, status: c.status }))
+// a sub-issue's OPENING and CLOSE are ledger rows too ([[issues-view]]): the parent's thread shows when each child was
+// opened and by whom, and when it closed, each row linked and wearing the child's current state. The close row names no
+// one — the wire carries when a close happened, not who made it — and a child whose close has no recorded instant
+// (`closedAt: null`) reads closed through its state mark alone.
+export const ledgerFromChildren = (children = []) => (children || []).flatMap((c) => {
+  if (!c?.id) return []
+  const face = { kind: 'sub-issue', id: c.id, concern: c.concern, status: c.status }
+  return [
+    ...(c.created ? [{ ...face, event: 'opened', by: c.by, at: c.created }] : []),
+    ...(c.closedAt ? [{ ...face, event: 'closed', by: null, at: c.closedAt }] : []),
+  ]
+})
 
 // replies and ledger rows on ONE time line, oldest first; a reply keeps its place before a declaration made
 // at the same instant, so what was said precedes what was declared.
