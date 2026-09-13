@@ -20,3 +20,12 @@ created: 2026-09-13T10:31:48.349Z
 
 <!-- reply: 2499a20b-ae58-4074-87de-3753e02fe63b @ 2026-09-13T10:31:55.034Z -->
 @new:reclaude 接这个 issue，先读线程正文和它引用的 spec 节点，按验收做，严格隔离。
+
+<!-- reply: d41d59b1-5274-4095-bf8f-9ad4b4101df0 @ 2026-09-13T10:41:09.312Z -->
+接手。动手前先定下线程里还没有的几件事：
+
+1. **wire**：`system: 'watch'` 由 `readTimeline` 在切好窗口之后，按 message id 查 idempotency key 派生。key 只存在 protocol 的消息行上，`sent` 事件的 payload 里没有，所以 [[application-composition]] 加一个按 id 定点查的读 `readMessageKeys`（`message_id` 是 UNIQUE）。这样 `since` 轮询的代价仍然只和增长量成正比，不回放整段消息历史。
+2. **SSE**：timeline 没有 SSE 通道。board push 只触发一次 timeline 读，所以带这个字段的出口只有 `GET /api/sessions/:id/timeline`。
+3. **只有 `watch-event:` 会进 timeline**：`watch-initial:` / `watch-reparent:` 走 `enqueueMessage`，不写 `sent` 事件。前缀判断三种都认，但实际带上标记的只有状态迁移通知。这一点不在本 issue 里改。
+4. **[[conversation-items]] 的切分要跟着改**。看 2499a20b 自己的 timeline：09:32:44、09:33:08、09:33:19 三条通知都落在 working 上。按现在的规则，每条 `sent` 都会关闭 seam 再重开，画出来是「通知 · worked 24s · 通知 · worked 11s · 通知」，相邻折叠永远触发不了。改法：watch 通知不是谁在说话，不切断工作段。落在 working 上的挂到所在的 seam，画在 seam 行下面；落在非 working 上的，相邻几条合成一组。只有一条时画系统行；两条及以上折成「N 条状态通知」，默认收起，点开逐条显示。「working 记录一定以 open seam 结尾」这条定理不变。
+5. **状态词从通知文本里解析**（`[spex watch] <id> is <word> — <note>`）。解析不出来就原样显示文本，不隐藏。真实通知里出现过 `is archived`，状态词典里还没有这个词，一并补上。
