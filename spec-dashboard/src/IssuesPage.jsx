@@ -5,6 +5,7 @@ import { MENTION_RE, TriggerButton, typeTrigger, useMentionAutocomplete } from '
 import { ComposerSurface, ComposerTextarea, composingKey } from './Composer.jsx'
 import { SpecBody } from './NodeView.jsx'
 import { Replies, ReplyComposer, OriginatorLiveness } from './Thread.jsx'
+import { useWidgetHost } from './widgetHost.js'
 import { useT } from './i18n/index.jsx'
 import { DetailShell, FacetMenu, ListPage, ReviewListRow, ReviewState, SecondaryFilters, SideSection, SideValue } from './ReviewShell.jsx'
 import { ISSUE_QUERY_DEFAULT, queryParam, readToken, reviewRouteQuery, setToken } from '@spexcode/spec-core/review'
@@ -217,6 +218,8 @@ export function IssueDetailPage({ issue: th, specs, sessions, onOpenSession, onW
   const status = th.status || 'open'
   const { fleet } = issueFleet(th.id, sessions)
   const ledger = useFleetLedger(fleet)
+  // the thread is a home of the one widget host ([[widgets]]): its replies draft into, and send from, this composer
+  const widgetHost = useWidgetHost()
   const run = (name, fn) => async () => {
     if (acting) return
     setActing(name)
@@ -298,6 +301,7 @@ export function IssueDetailPage({ issue: th, specs, sessions, onOpenSession, onW
           sessions={sessions}
           focusId={nodes[0] || null}
           onDone={onWrite}
+          widgetHost={widgetHost}
           actionsEnd={!isConcluded && (
             <>
               {actErr && <span className="fv-error">{actErr}</span>}
@@ -309,7 +313,7 @@ export function IssueDetailPage({ issue: th, specs, sessions, onOpenSession, onW
       }
     >
       {th.body && <div className="fvd-body"><SpecBody body={th.body} /></div>}
-      <Replies replies={replies} sessions={sessions} ledger={ledger} />
+      <Replies replies={replies} sessions={sessions} ledger={ledger} widgetHost={widgetHost} />
     </DetailShell>
   )
 }
@@ -390,7 +394,8 @@ export default function IssuesPage({ param = null, query = EMPTY_QUERY, onOpenSe
       // an address naming no issue renders the honest not-found with the list link ([[review-chrome]]).
       return <DetailShell missing={t('reviewShell.issueNotFound', { id: param })} listHref={routeHash('issues')} listLabel={t('reviewShell.backToIssues')} />
     }
-    return <IssueDetailPage issue={detail.issue} specs={specs} sessions={sessions} onOpenSession={onOpenSession} onWrite={onWrite} onQueryText={onQueryText} />
+    // keyed by the issue, so a pending widget draft or a lifecycle error never carries over to another thread
+    return <IssueDetailPage key={detail.issue.id} issue={detail.issue} specs={specs} sessions={sessions} onOpenSession={onOpenSession} onWrite={onWrite} onQueryText={onQueryText} />
   }
   return <IssuesListPage data={list.data} loading={list.loading} error={list.error} query={query} onQueryText={onQueryText} sessions={sessions} />
 }

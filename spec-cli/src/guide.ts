@@ -666,6 +666,10 @@ mirrored on the frame; nothing reaches you until they press send. Their send com
 once: you receive the text as an ordinary message, and the state becomes this widget's state. So six ticks
 arrive as one decision, not six messages.
 
+AN ISSUE THREAD IS THE SAME HOST. Point at the widget from \`spex issue reply\` and the thread draws it, live.
+There the human's send posts the text as a reply on the thread, hands that reply to you as a message, and
+commits the state to your widget — so a choice you need can be asked where the issue is read.
+
 WHAT SURVIVES: the body and the committed state, in the repository. A reload draws the body and hands it the
 committed state — which is why a widget should render itself FROM spex.state rather than from whatever was
 clicked. What was never sent is stored nowhere: discarding reloads the frame back to body plus committed

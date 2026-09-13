@@ -672,10 +672,12 @@ export async function loadIssue(id) {
 // after the write commits. Returns parsed json ({ ok, …, outcomes }).
 // `deliverTo` carries the exact session ids the human pressed "Send to @x" for ([[issue-binding]]): the server
 // posts the reply first, then hands it to each as one ordinary send. Never derived here from the prose.
-export async function postIssueReply(id, body, evidence, { deliverTo = [] } = {}) {
+// `widgets` is the state half of a widget draft sent from the thread ([[widgets]]): `{ session, name, state }`,
+// addressed to the session that OWNS each widget, because one thread draws widgets of several sessions.
+export async function postIssueReply(id, body, evidence, { deliverTo = [], widgets = [] } = {}) {
   const res = await apiFetch(`/api/issues/${encodeURIComponent(id)}/reply`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ body, ...(evidence?.length ? { evidence } : {}), ...(deliverTo.length ? { deliverTo } : {}) }),
+    body: JSON.stringify({ body, ...(evidence?.length ? { evidence } : {}), ...(deliverTo.length ? { deliverTo } : {}), ...(widgets.length ? { widgets } : {}) }),
   })
   return res.json()
 }

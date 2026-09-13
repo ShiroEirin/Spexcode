@@ -20,6 +20,8 @@ import { useAttachQueue } from './useAttachQueue.jsx'
 import { CopyButton } from './CopyButton.jsx'
 import { SessionFilesContext } from './fileRefs.js'
 import { SessionWidgetsContext } from './widgetRefs.js'
+import { WidgetDraftQueue } from './SessionWidget.jsx'
+import { composeWidgetMessage, useWidgetHost } from './widgetHost.js'
 import { useCommandPresets, useHarnessCommands, useLaunchers } from './launch.js'
 import { inboxCommands } from './sessionCommands.js'
 import { clearNativeSelection, nativeSelectionWithin, nativeSnapshot, observeNativeSelection, readerIsSelecting, useSelectionController } from './selectionController.js'
@@ -141,27 +143,6 @@ const SeamLead = memo(function SeamLead({ live, from, skewRef, children }) {
   </span>
 })
 
-// A widget's pending contribution, sitting above the input box as an attachment rather than inside the
-// text: the send control is the one the human already uses, and the exact words that will go are readable
-// before they go. Folded when long, because a draft is read at a glance and inspected on demand.
-function WidgetDraftBlock({ entry, onDiscard }) {
-  const t = useT()
-  const [open, setOpen] = useState(false)
-  const long = entry.text.length > 80 || entry.text.includes('\n')
-  return (
-    <div className="m-widget-draft">
-      <button type="button" className="m-widget-draft-main" onClick={() => long && setOpen((v) => !v)}>
-        <Icon name="list-checks" size={12} />
-        <span className="m-widget-draft-name">{t('widget.draftLabel', { name: entry.name })}</span>
-        <span className={`m-widget-draft-text${open ? ' is-open' : ''}`}>{entry.text}</span>
-      </button>
-      <button type="button" className="m-widget-draft-act" onClick={onDiscard} aria-label={t('widget.discard')}>
-        <Icon name="x" size={12} />
-      </button>
-    </div>
-  )
-}
-
 // The shared surface renders as the semantic footer (`<footer className=...>`); keeping that landmark on
 // the primitive means Conversation and Command Box still have one shell rather than nested card chrome.
 //
@@ -198,11 +179,12 @@ function TimelineFooter({ session, state, active, inputRef, draft, setDraft, sen
   const insertTrigger = (trigger) => typeTrigger(inputRef.current, trigger, setDraft, grammar.sync)
   // what Enter and the send mark do with the draft: a bare board line runs on the board, anything else is
   // sent with its `[[node]]` mentions resolved to live spec pointers.
+  // a pending widget block is a message on its own ([[widgets]]): the human sends it with this same control.
   const submit = () => {
     if (readOnly) return
     const raw = draft.trim()
-    if (!raw) return
-    const board = boardCommandFor(raw, commands)
+    if (!raw && widgetDrafts.length === 0) return
+    const board = raw && boardCommandFor(raw, commands)
     if (board) { setDraft(''); grammar.close(); board.run?.(); return }
     // a quoted passage rides the SAME prompt as everything else ([[code-selection]]) — one ordinary message
     // with its tokens appended, never a second field or a second route.
@@ -216,13 +198,7 @@ function TimelineFooter({ session, state, active, inputRef, draft, setDraft, sen
       {...attach.dropProps}
       preview={(quotes.length > 0 || widgetDrafts.length > 0 || sendErr || sendNote) && (
         <>
-          {widgetDrafts.length > 0 && (
-            <div className="m-widget-queue">
-              {widgetDrafts.map((entry) => (
-                <WidgetDraftBlock key={entry.name} entry={entry} onDiscard={() => onWidgetDiscard?.(entry.name)} />
-              ))}
-            </div>
-          )}
+          <WidgetDraftQueue drafts={widgetDrafts} onDiscard={onWidgetDiscard} />
           {quotes.length > 0 && (
             <div className="m-quote-queue" aria-label={t('session.quoteAttachments')}>
               {quotes.map((quote, index) => (
@@ -280,7 +256,7 @@ function TimelineFooter({ session, state, active, inputRef, draft, setDraft, sen
                     onMouseDown={(e) => e.preventDefault()} onClick={stop} />
                 )}
                 <IconButton icon="send" size={14} className="m-send" label={t('mobile.send')}
-                  disabled={!draft.trim() || sending} onMouseDown={(e) => e.preventDefault()} onClick={submit} />
+                  disabled={(!draft.trim() && widgetDrafts.length === 0) || sending} onMouseDown={(e) => e.preventDefault()} onClick={submit} />
               </div>
             </>
           )}
@@ -330,8 +306,8 @@ function TimelineChat({ s, sessions = [], active = true, footerState = 'live', o
   // resolved when the menu OPENS, so an unaddressable passage shows the quote verb unavailable instead of
   // producing a token that points nowhere.
   const [quotes, setQuotes] = useState([])
-  const [widgetDrafts, setWidgetDrafts] = useState({})   // name → { text, state }: what a widget would contribute, until the human sends it
-  const [widgetReloads, setWidgetReloads] = useState({}) // name → counter: discarding a draft reloads the frame back to body + committed state
+  // what this conversation's widgets would contribute to the next send, until the human sends it ([[widgets]]' one host)
+  const widgetHost = useWidgetHost()
   const [menu, setMenu] = useState(null)
   const [sending, setSending] = useState(false)
   const [stopping, setStopping] = useState(false)
@@ -677,8 +653,8 @@ function TimelineChat({ s, sessions = [], active = true, footerState = 'live', o
 
   // `text` is the footer's composed message — the draft with its mentions already expanded
   const send = async (text) => {
-    const blocks = Object.entries(widgetDrafts).map(([name, entry]) => ({ name, ...entry }))
-    const composed = [...blocks.map((block) => block.text), text].filter((part) => part && part.trim()).join('\n\n')
+    const blocks = widgetHost.drafts
+    const composed = composeWidgetMessage(blocks, text)
     if (!composed || sending) return
     setSending(true); setSendErr(null)
     // Redundant for a headless target, whose adapter now owns the note-reply default. Keep the explicit input
@@ -690,29 +666,18 @@ function TimelineChat({ s, sessions = [], active = true, footerState = 'live', o
       ...(blocks.length ? { widgets: blocks.map(({ name, state }) => ({ name, state })) } : {}),
     })
     setSending(false)
-    if (r.ok) { setDraft(''); setQuotes([]); setWidgetDrafts({}); setSendNote(r.outcome?.mentionSummary || null); load() }
+    if (r.ok) { setDraft(''); setQuotes([]); widgetHost.clear(); setSendNote(r.outcome?.mentionSummary || null); load() }
     else setSendErr(r.outcome?.error || t('mobile.sendFailed'))
   }
 
-  // A widget writes only here. Its clicks change what WOULD be sent; the send control is the human's.
-  const onWidgetDraft = useCallback((name, text, state) => {
-    setWidgetDrafts((prev) => (text && text.trim() ? { ...prev, [name]: { text, state } } : Object.fromEntries(Object.entries(prev).filter(([key]) => key !== name))))
-  }, [])
-  // Discarding says this message will not carry that widget, and reloads its frame: only the widget can
-  // draw its own interface, so returning it to body plus committed state is the one honest undo.
-  const discardWidgetDraft = useCallback((name) => {
-    setWidgetDrafts((prev) => Object.fromEntries(Object.entries(prev).filter(([key]) => key !== name)))
-    setWidgetReloads((prev) => ({ ...prev, [name]: (prev[name] || 0) + 1 }))
-  }, [])
-  const widgetScope = useMemo(() => ({
-    sessionId: s.id,
-    widgets: s.widgets || [],
-    drafts: widgetDrafts,
-    reloads: widgetReloads,
-    onDraft: onWidgetDraft,
-    onRemoveDraft: discardWidgetDraft,
-    onSend: () => send(draft),
-  }), [s.id, s.widgets, widgetDrafts, widgetReloads, onWidgetDraft, discardWidgetDraft, draft])
+  // A widget writes only into the host. Its clicks change what WOULD be sent; the send control is the human's,
+  // and a frame's own send button presses it with whatever the composer holds right now.
+  useLayoutEffect(() => {
+    widgetHost.sendRef.current = () => send(encodePrompt(expandMentions(draft.trim(), specs), quotes))
+    return () => { widgetHost.sendRef.current = null }
+  })
+  // the host hands back the same scope object while this session's widgets and the drafts hold still
+  const widgetScope = widgetHost.scopeFor(s.id, s.widgets)
 
   const stop = async () => {
     if (stopping) return
@@ -897,8 +862,7 @@ function TimelineChat({ s, sessions = [], active = true, footerState = 'live', o
         sending={sending} send={send} sendErr={sendErr} sendNote={sendNote} onRestore={onRestore} actionOutcome={actionOutcome}
         onComposerPress={prepareComposerPress} working={s.status === 'working'} stopping={stopping} stop={stop}
         specs={specs} sessions={sessions} boardCommands={boardCommands}
-        widgetDrafts={Object.entries(widgetDrafts).map(([name, entry]) => ({ name, ...entry }))}
-        onWidgetDiscard={discardWidgetDraft} />
+        widgetDrafts={widgetHost.drafts} onWidgetDiscard={widgetHost.discard} />
     </div>
     </DashboardTranscriptUi>
     </SessionWidgetsContext.Provider>
