@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Prose from './Prose.js'
 import { BlobMedia } from './Evidence.jsx'
 import { useMentionAutocomplete, TriggerButton, typeTrigger } from './mentions.jsx'
@@ -141,7 +141,7 @@ export function Replies({ replies, sessions = [], ledger = [], widgetHost = null
 // Given a `widgetHost`, the widgets drawn in the thread above draft into THIS composer: their blocks sit in its
 // preview, a pending block alone makes the draft sendable, and the send posts the blocks' text with the typed
 // words as one reply, hands it to every session whose widget contributed, and commits each state to its owner.
-export function ReplyComposer({ onSend, specs = [], sessions = [], focusId = null, onDone, actionsEnd = null, widgetHost = null }) {
+export function ReplyComposer({ onSend, specs = [], sessions = [], focusId = null, onDone, actionsEnd = null, widgetHost = null, seed = null, onSeedConsumed = null }) {
   const t = useT()
   const [body, setBody] = useState('')
   const [busy, setBusy] = useState(false)
@@ -161,6 +161,14 @@ export function ReplyComposer({ onSend, specs = [], sessions = [], focusId = nul
   // so this composer and the Issues compose page open the same menu the same way. No second menu, no
   // dispatch: the button only types what the hand would.
   const insertTrigger = (trigger) => typeTrigger(taRef.current, trigger, setBody, (el) => ac.sync(el))
+  // a door elsewhere on the page (the rail's New worker) asks the composer to type a trigger for it — the SAME
+  // insertion the `@`/`[[` buttons use, so the menu opens and the human's send stays the act. Consumed once.
+  useEffect(() => {
+    if (!seed) return
+    insertTrigger(seed)
+    onSeedConsumed?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seed])
 
   const send = async (deliverTo = []) => {
     const text = composeWidgetMessage(drafts, body.trim())
