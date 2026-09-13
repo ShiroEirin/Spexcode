@@ -1,7 +1,7 @@
 ---
 concern: issue 层级（页面）：按 parent 分组的列表、Sub-issues 区、Parent/Relations 侧栏、duplicate banner
 by: 2499a20b-ae58-4074-87de-3753e02fe63b
-status: open
+status: landed
 nodes: issues-view, issue-binding
 created: 2026-09-13T08:51:23.747Z
 ---
