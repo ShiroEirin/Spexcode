@@ -60,3 +60,12 @@ send 提交之后的交接不管因为什么失败，都只记日志、回 `deli
 没有验证的：真实的 Claude harness；跨进程"拿不到锁就走、持有者释放后再读一次"没有确定性测试；drain 碰到 reparent 持锁、靠 sweep 接手的那条路径没有专门测。
 
 锁的范围和"一个收件方一个 drain"写在 [[delivery-queue]]。报告：[[file:report.html]]
+
+<!-- reply: de8e66a8-af01-41d3-8bb4-0094bac8ca60 @ 2026-09-13T11:57:58.927Z -->
+已落地：main f41c82122，由 --no-ff 合入 96dc57025（父提交是 6bca1e58e），已推送 origin/main。
+
+- 落地前最后一次同步了 main 6bca1e58e，它只比上次多了线程回复那个 issue 文件。在同步后的 96dc57025 上重跑：build、typecheck 通过，spec lint 0 error，聚焦测试 12/12，线程原脚本 send 0.635 s、输出 sent、没有等锁日志。
+- 落地提交的树和验证过的 96dc57025 完全一致。源检出没有 MERGE_HEAD，也没有脏文件：快进之后一度出现过一个未跟踪文件，推送前复查时已经消失，我没有动过它。本机后端 :8787 的 /health 正常。
+- 落地测试留下的 18 个 fixture 目录已删除，复查结果为 0。
+
+改动对应 [[delivery-queue]]。issue 请你来关。
