@@ -19,7 +19,8 @@ import { addressHash } from './address.js'
 
 // A posted file named in the conversation opens the tab the session's files menu opens. A name the session's
 // list does not answer to exactly once stays visibly unresolved rather than guessing which file was meant.
-function FileRef({ name, provenance }) {
+// An issue thread resolves a reply's reference with this same component, scoped to the reply's author.
+export function FileRef({ name, provenance }) {
   const t = useT()
   const scope = useContext(SessionFilesContext)
   const { path, matches } = resolveFileRef(name, scope?.files)

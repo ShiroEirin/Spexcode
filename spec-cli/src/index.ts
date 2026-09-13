@@ -373,17 +373,30 @@ app.post('/api/issues/:id/reply', async (c) => {
     const author = await claimedAuthor(body?.by)
     const r = await replyIssueWithLoopIn(id, text, { author, node, evidence })
     if (r.store !== 'local') await refreshForgeNow()
+    // a widget draft sent from the thread ([[widgets]]): each state commits to the session that OWNS the widget —
+    // one thread draws several sessions' widgets — once the reply carrying its text is durable (that reply is the
+    // event), and before any delivery, so an owner woken by the message already reads the value that was chosen.
+    const owned = new Map<string, unknown[]>()
+    for (const entry of Array.isArray(body?.widgets) ? body.widgets as unknown[] : []) {
+      const owner = (entry as { session?: unknown })?.session
+      if (typeof owner === 'string' && owner.trim()) owned.set(owner, [...(owned.get(owner) || []), entry])
+    }
+    const uncommitted = [...owned].flatMap(([owner, entries]) => commitWidgetStates(owner, entries))
     // the EXPLICIT deliveries the composer asked for ([[issue-binding]]): exact session ids the human pressed
-    // "Send to @x" on. The reply is durable first; each delivery is one ordinary send, reported by outcome, and a
-    // dead or unknown target is named rather than swallowed. Never inferred from the prose's @ tokens.
+    // "Send to @x" on, and the owners of the widgets whose draft this reply carries. The reply is durable first;
+    // each delivery is one ordinary send, reported by outcome, and a dead or unknown target is named rather than
+    // swallowed. Never inferred from the prose's @ tokens. As on the Command Box route, acceptance is the durable
+    // append to the target's queue: the handoff to its harness runs after the response, owned by the delivery
+    // supervisor, so the human's send never waits on a slow pane (measured: ~18s held per delivery otherwise).
     const deliverTo = Array.isArray(body?.deliverTo) ? [...new Set((body.deliverTo as unknown[]).filter((v): v is string => typeof v === 'string' && !!v.trim()))] : []
     const deliveries: string[] = []
     for (const target of deliverTo) {
-      const sent = await sendText(target, mentionDeliveryPrompt(id, node, author, text), 'issues')
+      const sent = await sendText(target, mentionDeliveryPrompt(id, node, author, text), 'issues', { deferDrain: true })
+      if (sent.ok) void drainSession(target).catch((error) => console.error(`spex: issue reply handoff deferred for ${target}: ${error instanceof Error ? error.message : String(error)}`))
       deliveries.push(sent.ok ? `sent to @${target.slice(0, 8)}` : `@${target.slice(0, 8)} NOT sent (${sent.error})`)
     }
     notifyBoardChanged('full')   // atomic with persistence — see the write-visibility note above the reply route
-    return c.json({ ok: true, replies: r.replies, url: r.url, outcomes: [summarizeDispatch(r.outcomes), summarizeLoopIn(r.loopIn), ...deliveries].filter(Boolean).join('  |  ') })
+    return c.json({ ok: true, replies: r.replies, url: r.url, outcomes: [summarizeDispatch(r.outcomes), summarizeLoopIn(r.loopIn), ...deliveries, ...uncommitted].filter(Boolean).join('  |  ') })
   } catch (e) {
     const msg = String((e as Error).message || e)
     return c.json({ error: msg }, id.includes('#') ? 502 : 404)
@@ -889,15 +902,24 @@ app.get('/api/sessions/:id/socket', upgradeWebSocket((c) => {
 // loud 400, never a guessed channel.
 // The send commits both halves of a widget ([[widgets]]). The message goes first and is the event the agent
 // acts on; the state is the value that event left behind, so a state write that fails leaves the message
-// standing rather than refusing a decision the human already made.
-function commitWidgetStates(id: string, raw: unknown): void {
-  if (!Array.isArray(raw)) return
+// standing rather than refusing a decision the human already made. What did not commit is returned as outcome
+// text for a caller that reports outcomes (the issue reply route), and logged either way.
+function commitWidgetStates(id: string, raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  const failures: string[] = []
   for (const entry of raw) {
     const name = (entry as { name?: unknown })?.name
     if (typeof name !== 'string') continue
-    try { setSessionWidgetState(id, name, (entry as { state?: unknown }).state ?? null, withSessionRecordLockSync) }
-    catch (error) { console.error(`spex: widget state for ${id}/${name} not committed: ${error instanceof Error ? error.message : String(error)}`) }
+    try {
+      if (!setSessionWidgetState(id, name, (entry as { state?: unknown }).state ?? null, withSessionRecordLockSync))
+        failures.push(`widget ${name} of @${id.slice(0, 8)} is gone — state NOT committed`)
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+      console.error(`spex: widget state for ${id}/${name} not committed: ${reason}`)
+      failures.push(`widget ${name} of @${id.slice(0, 8)} state NOT committed (${reason})`)
+    }
   }
+  return failures
 }
 app.post('/api/sessions/:id/input', async (c) => {
   const body = await c.req.json().catch(() => ({}))

@@ -62,3 +62,10 @@ created: 2026-09-13T08:35:16.193Z
 验证：同一个 e2e 脚本，在旧代码上跑 `EXPECT=bug`，复现了「点了没反应」；在本分支上跑 `EXPECT=fixed` 三次都通过。dashboard 单测 468/468，typecheck 通过，`spex spec lint` 0 error，原有的 conversation-command-box e2e 也通过。
 
 没验证到的：一个线程里同时有两个 owner 的 widget 只有单测覆盖；forge 仓库里的 issue 线程；手机宽度下的 issue 页；`timeline-chat-composer.e2e`（要连真实后端，这次没跑）。
+
+<!-- reply: 6b298f70-dbef-4cfa-a4f2-a6b1aa7de246 @ 2026-09-13T09:28:12.558Z -->
+已合入 main 并推送：落地提交 `1005f5aea`（`--no-ff`），origin/main 现在包含它。
+
+- 合入前同步了两次 main。第一次和 `e6680c264`（New worker 门往 composer 里填 `@new:`）在 `Thread.jsx`、`IssuesPage.jsx` 上冲突，两边互不干扰，全部保留：`widgetHost` 和 `seed/onSeedConsumed` 并存。
+- 这次合并带进来一条 [[issues-view]] 的 anchor-drift，来自 `e6680c264`。合并后的 spec 正文已经写着「types `@new:` into the composer」，只是提交先后顺序对不上，所以补了一条 ack：`d2ade8f48`。我先对候选提交跑了 `lint --pending` 核实过：直接合并、或在合并提交里带 `Spec-OK` trailer，都不过；只有在合并提交之上补 ack 才是 0 error。所以合并提交本身跳过了一次 pre-commit，原因写在提交信息里。
+- 在同步后的分支顶上重新验证：dashboard 单测 468/468，typecheck 通过，e2e 通过（回复写入 101 ms，state 提交成 B，owner 的 pane 收到了回复）。落地后在主检出跑 `spex spec lint`，0 error。
