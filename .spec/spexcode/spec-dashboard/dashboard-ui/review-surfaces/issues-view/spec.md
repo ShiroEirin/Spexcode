@@ -120,7 +120,7 @@ theatre is invented for a model that has none. An actually empty issue store say
   re-sort). The detail's status band carries the work-state word and the same strip beside the issue's own state
   mark, and the detail rail carries a **Sessions** section: the fleet as the one session forest with the one
   session context menu, one state-gated action per row (Merge / Relaunch / Close), the **New worker** door that
-  posts `@new[:<launcher>]` to the thread, and the other thread voices as participants. Work state is derived and
+  types `@new:` into the composer for the human to send, and the other thread voices as participants. Work state is derived and
   never written onto the issue's open/closed lifecycle.
 - **The detail page NAMES ITS OWN TAB.** An issue is the one document the board carries no projection of —
   the list is paged, the detail is a single addressed read — so the frame cannot label its tab and drew the
