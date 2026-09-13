@@ -43,7 +43,8 @@ one governing home, and the two pages reference it instead of re-describing it.
   composer's action row, never a reply.
 - **A home may add read-time rows to the one time line.** Beside the replies, the list takes a home's ledger rows and
   merges them oldest first, a reply before a row at the same instant: a fleet session's declaration ([[issue-binding]])
-  and a sub-issue's opening ([[issues-view]]). Both wear the reply row's own shape, and neither is stored on the thread.
+  and a sub-issue's opening or close ([[issues-view]]). Both wear the reply row's own shape, and neither is stored on the
+  thread.
 - **A reply's session references resolve against its AUTHOR.** A `[[file:<name>]]` and a `[[widget:<name>]]` are
   a session's own vocabulary ([[files]], [[widgets]]), so a reply written by a board session resolves them against
   that session's posted files and widgets, through the SAME file-reference and widget components the conversation

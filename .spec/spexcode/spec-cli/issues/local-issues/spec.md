@@ -64,7 +64,7 @@ it to `.spec/.issues` on its first store touch after a toolchain update — the 
   tail (a shape older toolchains wrote) still parses as that same plain reply: the tail is ignored on read
   and dropped by the file's next rewrite, so no deployment's store needs a migration and no record ever
   fails to load. `reply` is the store's only way a post enters a thread. Its frontmatter carries `by`
-  (author session), `status`, optional `nodes:` (the product nodes it concerns, linked `[[…]]`), optional
+  (author session), `status`, `created`, `closedAt:` once the thread has closed (below), optional `nodes:` (the product nodes it concerns, linked `[[…]]`), optional
   `evidence:` (content-addressed evidence hashes — the typed reference a cross-node finding carries, per
   [[issues]] / video evidence), and the optional hierarchy facts `parent:` and `relations:` (below). The sentinel is **unforgeable**: user body text is
   neutralized on write, so a body that itself contains that marker can't spawn a phantom reply or truncate
@@ -79,6 +79,14 @@ it to `.spec/.issues` on its first store touch after a toolchain update — the 
 - **Own lifecycle status**, store-authored never git-derived: current writes have one terminal state, `open` →
   `landed`. A legacy terminal `rejected` value is preserved as a distinct closed reading, so "we decided not
   to" is never rendered as "it shipped" and never reappears in the open drain.
+- **The close instant is stored beside the status — one timestamp, not a state.** The write that moves a thread out
+  of `open` also writes `closedAt: <iso>` into its frontmatter: a plain `close`, a `close --duplicate-of`, and the
+  close that finishes a promote all go through that one write. It is the [[issues]] `closedAt` a reader places a
+  close by; nothing branches on it. A close of a thread that is already closed keeps the first instant, so a repeat
+  close stays the idempotent no-op below and never moves the recorded moment. **Migration: none on disk.** A thread
+  closed before the key existed has no `closedAt:` line and reads `closedAt: null`; the store never backfills it or
+  invents an instant, and the file keeps its exact bytes — a later rewrite of it (a reply) still writes no
+  `closedAt:` line, because a null serializes to none. An open thread has no line either.
 - **A sub-issue and a relation are forward facts, stored once.** A thread's frontmatter may carry `parent: <id>` —
   its DIRECT parent only — and `relations: <type>:<id>, …` on the issue that INITIATED each edge (`blocks`,
   `related`, `duplicate`). Nothing is written onto the parent or the target, and a thread with neither key keeps

@@ -23,6 +23,8 @@ export type Issue = {
   status: string
   nodes: string[]
   created: string
+  // when the issue left open, as its store recorded it; null while open, and for a close no store recorded
+  closedAt: string | null
   body: string
   replies: Reply[]
   evidence: string[]
@@ -86,6 +88,7 @@ export function fromForge(slice: ForgeSlice, nodeIds: string[]): Issue[] {
     status: (i.state || '').toLowerCase(),
     nodes: nodesByNumber.get(i.number) ?? [],
     created: i.createdAt,
+    closedAt: i.closedAt,
     body: i.body,
     // the forge comments ARE the thread — the same Reply shape a local thread carries, so nothing
     // downstream renders two kinds of discussion.
@@ -177,14 +180,14 @@ export function issueHierarchy(issues: Issue[]): Issue[] {
 // the single-issue read's `refs` ([[issues]]): the compact face of every issue this one's hierarchy fields name —
 // parent, children, and both directions of each relation — taken from the SAME merged set, so a detail page can
 // title and mark each link it draws without a read per id.
-export type IssueRef = Pick<Issue, 'id' | 'store' | 'concern' | 'status' | 'by' | 'created' | 'childCounts' | 'descendants'>
+export type IssueRef = Pick<Issue, 'id' | 'store' | 'concern' | 'status' | 'by' | 'created' | 'closedAt' | 'childCounts' | 'descendants'>
 export function issueRefs(issue: Issue, merged: Issue[]): Record<string, IssueRef> {
   const byId = new Map(merged.map((i) => [i.id, i]))
   const named = [issue.parent, ...issue.children, ...issue.relations.map((r) => r.id), ...issue.blockedBy, ...issue.relatedBy, ...issue.duplicatedBy]
   const refs: Record<string, IssueRef> = {}
   for (const id of named) {
     const i = id ? byId.get(id) : undefined
-    if (i) refs[i.id] = { id: i.id, store: i.store, concern: i.concern, status: i.status, by: i.by, created: i.created, childCounts: i.childCounts, descendants: i.descendants }
+    if (i) refs[i.id] = { id: i.id, store: i.store, concern: i.concern, status: i.status, by: i.by, created: i.created, closedAt: i.closedAt, childCounts: i.childCounts, descendants: i.descendants }
   }
   return refs
 }

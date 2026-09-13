@@ -10,7 +10,7 @@ import { closeLocalIssue, loadLocalIssues, loadOne, openIssue, relateLocalIssue,
 
 // the stored shape a store read hands the merged read: every derived field at its empty value.
 const stored = (id: string, at: number, over: Partial<Issue> = {}): Issue => ({
-  id, store: 'local', concern: id, by: 'test', status: 'open', nodes: [], created: `2026-09-13T00:00:${String(at).padStart(2, '0')}Z`,
+  id, store: 'local', concern: id, by: 'test', status: 'open', nodes: [], created: `2026-09-13T00:00:${String(at).padStart(2, '0')}Z`, closedAt: null,
   body: '', replies: [], evidence: [], labels: [],
   parent: null, children: [], descendants: [], childCounts: { open: 0, closed: 0 },
   relations: [], blockedBy: [], relatedBy: [], duplicatedBy: [], duplicateOf: null,
@@ -62,7 +62,7 @@ test('refs give the detail read the compact face of every issue its hierarchy na
   const task = byId(merged).get('task')!
   const refs = issueRefs(task, merged)
   assert.deepEqual(Object.keys(refs).sort(), ['dup', 'epic', 'other'])
-  assert.deepEqual(refs.epic, { id: 'epic', store: 'local', concern: 'epic', status: 'open', by: 'test', created: '2026-09-13T00:00:01Z', childCounts: { open: 1, closed: 0 }, descendants: ['task'] })
+  assert.deepEqual(refs.epic, { id: 'epic', store: 'local', concern: 'epic', status: 'open', by: 'test', created: '2026-09-13T00:00:01Z', closedAt: null, childCounts: { open: 1, closed: 0 }, descendants: ['task'] })
   assert.equal(refs.dup.status, 'landed')
 })
 
@@ -101,7 +101,7 @@ test('relations get their reverse edges at read, and a closed blocker reads as r
 test('a forge issue reads with an empty hierarchy and does not break the merged read', () => {
   const [issue] = issueHierarchy(fromForge({
     host: 'github',
-    state: { issues: [{ number: 7, title: 't', body: '', url: 'u', state: 'OPEN', labels: [], author: 'a', createdAt: '2026-09-13T00:00:00Z', comments: [] }], prs: [] },
+    state: { issues: [{ number: 7, title: 't', body: '', url: 'u', state: 'OPEN', labels: [], author: 'a', createdAt: '2026-09-13T00:00:00Z', closedAt: null, comments: [] }], prs: [] },
   }, []))
   assert.equal(issue.parent, null)
   assert.deepEqual([issue.children, issue.relations, issue.blockedBy, issue.relatedBy, issue.duplicatedBy], [[], [], [], [], []])
@@ -176,6 +176,7 @@ test('fromForge preserves platform labels and their display colors on the unifie
         ],
         author: 'octavia',
         createdAt: '2026-08-09T00:00:00Z',
+        closedAt: null,
         comments: [],
       }],
       prs: [],
@@ -200,6 +201,47 @@ test('legacy rejected local issues stay closed in the current two-state lifecycl
     else process.env.SPEXCODE_ISSUES_DIR = previous
     rmSync(dir, { recursive: true, force: true })
   }
+})
+
+test('a local close stamps closedAt once, on the way out of open; a repeat close and an old closed file keep their bytes', () => {
+  withDisposableStore(() => {
+    const dir = process.env.SPEXCODE_ISSUES_DIR!
+    const epic = openIssue('epic', { author: 'test' })
+    const kid = openIssue('kid', { parent: epic.id, author: 'test' })
+    assert.equal(loadOne(kid.id).closedAt, null)
+    assert.doesNotMatch(readFileSync(join(dir, `${kid.id}.md`), 'utf8'), /^closedAt:/m, 'an open thread writes no closedAt line')
+
+    const before = Date.now()
+    assert.equal(closeLocalIssue(kid.id).already, false)
+    const closedAt = loadOne(kid.id).closedAt
+    assert.ok(closedAt && Date.parse(closedAt) >= before && Date.parse(closedAt) <= Date.now(), `closedAt=${closedAt}`)
+    const bytes = readFileSync(join(dir, `${kid.id}.md`), 'utf8')
+    assert.match(bytes, new RegExp(`^closedAt: ${closedAt}$`, 'm'))
+    assert.equal(closeLocalIssue(kid.id).already, true, 'a repeat close is still the no-op')
+    assert.equal(readFileSync(join(dir, `${kid.id}.md`), 'utf8'), bytes, 'and it never moves the recorded instant')
+
+    const merged = mergedIssues(null, [])
+    const parent = byId(merged).get(epic.id)!
+    assert.equal(issueRefs(parent, merged)[kid.id]?.closedAt, closedAt, 'the parent read carries its child close instant')
+
+    const dup = openIssue('dup', { author: 'test' })
+    closeLocalIssue(dup.id, { duplicateOf: epic.id })
+    assert.ok(loadOne(dup.id).closedAt, 'a close as a duplicate stamps the same instant')
+
+    const legacy = '---\nconcern: shipped long ago\nby: human\nstatus: landed\ncreated: 2026-01-01T00:00:00Z\n---\n\nDone.\n'
+    writeFileSync(join(dir, 'shipped-long-ago.md'), legacy)
+    assert.equal(loadOne('shipped-long-ago').closedAt, null, 'a close from before the key existed reads null')
+    assert.equal(closeLocalIssue('shipped-long-ago').already, true)
+    assert.equal(readFileSync(join(dir, 'shipped-long-ago.md'), 'utf8'), legacy, 'the old file keeps its exact bytes')
+  })
+})
+
+test('a forge issue carries the close instant its host recorded', () => {
+  const row = (number: number, state: string, closedAt: string | null) =>
+    ({ number, title: 't', body: '', url: 'u', state, labels: [], author: 'a', createdAt: '2026-09-13T00:00:00Z', closedAt, comments: [] })
+  const [open, closed] = fromForge({ host: 'github', state: { issues: [row(1, 'OPEN', null), row(2, 'CLOSED', '2026-09-13T08:28:18Z')], prs: [] } }, [])
+  assert.equal(open.closedAt, null)
+  assert.equal(closed.closedAt, '2026-09-13T08:28:18Z')
 })
 
 

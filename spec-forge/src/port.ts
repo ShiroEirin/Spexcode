@@ -19,6 +19,8 @@ export type ForgeIssue = {
   labels: ForgeLabel[]
   author: string
   createdAt: string
+  // the host's own close time; null while the issue is open
+  closedAt: string | null
   comments: ForgeComment[]
 }
 

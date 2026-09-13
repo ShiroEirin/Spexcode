@@ -170,8 +170,10 @@ theatre is invented for a model that has none. An actually empty issue store say
   local issue because no other issue takes one. The rail adds **Parent** (a linked value led by the parent's state
   mark) and **Relations** (every edge in both directions as a linked value led by its flag: blocked by orange, blocks
   red, related / duplicate of / duplicated by quiet). Nothing closes on its own: with every child done, Close issue
-  stays the human's press. Each sub-issue's opening joins the thread as a ledger row at its creation instant, wearing
-  the child's current state; a close carries no instant on the wire, so it shows as that state mark, not as a row.
+  stays the human's press. Each sub-issue's opening joins the thread as a ledger row at its creation instant, and its
+  close as a second row at its `closedAt` ([[issues]]), both wearing the child's current state. The close row names no
+  author, because the wire carries when a close happened, not who made it. A child whose close has no recorded instant
+  (`closedAt: null` — a local close written before the store kept one) reads closed through that state mark alone.
 - **A human writes from here — to the issue's OWN store.** The composer is the ONE shared thread-composer
   (the thread detail docks the same component, `Thread.jsx`): a quiet bordered container, a borderless
   writing surface floored at two lines that auto-grows through [[composer]], the action row always visible —

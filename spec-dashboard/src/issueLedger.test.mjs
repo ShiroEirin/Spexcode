@@ -24,13 +24,19 @@ test('replies and declarations share one time line, replies first at a tie', () 
   assert.deepEqual(mergeThread(undefined, undefined), [])
 })
 
-test('a sub-issue opening joins the parent thread at its creation instant, wearing its current state', () => {
+test('a sub-issue opening and close join the parent thread at their own instants, wearing its current state', () => {
   const rows = ledgerFromChildren([
-    { id: 'kid', concern: 'do the kid', status: 'landed', by: 's2', created: '2026-09-13T01:15:00Z' },
-    { id: 'undated', concern: 'no instant', status: 'open', by: 's2', created: '' },
+    { id: 'kid', concern: 'do the kid', status: 'landed', by: 's2', created: '2026-09-13T01:15:00Z', closedAt: '2026-09-13T01:40:00Z' },
+    { id: 'old', concern: 'closed before instants', status: 'landed', by: 's2', created: '2026-09-13T01:16:00Z', closedAt: null },
+    { id: 'undated', concern: 'no instant', status: 'open', by: 's2', created: '', closedAt: null },
   ])
-  assert.deepEqual(rows, [{ kind: 'sub-issue', by: 's2', at: '2026-09-13T01:15:00Z', id: 'kid', concern: 'do the kid', status: 'landed' }])
+  assert.deepEqual(rows, [
+    { kind: 'sub-issue', event: 'opened', by: 's2', at: '2026-09-13T01:15:00Z', id: 'kid', concern: 'do the kid', status: 'landed' },
+    { kind: 'sub-issue', event: 'closed', by: null, at: '2026-09-13T01:40:00Z', id: 'kid', concern: 'do the kid', status: 'landed' },
+    { kind: 'sub-issue', event: 'opened', by: 's2', at: '2026-09-13T01:16:00Z', id: 'old', concern: 'closed before instants', status: 'landed' },
+  ])
   const replies = [{ by: 'human', at: '2026-09-13T01:20:00Z', body: 'go' }]
-  assert.deepEqual(mergeThread(replies, rows).map((r) => r.kind), ['sub-issue', 'reply'])
+  assert.deepEqual(mergeThread(replies, rows).map((r) => `${r.event || r.kind}:${r.at.slice(11, 16)}`),
+    ['opened:01:15', 'opened:01:16', 'reply:01:20', 'closed:01:40'])
   assert.deepEqual(ledgerFromChildren(undefined), [])
 })

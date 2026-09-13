@@ -458,6 +458,7 @@ export default {
 
   thread: {
     openedSubIssue: '开了子 issue',
+    closedSubIssue: '子 issue 已关闭',
     mentionActor: '插入 @ —— 提及会话',
     mentionNode: '插入 [[ —— 引用规格节点',
     originatorIssue: '打开发起此 issue 的会话：{by}',
