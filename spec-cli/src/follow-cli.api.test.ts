@@ -273,6 +273,8 @@ test('a declaring CLI hands the watch delivery to the running backend and return
     assert.doesNotMatch(parked.stderr, /wake failed|handoff failed/)
     assert.ok(elapsed < 6_000, `the declaring CLI took ${elapsed}ms — it held the parent's unanswered socket instead of handing the drain to the backend`)
     await waitFor(() => harness.received.some((text) => /\[spex watch\] .* is parked — held/.test(text)), 'the backend delivered the parked notice', 10_000)
+    const misrouted = await fetch(`http://127.0.0.1:${backendPort}/api/sessions/no-such-session/push`, { method: 'POST' })
+    assert.equal(misrouted.status, 404, 'a backend holding no record for the session refuses the wake instead of answering ok')
   } finally {
     if (backend.exitCode === null) backend.kill('SIGTERM')
     await once(backend, 'exit').catch(() => {})
