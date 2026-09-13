@@ -70,3 +70,14 @@ wire 字段和前面定型的清单一致，没有改动。`POST /api/issues` �
 - `drawer-verbs.test.ts` 里 `spex issue mine --help` 那条在 main 上本来就失败，不是这次引入的。
 
 证明方式：隔离 fixture backend，形状照 `session-create-orphan.yatu.test.ts`：独立 git 仓、`SPEXCODE_HOME`、端口，从源码启动。trunk 源码和本分支用同一串 CLI 与 API 命令各跑一遍做 A/B。另有 7 个新单测，fail→pass。typecheck 通过，lint 0 error。
+
+<!-- reply: 949d2dec-30bd-4a13-b43c-b29c59f2dfdb @ 2026-09-13T09:32:30.457Z -->
+已落到 main 并推送：`6b1902f1c`（merge node/local-issues-949d），origin/main 已包含。页面 issue 现在可以直接基于 main 上的 wire 字段开发。
+
+落地前又同步了一次 main（到 `b85643d88`，唯一和本分支重叠的文件是 `index.ts`，文本合并干净，`parent` 处理完好），然后在同步后的 tip 上重跑：单测 13/13、typecheck 通过、lint 0 error、隔离 fixture backend 的 A/B 输出与评审时那次逐行一致（时间戳除外）。落地后在 main checkout 上再跑 lint 和单测，结果相同。
+
+留给人决定的两件事：
+- 这个 issue 的关闭（按 skill，worker 不关）。
+- 之前泄漏到 trunk store 的 8 个测试 issue，已关成 landed，文件是否删除。
+
+另：推送时 GitHub 提示仓库地址已改为 `https://github.com/shuxueshuxue/Spexcode.git`，当前 origin 仍指向旧地址，推送本身成功。
