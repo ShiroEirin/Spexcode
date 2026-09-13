@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
-import { apiFetch, postIssueAssign, postIssueReply } from './data.js'
+import { apiFetch, postIssueAssign } from './data.js'
 import { Icon, IconButton } from './icons.jsx'
 import SessionContextMenu from './SessionContextMenu.jsx'
 import SessionPicker from './SessionPicker.jsx'
@@ -9,7 +9,6 @@ import { SideSection, SideValue } from './ReviewShell.jsx'
 import { fleetWorkState, isArchived, issueFleet, issueParticipants, sessionDisplayState, sessionForest, sessionHeadline } from './session.js'
 import { fileName, webName } from './resourceCatalog.js'
 import { resourceSurface, resourceTabKey } from './sessionSurface.js'
-import { useLaunchers } from './launch.js'
 import { useT } from './i18n/index.jsx'
 import { useEscLayer } from './escStack.js'
 import { routeHash } from './route.js'
@@ -99,7 +98,7 @@ function FleetCard({ s, onOpenSession }) {
   )
 }
 
-export default function IssueSessions({ issue, sessions = [], onOpenSession, onWrite, onError }) {
+export default function IssueSessions({ issue, sessions = [], onOpenSession, onWrite, onError, onCompose }) {
   const t = useT()
   const { fleet } = issueFleet(issue.id, sessions)
   // the originator has its own labelled rail row already; participants are the OTHER thread voices.
@@ -110,7 +109,6 @@ export default function IssueSessions({ issue, sessions = [], onOpenSession, onW
   const [picked, setPicked] = useState(null)   // the row whose card is open
   const [assigning, setAssigning] = useState(false)
   const [busy, setBusy] = useState('')         // `<action>:<id>` in flight — one at a time
-  const { launchers, launcher, pickLauncher } = useLaunchers()
   const rows = sessionForest(fleet, (id) => expanded.has(id)).filter((item) => item.type === 'row')
   // the assign door offers every retained board session not already in the fleet ([[session-picker]]).
   const inFleet = new Set(fleet.map((s) => s.id))
@@ -133,18 +131,10 @@ export default function IssueSessions({ issue, sessions = [], onOpenSession, onW
     } catch (error) { onError?.(error instanceof Error ? error.message : String(error)) }
     finally { setBusy(''); onWrite?.() }
   }
-  // the dispatch door writes the SAME durable token a hand would type ([[mentions]]' `@new`): the reply
-  // lands on the thread, the server spawns the worker bound to this issue, and the outcome flashes as every
-  // composer dispatch does. No second creation path.
-  const dispatch = async () => {
-    if (busy) return
-    setBusy('new')
-    try {
-      const res = await postIssueReply(issue.id, launcher ? `@new:${launcher}` : '@new')
-      if (res?.ok) await onWrite?.(res.outcomes || '')
-      else onError?.(res?.error || t('fleet.refused', { what: t('fleet.newWorker') }))
-    } finally { setBusy('') }
-  }
+  // the dispatch door does NOT dispatch: it types the grammar's own `@new:` trigger into the reply composer —
+  // the launcher menu opens there exactly as it does for a hand — and the HUMAN's send is the act ([[mentions]],
+  // [[composer]]). Every write on this page leaves through the composer's send; a door only prepares it.
+  const dispatch = () => onCompose?.('@new:')
   // the assign door binds an EXISTING session ([[issue-binding]]'s third writer): one write, the session is told.
   const assign = async (id) => {
     if (busy || !id || id === 'new') return
@@ -194,15 +184,9 @@ export default function IssueSessions({ issue, sessions = [], onOpenSession, onW
           </div>
         ) : <SideValue text={t('fleet.none')} dim />}
         <div className="fv-fleet-doors">
-          <RailAction disabled={!!busy} data-tip={t('fleet.newWorkerTitle')} onClick={dispatch}>
-            <Icon name="plus" size={12} />{busy === 'new' ? t('session.issuesActing') : t('fleet.newWorker')}
+          <RailAction disabled={!!busy || !onCompose} data-tip={t('fleet.newWorkerTitle')} onClick={dispatch}>
+            <Icon name="plus" size={12} />{t('fleet.newWorker')}
           </RailAction>
-          {launchers.length > 1 && (
-            <select className="ds-select" value={launcher || ''} aria-label={t('fleet.launcher')} disabled={!!busy}
-              onChange={(e) => pickLauncher(e.target.value)}>
-              {launchers.map((l) => <option key={l.name} value={l.name}>{l.name}</option>)}
-            </select>
-          )}
           <RailAction disabled={!!busy} data-tip={t('fleet.assignTitle')} aria-haspopup="dialog" onClick={() => setAssigning(true)}>
             {busy === 'assign' ? t('session.issuesActing') : t('fleet.assign')}
           </RailAction>

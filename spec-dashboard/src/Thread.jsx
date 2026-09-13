@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Prose from './Prose.js'
 import { BlobMedia } from './Evidence.jsx'
 import { useMentionAutocomplete, TriggerButton, typeTrigger } from './mentions.jsx'
@@ -125,7 +125,7 @@ export function Replies({ replies, sessions = [], ledger = [] }) {
 // so its menu opens UPWARD, as an overlay above the container. The thread's own node leads the `[[` list.
 // A blob link typed or pasted into the body is thereafter an ordinary — replyable, @-able — reply's mark,
 // its hash indexed as the thread's evidence[].
-export function ReplyComposer({ onSend, specs = [], sessions = [], focusId = null, onDone, actionsEnd = null }) {
+export function ReplyComposer({ onSend, specs = [], sessions = [], focusId = null, onDone, actionsEnd = null, seed = null, onSeedConsumed = null }) {
   const t = useT()
   const [body, setBody] = useState('')
   const [busy, setBusy] = useState(false)
@@ -143,6 +143,14 @@ export function ReplyComposer({ onSend, specs = [], sessions = [], focusId = nul
   // so this composer and the Issues compose page open the same menu the same way. No second menu, no
   // dispatch: the button only types what the hand would.
   const insertTrigger = (trigger) => typeTrigger(taRef.current, trigger, setBody, (el) => ac.sync(el))
+  // a door elsewhere on the page (the rail's New worker) asks the composer to type a trigger for it — the SAME
+  // insertion the `@`/`[[` buttons use, so the menu opens and the human's send stays the act. Consumed once.
+  useEffect(() => {
+    if (!seed) return
+    insertTrigger(seed)
+    onSeedConsumed?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seed])
 
   const send = async (deliverTo = []) => {
     const text = body.trim()

@@ -80,9 +80,9 @@ with one visible fleet per issue, and close/retire/children/acceptance reachable
   its branch, and its posted files / web services / widgets as REAL anchors into the console surface that shows
   each ([[resource-tabs]]' address grammar) — every fact already on the wire, no second viewer — plus an **Open
   console** anchor, the door a plain click used to be; ctrl/⌘-click still opens the console in a new tab. The
-  section's **New worker** door posts the SAME durable `@new[:<launcher>]` token a hand would type as a reply on
-  the thread, so the dispatch is recorded where it happened and spawns through the one grammar; a second
-  launcher is chosen through the shared launcher list. The **Assign…** door opens the ONE session picker
+  section's **New worker** door does not dispatch: it types the grammar's `@new:` trigger into the reply composer —
+  the launcher menu opens there as it does for a hand — and the human's send is the act. Every write on the page
+  leaves through the composer's send; a door only prepares it ([[mentions]], [[composer]]). The **Assign…** door opens the ONE session picker
   ([[session-picker]]) in a modal over every retained board session not yet on the issue and calls the assign
   verb. A **participants** row lists the other thread voices as liveness chips. The originator row is unchanged.
 - **The `fleet:` facet.** The join and the work-state rollup live in the shared review package (`@spexcode/spec-core/review`'s
