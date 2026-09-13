@@ -446,6 +446,13 @@ async function stateKit() {
   return sessionStateKit(flag('session'))
 }
 
+// A local commit outside the state kit that queues a watcher notice hands that queue to the owning backend the same
+// way a declaration does ([[remote-client]]): ask it to drain, and drain here only when no backend answers.
+async function handDeliveriesToOwner(): Promise<void> {
+  const { setDeliveryHandover } = await import('./sessions.js')
+  setDeliveryHandover(async (id) => (await import('./client.js')).clientHandOverQueued(id))
+}
+
 // a trailing --help/-h prints help and exits BEFORE any verb runs, so a help probe never fires a
 // streaming/mutating command. It prints THAT command's usage when an entry exists (the second layer
 // of the help journey — see help.ts). Every leading positional is handed over as the verb phrase, so a
@@ -925,6 +932,7 @@ if (cmd === 'serve') {
     if (!peerAnchor && created.parent && created.parent === ownSessionId()) {
       try {
         const { subscribeSessionWatch } = await import('./sessions.js')
+        await handDeliveriesToOwner()
         await subscribeSessionWatch(created.parent, [created.id], 'parent')
         watchEstablished = true
       } catch (error) {
@@ -1179,6 +1187,7 @@ if (cmd === 'serve') {
         console.error(`spex session watch: no governed caller session — run \`spex session wait ${selectors.join(' ')}\` in the BACKGROUND to receive the next actionable transition`)
       } else {
         const targets = await localWatchTargetsOrExit(selectors, 'spex session watch')
+        await handDeliveriesToOwner()
         const result = await subscribeSessionWatch(watcher, targets)
         console.log(`watching ${result.watched.join(' ')}`)
       }
@@ -1717,6 +1726,7 @@ if (cmd === 'serve') {
       process.exit(2)
     }
     const { markHeadlessTurnFailure } = await import('./sessions.js')
+    await handDeliveriesToOwner()
     console.log(markHeadlessTurnFailure(sessionId, harness, exitCode) ? `marked error (${harness} ${exitCode})` : 'noop (session is not live active)')
   } else if (sub === 'session-idle') {
     // the Notification(idle_prompt) hook marks its session (--session from the payload) idle when claude waits

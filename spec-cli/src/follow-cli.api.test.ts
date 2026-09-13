@@ -209,7 +209,7 @@ test('managed watch registers once, delivers child states, and cancel stops deli
 
 // The watcher's harness, as a rendezvous listener bound to the parent's stamped socket. A notice matching `holdOn`
 // never gets its repaint answered, so whichever process hands that notice over sits on the rendezvous wall.
-async function watcherHarness(parentDir: string, holdOn: RegExp) {
+async function watcherHarness(parentDir: string, holdOn: RegExp, { attach = true } = {}) {
   const sockDir = mkdtempSync(join(tmpdir(), 'spex-rv-'))
   const sock = join(sockDir, 'p.sock')
   writeFileSync(join(parentDir, 'rv.path'), sock)
@@ -233,7 +233,7 @@ async function watcherHarness(parentDir: string, holdOn: RegExp) {
   })
   server.listen(sock); await once(server, 'listening')
   const app = configuredSessionApplication()
-  app.attachWatcher(WATCHER, ID, 'watch:manual')
+  if (attach) app.attachWatcher(WATCHER, ID, 'watch:manual')
   app.bindRuntime(WATCHER, { namespace: 'spex-governed', runtimeKind: 'claude', nativeSessionId: WATCHER, nativeStartToken: 'start-1' })
   return {
     received,
@@ -333,6 +333,66 @@ test('with no backend, the declaring CLI hands the watch delivery over itself', 
     await harness.close()
   }
 })
+
+// The CLI's other two local commits onto a watcher's queue take the same owner-first handover as a declaration:
+// `watch` enqueues the target's current state to the caller itself, and a headless turn failure commits a watched
+// child's `error`. `attach` is whether the relation already exists before the command runs.
+const LOCAL_WATCH_COMMITS = [
+  {
+    name: 'spex session watch', attach: false, stdout: /^watching /, notice: /\[spex watch\] .* is working/,
+    run: (env: NodeJS.ProcessEnv, repo: string) => runCli(['session', 'watch', ID], { ...env, SPEXCODE_SESSION_ID: WATCHER }, repo),
+  },
+  {
+    name: 'spex internal session-turn-fail', attach: true, stdout: /^marked error/, notice: /\[spex watch\] .* is error — claude turn exited with exit code 1/,
+    run: (env: NodeJS.ProcessEnv, repo: string) => runCli(['internal', 'session-turn-fail', ID, 'claude', '1'], env, repo),
+  },
+]
+
+for (const entry of LOCAL_WATCH_COMMITS) {
+  test(`${entry.name} hands the watch delivery to the running backend and returns`, { timeout: 90_000 }, async () => {
+    const home = mkdtempSync(join(tmpdir(), 'spex-local-commit-owner-'))
+    const repo = reviewFixture()
+    const { parentDir, base } = watchPair(home, repo)
+    const harness = await watcherHarness(parentDir, entry.notice, { attach: entry.attach })
+    const backendPort = await refusedPort()
+    const backend = spawn(process.execPath, [tsxCli, cli, 'serve', '--port', String(backendPort)], {
+      cwd: repo, env: { ...base, PORT: String(backendPort) }, stdio: ['ignore', 'ignore', 'ignore'],
+    })
+    try {
+      await waitFor(() => fetch(`http://127.0.0.1:${backendPort}/health`).then((response) => response.ok).catch(() => false), 'owner backend healthy', 60_000)
+      await waitFor(() => configuredSessionApplication().readPendingMessages(WATCHER).length === 0, 'the relation snapshot handed over', 15_000)
+      const started = Date.now()
+      const ran = await entry.run({ ...base, PORT: String(await refusedPort()) }, repo)
+      const elapsed = Date.now() - started
+      assert.equal(ran.code, 0, ran.stderr)
+      assert.match(ran.stdout, entry.stdout)
+      assert.doesNotMatch(ran.stderr, /wake failed|handoff failed/)
+      assert.ok(elapsed < 6_000, `${entry.name} took ${elapsed}ms — it held the watcher's unanswered socket instead of handing the drain to the backend`)
+      await waitFor(() => harness.received.some((text) => entry.notice.test(text)), 'the backend delivered the notice', 10_000)
+    } finally {
+      if (backend.exitCode === null) backend.kill('SIGTERM')
+      await once(backend, 'exit').catch(() => {})
+      await harness.close()
+    }
+  })
+
+  test(`with no backend, ${entry.name} hands the watch delivery over itself`, { timeout: 60_000 }, async () => {
+    const home = mkdtempSync(join(tmpdir(), 'spex-local-commit-nobackend-'))
+    const repo = reviewFixture()
+    const { parentDir, base } = watchPair(home, repo)
+    const harness = await watcherHarness(parentDir, /(?!)/, { attach: entry.attach })
+    try {
+      const ran = await entry.run({ ...base, PORT: String(await refusedPort()) }, repo)
+      assert.equal(ran.code, 0, ran.stderr)
+      assert.match(ran.stdout, entry.stdout)
+      assert.doesNotMatch(ran.stderr, /wake failed|handoff failed/)
+      await waitFor(() => harness.received.some((text) => entry.notice.test(text)), 'the CLI delivered the notice itself')
+      assert.equal(configuredSessionApplication().readPendingMessages(WATCHER).length, 0, 'nothing is left owed')
+    } finally {
+      await harness.close()
+    }
+  })
+}
 
 test('CLI stop and close exit nonzero when the backend commits no target transition', async () => {
   const server = createServer((req, res) => {

@@ -51,7 +51,7 @@ the only state/event/topology authority, and callers have no legacy read or writ
 supplies the transport. A committed state record projects its watcher edges, returns their ids as the one
 post-commit wake list, and invokes ONE callback that hands each recipient's queue over. Who drains is a per-process
 handover with one default, drain in place: right for the backend that owns the channel and for an in-process caller
-that declared nothing else, while a guest of that backend (a CLI state producer, [[remote-client]]) installs the
+that declared nothing else, while a guest of that backend (a CLI command that commits locally, [[remote-client]]) installs the
 owner-first handover instead. That callback is a wake, not a second queue or a second truth: a missing runtime, a
 crash, or a failed handover leaves the row pending for the normal retry. No monitor loop, second transport, or bidirectional index
 enters the shared layer; `wait` stays the cursor-backed fallback for a caller with no governed delivery address,
