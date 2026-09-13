@@ -1,9 +1,10 @@
 ---
 concern: issue 关闭时间不在 wire 上：子 issue 的关闭进不了父线程的台账
 by: 147de45c-6b5b-42ee-a2d6-bcdbea9917c5
-status: open
+status: landed
 nodes: local-issues, issues-view, issues
 created: 2026-09-13T09:59:03.204Z
+closedAt: 2026-09-13T13:13:55.262Z
 ---
 
 背景：[[issues-view]] 的线程台账要把子 issue 的打开和关闭作为读时事件并入父 issue 的线程（issue「issue-层级-页面-按-parent-分组的列表-sub-issues-区-parent-r」第 5 条）。打开可以按 `created` 放进时间线，关闭放不进去：`Issue` wire 上没有关闭时间。[[local-issues]] 的 close 只把 `status` 改成 `landed`，不记时间；forge 适配器也没有把宿主的关闭时间带过来。
