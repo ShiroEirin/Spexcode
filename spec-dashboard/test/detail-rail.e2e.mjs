@@ -111,7 +111,7 @@ check('value contract min-width:0 / ellipsis / nowrap', JSON.stringify(idSec.val
 const bySec = issueRail.secs.find((s) => /^sessions/.test(s.label))
 const by = bySec?.values[0]
 check('local originator is a liveness chip (button when live, span when offline) wearing SideValue', (by?.tag === 'BUTTON' || by?.tag === 'SPAN') && /\bds-val\b/.test(by?.cls || '') && /\bfv-originator\b/.test(by?.cls || '') && by?.dot === true, by?.cls)
-check('originator chip: a session NAME as text, the full id kept on the tooltip, tagged opened', !/^[0-9a-f-]{36}$/.test(by?.text || '') && /[0-9a-f]{8}-/.test(by?.tip || '') && /opened/.test(by?.tags || ''))
+check('originator chip: a session NAME as text, the full id kept on the tooltip, tagged opened', !/^[0-9a-f-]{36}$/.test(by?.text || '') && /[0-9a-f]{8}-/.test(by?.tip || '') && /opener/.test(by?.tags || ''))
 const nodeSec = issueRail.secs.find((s) => s.label === 'spec nodes')
 check('spec-node refs under their localized label, REAL anchors into the graph route', nodeSec?.values.every((v) => v.tag === 'A' && /^#\/graph\//.test(v.href || '')) && nodeSec.values[0]?.text === NODE_REF, JSON.stringify(nodeSec?.values.map((v) => [v.tag, v.href])))
 check('no parallel inline variants in the rail (fv-chip/fv-by/fv-link/ds-side-line gone)', issueRail.strayCount === 0)
