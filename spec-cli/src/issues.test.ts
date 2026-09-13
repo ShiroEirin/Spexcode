@@ -1,12 +1,147 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { execFileSync } from 'node:child_process'
 
-import { fromForge } from './issues.js'
-import { loadLocalIssues, openIssue } from './localIssues.js'
+import { fromForge, issueHierarchy, mergedIssues, type Issue } from './issues.js'
+import { closeLocalIssue, loadLocalIssues, loadOne, openIssue, relateLocalIssue, reparentLocalIssue } from './localIssues.js'
+
+// the stored shape a store read hands the merged read: every derived field at its empty value.
+const stored = (id: string, at: number, over: Partial<Issue> = {}): Issue => ({
+  id, store: 'local', concern: id, by: 'test', status: 'open', nodes: [], created: `2026-09-13T00:00:${String(at).padStart(2, '0')}Z`,
+  body: '', replies: [], evidence: [], labels: [],
+  parent: null, children: [], childCounts: { open: 0, closed: 0 },
+  relations: [], blockedBy: [], relatedBy: [], duplicatedBy: [], duplicateOf: null,
+  ...over,
+})
+const byId = (issues: Issue[]) => new Map(issues.map((i) => [i.id, i]))
+
+function withDisposableStore(fn: () => void): void {
+  const dir = mkdtempSync(join(tmpdir(), 'spex-issue-tree-'))
+  const previous = process.env.SPEXCODE_ISSUES_DIR
+  process.env.SPEXCODE_ISSUES_DIR = dir
+  try { fn() } finally {
+    if (previous === undefined) delete process.env.SPEXCODE_ISSUES_DIR
+    else process.env.SPEXCODE_ISSUES_DIR = previous
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
+
+test('the issue tree is rebuilt at read: a child nests under an open present parent, else it is a root', () => {
+  const out = byId(issueHierarchy([
+    stored('epic', 1),
+    stored('task', 2, { parent: 'epic' }),
+    stored('step', 3, { parent: 'task' }),
+    stored('done-task', 4, { parent: 'epic', status: 'landed' }),
+    stored('orphan', 5, { parent: 'no-such-issue' }),
+    stored('shipped', 6, { status: 'landed' }),
+    stored('under-shipped', 7, { parent: 'shipped' }),
+  ]))
+  assert.equal(out.get('task')?.parent, 'epic')
+  assert.equal(out.get('step')?.parent, 'task')
+  assert.deepEqual(out.get('epic')?.children, ['task', 'done-task'], 'direct children, oldest first; a closed child is still a child')
+  assert.deepEqual(out.get('epic')?.childCounts, { open: 1, closed: 1 })
+  assert.deepEqual(out.get('task')?.children, ['step'])
+  assert.equal(out.get('orphan')?.parent, null, 'a parent absent from the set promotes the child')
+  assert.equal(out.get('under-shipped')?.parent, null, 'a closed parent promotes the child')
+  assert.deepEqual(out.get('shipped')?.children, [])
+})
+
+test('a parent cycle promotes its members to roots and keeps their descendants attached', () => {
+  const out = byId(issueHierarchy([
+    stored('x', 1, { parent: 'y' }),
+    stored('y', 2, { parent: 'x' }),
+    stored('z', 3, { parent: 'x' }),
+    stored('self', 4, { parent: 'self' }),
+  ]))
+  assert.equal(out.get('x')?.parent, null)
+  assert.equal(out.get('y')?.parent, null)
+  assert.equal(out.get('self')?.parent, null)
+  assert.equal(out.get('z')?.parent, 'x')
+  assert.deepEqual(out.get('x')?.children, ['z'])
+})
+
+test('relations get their reverse edges at read, and a closed blocker reads as related without touching storage', () => {
+  const input = [
+    stored('blocker', 1, { relations: [{ type: 'blocks', id: 'blocked' }, { type: 'related', id: 'gone' }] }),
+    stored('blocked', 2),
+    stored('closed-blocker', 3, { status: 'landed', relations: [{ type: 'blocks', id: 'blocked' }] }),
+    stored('dup', 4, { status: 'landed', relations: [{ type: 'duplicate', id: 'canonical' }] }),
+    stored('canonical', 5, { relations: [{ type: 'related', id: 'blocked' }] }),
+  ]
+  const out = byId(issueHierarchy(input))
+  assert.deepEqual(out.get('blocker')?.relations, [{ type: 'blocks', id: 'blocked' }], 'an edge to an issue not in the set is dropped')
+  assert.deepEqual(out.get('blocked')?.blockedBy, ['blocker'])
+  assert.deepEqual(out.get('closed-blocker')?.relations, [{ type: 'related', id: 'blocked' }])
+  assert.deepEqual(out.get('blocked')?.relatedBy, ['closed-blocker', 'canonical'])
+  assert.equal(out.get('dup')?.duplicateOf, 'canonical')
+  assert.deepEqual(out.get('canonical')?.duplicatedBy, ['dup'])
+  assert.deepEqual(input[2].relations, [{ type: 'blocks', id: 'blocked' }], 'the read never rewrites the stored edge')
+})
+
+test('a forge issue reads with an empty hierarchy and does not break the merged read', () => {
+  const [issue] = issueHierarchy(fromForge({
+    host: 'github',
+    state: { issues: [{ number: 7, title: 't', body: '', url: 'u', state: 'OPEN', labels: [], author: 'a', createdAt: '2026-09-13T00:00:00Z', comments: [] }], prs: [] },
+  }, []))
+  assert.equal(issue.parent, null)
+  assert.deepEqual([issue.children, issue.relations, issue.blockedBy, issue.relatedBy, issue.duplicatedBy], [[], [], [], [], []])
+  assert.equal(issue.duplicateOf, null)
+})
+
+test('a sub-issue inherits its parent nodes unless it names its own, and needs an open local parent', () => {
+  withDisposableStore(() => {
+    const epic = openIssue('the epic', { nodes: ['alpha'], author: 'test' })
+    const inherits = openIssue('inherits', { parent: epic.id, author: 'test' })
+    assert.equal(inherits.parent, epic.id)
+    assert.deepEqual(inherits.nodes, ['alpha'])
+    const own = openIssue('names its own [[gamma]]', { parent: epic.id, nodes: ['beta'], author: 'test' })
+    assert.deepEqual(own.nodes, ['beta', 'gamma'])
+    assert.match(readFileSync(join(process.env.SPEXCODE_ISSUES_DIR!, `${inherits.id}.md`), 'utf8'), new RegExp(`^parent: ${epic.id}$`, 'm'))
+    assert.throws(() => openIssue('no parent', { parent: 'no-such-issue', author: 'test' }), /no local issue 'no-such-issue'/)
+    closeLocalIssue(own.id)
+    assert.throws(() => openIssue('closed parent', { parent: own.id, author: 'test' }), /is landed/)
+    assert.deepEqual(byId(mergedIssues(null, [])).get(epic.id)?.children, [inherits.id, own.id])
+  })
+})
+
+test('reparent moves or clears the stored pointer and refuses a cycle', () => {
+  withDisposableStore(() => {
+    const a = openIssue('a', { author: 'test' })
+    const b = openIssue('b', { author: 'test' })
+    const c = openIssue('c', { parent: a.id, author: 'test' })
+    assert.equal(reparentLocalIssue(c.id, b.id).parent, b.id)
+    assert.equal(reparentLocalIssue(c.id, null).parent, null)
+    assert.doesNotMatch(readFileSync(join(process.env.SPEXCODE_ISSUES_DIR!, `${c.id}.md`), 'utf8'), /^parent:/m)
+    assert.equal(loadOne(c.id).parent, null)
+    reparentLocalIssue(b.id, a.id)
+    assert.throws(() => reparentLocalIssue(a.id, b.id), /cycle/)
+    assert.throws(() => reparentLocalIssue(a.id, a.id), /cycle/)
+  })
+})
+
+test('relate stores the edge on the initiator once; duplicate closes it onto its canonical', () => {
+  withDisposableStore(() => {
+    const a = openIssue('a', { author: 'test' })
+    const b = openIssue('b', { author: 'test' })
+    relateLocalIssue(a.id, 'blocks', b.id)
+    relateLocalIssue(a.id, 'blocks', b.id)
+    assert.deepEqual(loadOne(a.id).relations, [{ type: 'blocks', id: b.id }])
+    assert.deepEqual(loadOne(b.id).relations, [], 'the target stores nothing; its reverse edge is read-time')
+    assert.match(readFileSync(join(process.env.SPEXCODE_ISSUES_DIR!, `${a.id}.md`), 'utf8'), new RegExp(`^relations: blocks:${b.id}$`, 'm'))
+    assert.throws(() => relateLocalIssue(a.id, 'related', 'no-such-issue'), /no local issue 'no-such-issue'/)
+    assert.throws(() => relateLocalIssue(a.id, 'related', a.id), /itself/)
+    const dup = openIssue('dup', { author: 'test' })
+    closeLocalIssue(dup.id, { duplicateOf: b.id })
+    const read = byId(mergedIssues(null, []))
+    assert.equal(read.get(dup.id)?.status, 'landed')
+    assert.equal(read.get(dup.id)?.duplicateOf, b.id)
+    assert.deepEqual(read.get(b.id)?.duplicatedBy, [dup.id])
+    assert.deepEqual(read.get(b.id)?.blockedBy, [a.id])
+  })
+})
 
 test('fromForge preserves platform labels and their display colors on the unified Issue', () => {
   const [issue] = fromForge({

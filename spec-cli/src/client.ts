@@ -286,12 +286,12 @@ export async function clientCapture(id: string): Promise<CaptureResult> {
 // commit to the trunk's local store itself, so its `spex issue reply`/`open` post to the backend it was launched
 // from — the same store-routed verbs the dashboard's composer calls — carrying its session id as the author claim
 // (`by`, honoured only when it names a board session). The response is the route's own receipt.
-export type IssueWriteReceipt = { ok?: boolean; error?: string; id?: string; store?: string; url?: string; replies?: unknown[]; outcomes?: string }
+export type IssueWriteReceipt = { ok?: boolean; error?: string; id?: string; store?: string; nodes?: string[]; parent?: string | null; url?: string; replies?: unknown[]; outcomes?: string }
 export async function clientIssueReply(id: string, body: string, evidence: string[] = [], by?: string): Promise<IssueWriteReceipt> {
   const r = await apiFetch(`/api/issues/${seg(id)}/reply`, post({ body, ...(evidence.length ? { evidence } : {}), ...(by ? { by } : {}) }))
   return await r.json().catch(() => ({ ok: false, error: `bad backend response (${r.status})` })) as IssueWriteReceipt
 }
-export async function clientIssueOpen(input: { concern: string; nodes?: string[]; body?: string; evidence?: string[]; store?: string }, by?: string): Promise<IssueWriteReceipt> {
+export async function clientIssueOpen(input: { concern: string; nodes?: string[]; body?: string; evidence?: string[]; store?: string; parent?: string }, by?: string): Promise<IssueWriteReceipt> {
   const r = await apiFetch('/api/issues', post({ ...input, ...(by ? { by } : {}) }))
   return await r.json().catch(() => ({ ok: false, error: `bad backend response (${r.status})` })) as IssueWriteReceipt
 }

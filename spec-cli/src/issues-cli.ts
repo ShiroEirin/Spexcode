@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { closeIssue, findIssue, mergedIssues, promote, type ForgeSlice, type Issue } from './issues.js'
 import { FORGE_DRIVERS, forgeDriverFor, resolveForgeHost } from '@spexcode/spec-forge/drivers'
-import { issuesEnabled } from './localIssues.js'
+import { issuesEnabled, relateLocalIssue, reparentLocalIssue } from './localIssues.js'
 import { summarizeDispatch, summarizeLoopIn } from './mentions.js'
 import { envSessionId, loadSpecsLite } from '@spexcode/spec-core'
 
@@ -50,6 +50,17 @@ function renderIssue(t: Issue): string {
   L.push(`  ${[t.store, t.status, t.nodes.length ? `re: ${t.nodes.join(', ')}` : '', t.by ? `by ${t.by}` : '', t.created].filter(Boolean).join('  ·  ')}`)
   if (t.url) L.push(`  ${t.url}`)
   if (t.evidence.length) L.push(`  evidence: ${t.evidence.join(', ')}`)
+  if (t.parent) L.push(`  parent: ${t.parent}`)
+  if (t.children.length) L.push(`  sub-issues (${t.childCounts.closed}/${t.children.length} closed): ${t.children.join(', ')}`)
+  const outgoing = (type: string) => t.relations.filter((r) => r.type === type).map((r) => r.id)
+  const edges: [string, string[]][] = [
+    ['blocks', outgoing('blocks')],
+    ['blocked by', t.blockedBy],
+    ['related', [...new Set([...outgoing('related'), ...t.relatedBy])]],
+    ['duplicate of', t.duplicateOf ? [t.duplicateOf] : []],
+    ['duplicated by', t.duplicatedBy],
+  ]
+  for (const [label, ids] of edges) if (ids.length) L.push(`  ${label}: ${ids.join(', ')}`)
   L.push('', t.body)
   for (const r of t.replies) {
     L.push('', `── reply: ${r.by} @ ${r.at} ──`)
@@ -116,17 +127,49 @@ async function issueVerbs(args: string[]): Promise<number> {
   if (args[0] === 'close') {
     // the CLI leg of the ONE close verb ([[issues]] closeIssue — the same routing POST /api/issues/:id/close
     // runs): a local id resolves the thread `landed`, a forge id (`<host>#<n>`) closes the remote issue
-    // through the driver. Lifecycle on the issue object, never node state.
+    // through the driver. Lifecycle on the issue object, never node state. `--duplicate-of` closes a local
+    // issue onto its canonical in the same store write.
     const id = args[1]
-    if (!id || id.startsWith('--')) { console.error('usage: spex issue close <issue-id>   (a local id, or a forge id like github#12)'); return 2 }
+    if (!id || id.startsWith('--')) { console.error('usage: spex issue close <issue-id> [--duplicate-of <canonical-id>]   (a local id, or a forge id like github#12)'); return 2 }
+    const duplicateOf = fl(args, 'duplicate-of')
     try {
-      const r = await closeIssue(id)
+      const r = await closeIssue(id, { duplicateOf })
       console.log(r.store === 'local'
-        ? `closed '${id}' — local thread landed`
+        ? `closed '${id}' — local thread landed${duplicateOf ? ` as a duplicate of '${duplicateOf}'` : ''}`
         : `closed '${id}' on ${r.store}${r.url ? `  ${r.url}` : ''}`)
       return 0
     } catch (e) {
       console.error(`spex issue close: ${e instanceof Error ? e.message : e}`)
+      return 1
+    }
+  }
+  if (args[0] === 'reparent' || args[0] === 'relate') {
+    // the hierarchy writes ([[local-issues]]): forward facts on the local store, committed directly like `close`.
+    // A forge issue stores neither, so the store's own `no local issue` refusal is the answer for a forge id too.
+    try {
+      if (args[0] === 'reparent') {
+        const id = bare(args.slice(1))[0]
+        const to = fl(args, 'to')
+        if (!id || !to) { console.error('usage: spex issue reparent <issue-id> --to <parent-id|none>'); return 2 }
+        const t = reparentLocalIssue(id, to === 'none' ? null : to)
+        console.log(t.parent ? `reparented '${id}' under '${t.parent}'` : `'${id}' is a top-level issue again`)
+        return 0
+      }
+      const [id, type, other] = bare(args.slice(1))
+      if (!id || !other || (type !== 'blocks' && type !== 'related' && type !== 'duplicate')) {
+        console.error('usage: spex issue relate <issue-id> blocks|related|duplicate <other-issue-id>')
+        return 2
+      }
+      if (type === 'duplicate') {
+        await closeIssue(id, { duplicateOf: other })
+        console.log(`closed '${id}' — local thread landed as a duplicate of '${other}'`)
+      } else {
+        relateLocalIssue(id, type, other)
+        console.log(`'${id}' ${type === 'blocks' ? 'blocks' : 'is related to'} '${other}'`)
+      }
+      return 0
+    } catch (e) {
+      console.error(`spex issue ${args[0]}: ${e instanceof Error ? e.message : e}`)
       return 1
     }
   }
@@ -143,7 +186,7 @@ async function issueVerbs(args: string[]): Promise<number> {
     }
   }
   if (args[0] !== 'ls') {
-    console.error(`spex issue: unknown verb '${args[0]}' — ls | show | mine | open | reply | assign | close | promote | links  (spex help issue)`)
+    console.error(`spex issue: unknown verb '${args[0]}' — ls | show | mine | open | reply | assign | close | reparent | relate | promote | links  (spex help issue)`)
     return 2
   }
   args = args.slice(1)
@@ -169,7 +212,7 @@ async function issueVerbs(args: string[]): Promise<number> {
   return 0
 }
 
-const VALUE_FLAGS = new Set(['--node', '--body', '--evidence', '--store'])
+const VALUE_FLAGS = new Set(['--node', '--body', '--evidence', '--store', '--parent', '--to', '--duplicate-of'])
 // bare positionals, skipping flags + their values.
 function bare(args: string[]): string[] {
   const out: string[] = []
@@ -257,15 +300,16 @@ export async function runIssueWrite(args: string[]): Promise<number> {
     // born forge-visible). The concern is the bare positional(s) after the sub.
     const concern = sub === 'open' ? bare(args.slice(1)).join(' ').trim() : ''
     if (!concern) {
-      console.error('usage: spex issue open "<concern>" [--store local|<host>] [--node <id>…] [--evidence <hash>…] [--body -|<text>]\n       spex issue reply|assign|close|promote <issue-id> …')
+      console.error('usage: spex issue open "<concern>" [--store local|<host>] [--parent <id>] [--node <id>…] [--evidence <hash>…] [--body -|<text>]\n       spex issue reply|assign|close|reparent|relate|promote <issue-id> …')
       return 2
     }
-    const input = { concern, store: fl(args, 'store'), nodes: repeated(args, 'node'), body: readBody(args), evidence: repeated(args, 'evidence') }
+    const input = { concern, store: fl(args, 'store'), nodes: repeated(args, 'node'), body: readBody(args), evidence: repeated(args, 'evidence'), parent: fl(args, 'parent') }
     const opened = await backendIssueWrite(() => import('./client.js').then((m) => m.clientIssueOpen(input, envSessionId() || undefined)))
     if (opened) {
       if (opened.error || opened.ok === false) { console.error(`spex issue open: ${opened.error || 'refused by the backend'}`); return 1 }
+      const under = opened.parent ? ` under '${opened.parent}'` : ''
       console.log(opened.store === 'local' || !opened.store
-        ? `opened '${opened.id}' — committed to the local issue store (via the backend); read it with \`spex issue ls\``
+        ? `opened '${opened.id}'${under} — committed to the local issue store (via the backend); read it with \`spex issue ls\``
         : `opened '${opened.id}' on ${opened.store} — ${opened.url}`)
       if (opened.outcomes) console.log(`  ${opened.outcomes}`)
       return 0
@@ -275,8 +319,9 @@ export async function runIssueWrite(args: string[]): Promise<number> {
       nodes: input.nodes,
       body: input.body,
       evidence: input.evidence,
+      parent: input.parent,
     })
-    const re = r.nodes.length ? ` (re: ${r.nodes.join(', ')})` : ''
+    const re = [r.parent ? ` under '${r.parent}'` : '', r.nodes.length ? ` (re: ${r.nodes.join(', ')})` : ''].join('')
     console.log(r.store === 'local'
       ? `opened '${r.id}'${re} — committed to the local issue store; read it with \`spex issue ls\``
       : `opened '${r.id}' on ${r.store}${re} — ${r.url}`)

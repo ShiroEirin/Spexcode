@@ -69,9 +69,12 @@ without an `ask` declaration is invisible to the board — the human sees a work
 
 ## 5. split, hand over, escalate
 
-- **Split:** a sub-task with its own worktree is a child session: `spex session new "<task> [[node]]"` from
-  inside your session. It joins the issue's fleet through you — no pointer of its own is needed
-  ([[issue-binding]]). Supervise it through `spex session watch`; its declarations show on the issue too.
+- **Split:** a sub-task is a **sub-issue**. Open it under yours — `spex issue open "<sub-task>" --parent <your-issue>
+  --body -` (it takes your issue's nodes unless you name its own) — then reply `@new` on the sub-issue's thread. The
+  worker that creates is bound to the sub-issue by the create itself ([[issue-binding]]), so its thread, its
+  declarations and its merge all live there, and the parent issue's fleet is its own sessions plus every
+  sub-issue's. Supervise it through `spex session watch`. Closing the sub-issues does not close yours: the parent
+  shows how many are closed, and closing it stays the human's act.
 - **Hand over:** an existing session should take the issue instead of you → `spex issue assign <id> <SEL>`;
   it is told through its own inbox. Then declare your own end honestly.
 - **Escalate:** something on the thread needs the human → `ask`, with the question in the note and, if there
@@ -84,8 +87,8 @@ without an `ask` declaration is invisible to the board — the human sees a work
 - Never write to the issue's own state (`close`, `promote`) as a worker. Closing is the human's act after
   merge; you declare, they close.
 - Never mint a status vocabulary of your own in prose ("DONE", "WIP", emoji). The board has one.
-- Never `@new` on a thread from inside a worker unless you mean to spawn a sibling worker — it is a real
-  creation, bound to the same issue.
+- Never `@new` on a thread from inside a worker unless you mean to spawn a worker for that thread — it is a real
+  creation, bound to that thread's issue. On your own issue that is a sibling; on a sub-issue you opened, it is the split.
 - Never assume the thread is unread: if the thread already resolves your question, act on it and say so.
 
 ## the interfaces, in one place
@@ -99,5 +102,5 @@ without an `ask` declaration is invisible to the board — the human sees a work
 | shape | `spex session widget put <name> <file>` + `[[widget:<name>]]` in a reply | the thread, in place |
 | evidence | `spex session files add <path>` + `[[file:<name>]]` | the rail's card, the thread |
 | status | `spex session done|ask|park …` | the row's colour, action and tooltip |
-| split | `spex session new "…"` (inside your session) | the fleet, nested under you |
+| split | `spex issue open "…" --parent <id>`, then `@new` in a reply on it | the sub-issue's thread, the parent's fleet |
 | a new concern | `spex issue open "…" --node <id>` | the Issues list |

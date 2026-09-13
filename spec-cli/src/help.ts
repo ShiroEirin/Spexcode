@@ -467,29 +467,39 @@ edit the spec instead — same commit as the code.`,
     body: sessionDrawerHelp(),
   },
   issue: {
-    line: 'issue <verb>          concern threads, local + forge merged: ls · show · open · reply · close · promote · links',
+    line: 'issue <verb>          concern threads, local + forge merged: ls · show · open · reply · close · reparent · relate · promote · links',
     body: `Usage: spex issue ls [--node <id>] [--store local|<host>] [--all] [--json]
        spex issue show <id> [--json]
        spex issue mine [--json]              the issue THIS session is bound to, with its thread (the worker's first read)
-       spex issue open "<concern>" [--store local|<host>] [--node <id>…] [--evidence <hash>…] [--body -|<text>]
+       spex issue open "<concern>" [--store local|<host>] [--parent <id>] [--node <id>…] [--evidence <hash>…] [--body -|<text>]
        spex issue reply <id> --body -|<text> [--evidence <hash>…]
        spex issue assign <id> <SEL>          bind an existing session to the issue and tell it (SEL = id | id-prefix | branch)
-       spex issue close <id>
+       spex issue close <id> [--duplicate-of <canonical-id>]
+       spex issue reparent <id> --to <parent-id|none>
+       spex issue relate <id> blocks|related|duplicate <other-id>
        spex issue promote <id>
        spex issue links [--store <host>] [--node <id>] [--json]
 
 ls — the drain view a supervisor reads: ONE store-tagged list, local + forge interleaved by
 creation time.
 
-show — the single-thread detail: the whole thread with its replies, named by a local id or a forge id
-like github#12.
+show — the single-thread detail: the whole thread with its replies, plus its parent, sub-issues and
+relations, named by a local id or a forge id like github#12.
 
 open — welcomes taste, annotations, and off-mainline smells, not only bugs; --store <host> opens
-straight on the forge.
+straight on the forge. --parent <id> opens a local sub-issue that takes the parent's nodes unless it
+names its own.
 
 reply — routes by the issue's own store: one verb, local or forge.
 
-close — routes by the issue's own store too, so a thread ends where it lives.
+close — routes by the issue's own store too, so a thread ends where it lives. --duplicate-of <id>
+closes a local issue as a duplicate of its canonical.
+
+reparent — moves a local issue under another OPEN local issue, or back to the top with --to none. The
+tree is rebuilt on every read: a child whose parent is closed or gone reads as a root.
+
+relate — records an edge on the first issue: blocks, related, or duplicate (which is close
+--duplicate-of). Reverse edges are read-time, and a blocker that is no longer OPEN reads as related.
 
 promote — moves an OPEN local issue to the forge as one recorded action.
 
