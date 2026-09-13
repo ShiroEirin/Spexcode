@@ -248,3 +248,54 @@ export function sessionForest(sessions, isExpanded, { zoneFolded = () => false, 
 // child disclosure as sessionForest. The archive index deliberately bypasses this and remains flat.
 export const sessionPresentationOrder = (sessions) =>
   sessionForest(sessions, () => true).filter((item) => item.type === 'row').map((item) => item.s)
+
+// @@@ issue fleet - the ONE issue->session join ([[issue-binding]]): a session carries `issue`, the id of the
+// issue it was created for or assigned to, the way it carries `parent`. The Issues page asks "who is on this
+// issue" through THIS and nothing else. `assigned` are the rows pointing at the issue; `fleet` adds every
+// descendant of those rows through the same read-time tree the forest is drawn from ([[session-nesting]]),
+// because a worker's children work its issue without each writing a pointer of their own — the same rule that
+// promotes a child when its parent closes. Archived rows are off the board and never counted.
+export const issueFleet = (issueId, sessions = []) => {
+  if (!issueId) return { assigned: [], fleet: [] }
+  const board = (sessions || []).filter((s) => s?.id && !isArchived(s))
+  const assigned = board.filter((s) => s.issue === issueId)
+  const { childrenOf } = nestSessions(board)
+  const fleet = []
+  const seen = new Set()
+  const walk = (s) => {
+    if (seen.has(s.id)) return
+    seen.add(s.id)
+    fleet.push(s)
+    for (const c of childrenOf.get(s.id) || []) walk(c)
+  }
+  assigned.forEach(walk)
+  return { assigned, fleet }
+}
+
+// the issue's WORK STATE, rolled up from its fleet exactly as a parent row's fold pod rolls up its subtree:
+// `need` outranks `run` outranks `offline`, and an issue with no fleet is `none`. Derived on every read, stored
+// nowhere, and never written back onto the issue's own open/closed lifecycle.
+export const fleetWorkState = (fleet = []) => {
+  if (!fleet.length) return 'none'
+  const zones = new Set(fleet.map(sessionZone))
+  if (zones.has('need')) return 'need'
+  if (zones.has('run')) return 'run'
+  return 'offline'
+}
+
+// the thread's PARTICIPANTS: its originator and reply authors that still resolve to a board session and are
+// not already in the fleet — the same presence join [[live-session-filter]] classifies by, kept as a separate
+// list because talking on a thread is not the same fact as being dispatched for it.
+export const issueParticipants = (issue, sessions = [], fleet = []) => {
+  const inFleet = new Set(fleet.map((s) => s.id))
+  const ids = [issue?.by, ...((issue?.replies || []).map((r) => r?.by))]
+  const out = []
+  const seen = new Set()
+  for (const id of ids) {
+    if (!id || seen.has(id) || inFleet.has(id)) continue
+    seen.add(id)
+    const s = (sessions || []).find((x) => x.id === id && !isArchived(x))
+    if (s) out.push(s)
+  }
+  return out
+}

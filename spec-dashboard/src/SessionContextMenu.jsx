@@ -242,7 +242,8 @@ export default function SessionContextMenu({ menu, closeRequest = null, onCloseR
               <ContextMenuItem icon="search" onClick={findOnGraph}>{t('sessionWindow.findOnGraph')}</ContextMenuItem>
             </ContextMenuSubmenu>
             <ContextMenuItem icon="pencil" onClick={startRename}>{t('sessionWindow.rename')}</ContextMenuItem>
-            <ContextMenuItem icon="list-checks" onClick={startSelect}>{t('sessionWindow.select')}</ContextMenuItem>
+            {/* selection is a verb of the surface that OWNS a selectable list; a host without one offers no dead row. */}
+            {onMultiSelect && <ContextMenuItem icon="list-checks" onClick={startSelect}>{t('sessionWindow.select')}</ContextMenuItem>}
             {menu.session.parent && <ContextMenuItem icon="corner-up-left" onClick={detach}>{t('sessionWindow.detach')}</ContextMenuItem>}
             {/* attach only when a live tmux window exists to join — offline/queued rows have none. */}
             {menu.session.liveness !== 'offline' && menu.session.status !== 'queued' && (

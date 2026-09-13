@@ -56,8 +56,9 @@ grammar it wears a reserved qualified token, so reading a draft tells you which 
   **`@new` is the one explicit worker action in the grammar:** after its containing write is durable, it creates
   a fresh worker through the same bounded session-create owner as every other creation request. `@new:<launcher>`
   selects that one worker's named launcher; an unknown name is reported in the dispatch outcome while the
-  containing text remains stored. A spawned worker inherits the current thread's first node mention and records
-  the writing session as its parent when that originator is a real board session.
+  containing text remains stored. A spawned worker inherits the current thread's first node mention, records
+  the writing session as its parent when that originator is a real board session, and records the containing
+  thread as its `issue` ([[issue-binding]]) — a Command Box `@new` has no thread and records none.
 - **`@parent:<session>` is the second explicit action: it addresses the created worker's supervisor.** It
   answers a question `@new` can only answer by accident — a worker's parent is otherwise whoever happened to
   run the create, so a human launching from the dashboard could never hang one under an existing session at

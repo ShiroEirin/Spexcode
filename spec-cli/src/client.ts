@@ -135,7 +135,7 @@ function corruptCachedSession(id: string, reason: string): Session {
   const label = `${id.slice(0, 8)} (unreadable record)`
   return {
     id, branch: null, path: '', label, title: label, raw: { name: null, title: null },
-    parent: null, harness: 'unknown', capabilities: { headless: false }, launcher: null,
+    parent: null, issue: null, harness: 'unknown', capabilities: { headless: false }, launcher: null,
     lifecycle: 'active', proposal: null, merges: 0, status: 'corrupt', liveness: 'unknown',
     note: `session record is unreadable: ${reason}`, archived: false, closedAt: null, archiveHazard: null,
     prompt: null, promptPreview: null, created: 0, activity: null, sortKey: null,
@@ -178,7 +178,7 @@ export function localCachedSessions(includeArchived = false): Session[] {
       label: id,
       title: id,
       raw: { name: null, title: null },
-      parent: state.parentSessionId,
+      parent: state.parentSessionId, issue: null,
       harness: 'unknown',
       capabilities: { headless: false },
       launcher: null,
@@ -330,7 +330,7 @@ export async function clientListSessionsThroughPeer(sshAddress: string, projectA
   return await response.json() as Session[]
 }
 
-export type PeerSessionCreateInput = { prompt: string; launcher?: string; name?: string; base?: string }
+export type PeerSessionCreateInput = { prompt: string; launcher?: string; name?: string; base?: string; issue?: string }
 
 // Peer creation is deliberately separate from sessions.ts createSession: that function's proven-local-refusal
 // fallback would launch on THIS machine. The body is the backend's own create body and the retry key is the

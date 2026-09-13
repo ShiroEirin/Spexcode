@@ -47,6 +47,11 @@ mechanism [[session-reparent]] later moves. The nesting field remains provenance
 watch relation owns status delivery. It is deliberately distinct from a human's `watch` command: cancelling a
 manual watch cannot dissolve parent supervision, and moving parentage cannot erase a coincident manual watch.
 
+**`issue` is the sibling pointer.** A record may also name the issue it works for ([[issue-binding]]); it is
+written and read under the same provenance rules as `parent` (create-time, read-time join, no lifecycle
+inference), and the Issues page reads a fleet through the very tree this node describes — a child works its
+parent's issue without a pointer of its own.
+
 **Nesting is DERIVED at read time, never a stored mutation on children.** Each session points only at its
 DIRECT parent; the tree is rebuilt on every board read. A child nests under its parent ONLY IF that parent is
 still present in the enumerated list — so closing a parent leaves its children with a dangling pointer that, on

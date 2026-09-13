@@ -140,6 +140,7 @@ export type Session = {
   label: string; title: string   // `label` remains the stable search handle; `title` is the one visible session name
   raw: { name: string | null; title: string | null }   // the bare parts, for explicit consumers only (rename prefill)
   parent: string | null   // the SPAWNING session's id ([[session-nesting]]) — set once at creation when `spex session new` ran inside another session, else null; the frontend folds a child under it at read time
+  issue: string | null    // the issue this session works for ([[issue-binding]]) — provenance like `parent`: written at create (a thread's `@new`, `--issue`) or assign, joined at read by the Issues page, never a lifecycle input
   harness: string   // which harness (claude|codex) runs this session — carried so liveness/occupancy route through its adapter
   capabilities: { headless: boolean }   // stable adapter projection; console surfaces consume data, never harness ids
   launcher: string | null   // the launcher profile this session launched under ([[launcher-select]]); null only for old records predating launchers
@@ -455,7 +456,7 @@ function corruptSession(id: string, entry: { path: string; error: string }): Ses
   const label = `${id.slice(0, 8)} (unreadable record)`
   return {
     id, branch: null, path: '', label, title: label, raw: { name: null, title: null },
-    parent: null, harness: defaultHarness.id, capabilities: { headless: false }, launcher: null,
+    parent: null, issue: null, harness: defaultHarness.id, capabilities: { headless: false }, launcher: null,
     lifecycle: 'active', proposal: null, merges: 0, status: 'corrupt', liveness: 'unknown',
     note: corruptReason(entry), archived: false, closedAt: null, prompt: null, promptPreview: null, created: 0,
     activity: null, sortKey: null, archiveHazard: null, files: [], uploadedFiles: [], web: [], widgets: [],
@@ -472,7 +473,7 @@ export function toSession(rec: SessRec, status: DisplayStatus, lv: Liveness, act
   const parts = { id: rec.session, name: rec.name, title: rec.title, branch: rec.branch, activity: act, note: rec.note, promptPreview: pp }
   const harness = harnessById(rec.harness || defaultHarness.id)
   const files = readSessionFiles(rec.session)
-  return { id: rec.session, branch: rec.branch, label: deriveLabel(parts), title: deriveTitle(parts), raw: { name: rec.name, title: rec.title }, path: rec.worktreePath, parent: rec.parent, harness: harness.id, capabilities: { headless: harness.headless }, launcher: rec.launcher, lifecycle: rec.closedAt ? 'archived' as Lifecycle : rec.status, proposal: rec.closedAt ? null : rec.proposal, merges: rec.merges, note: rec.note, status, liveness: lv, archived: rec.archived || !!rec.closedAt, closedAt: rec.closedAt, archiveHazard: null, prompt, promptPreview: pp, created: rec.createdAt, activity: act, sortKey: rec.sortKey, files, uploadedFiles: sessionUploads(files), web: readSessionWebs(rec.session), widgets: readSessionWidgets(rec.session), ...(rec.zcodeChildSessionIds?.length ? { zcodeChildSessionIds: [...rec.zcodeChildSessionIds] } : {}) }
+  return { id: rec.session, branch: rec.branch, label: deriveLabel(parts), title: deriveTitle(parts), raw: { name: rec.name, title: rec.title }, path: rec.worktreePath, parent: rec.parent, issue: rec.issue, harness: harness.id, capabilities: { headless: harness.headless }, launcher: rec.launcher, lifecycle: rec.closedAt ? 'archived' as Lifecycle : rec.status, proposal: rec.closedAt ? null : rec.proposal, merges: rec.merges, note: rec.note, status, liveness: lv, archived: rec.archived || !!rec.closedAt, closedAt: rec.closedAt, archiveHazard: null, prompt, promptPreview: pp, created: rec.createdAt, activity: act, sortKey: rec.sortKey, files, uploadedFiles: sessionUploads(files), web: readSessionWebs(rec.session), widgets: readSessionWidgets(rec.session), ...(rec.zcodeChildSessionIds?.length ? { zcodeChildSessionIds: [...rec.zcodeChildSessionIds] } : {}) }
 }
 
 export type ZCodeChildSessionLink = { sessionId: string; childSessionId: string; alreadyLinked: boolean }
@@ -1565,7 +1566,7 @@ export class SessionCreateError extends Error {
     this.name = 'SessionCreateError'
   }
 }
-type SessionCreateContext = { id: string; requestDigest: string; payloadHash: string; signal: AbortSignal; base?: string | null }
+type SessionCreateContext = { id: string; requestDigest: string; payloadHash: string; signal: AbortSignal; base?: string | null; issue?: string | null }
 
 // @@@ create parentage - the ONE answer to "whose subtree does this create belong to". Two sources can
 // propose it — PROVENANCE (the caller ran the create) and ADDRESS (the prompt named a supervisor with
@@ -1650,7 +1651,7 @@ function throwIfCreateAborted(signal: AbortSignal, phase: SessionCreatePhase): v
 export async function sessionCreateRequest(body: unknown, options: SessionCreateRequestOptions = {}): Promise<SessionCreateRequestResult> {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return { status: 400, error: 'body must be a JSON object' }
   const input = body as Record<string, unknown>
-  const unknown = Object.keys(input).filter((key) => !['prompt', 'parent', 'launcher', 'name', 'base'].includes(key)).sort()
+  const unknown = Object.keys(input).filter((key) => !['prompt', 'parent', 'launcher', 'name', 'base', 'issue'].includes(key)).sort()
   if (unknown.length) return { status: 400, error: `unknown session-create field${unknown.length === 1 ? '' : 's'}: ${unknown.join(', ')}` }
   // The prompt is the only field a human authors freely, so it is also where the grammar's `@parent:<sel>`
   // directive arrives ([[mentions]]). Read it off the raw text FIRST: the stripped prompt is what titles,
@@ -1664,6 +1665,10 @@ export async function sessionCreateRequest(body: unknown, options: SessionCreate
   const name = typeof input.name === 'string' && input.name.trim() ? input.name.trim() : null
   if (input.base !== undefined && typeof input.base !== 'string') return { status: 400, error: 'session-create base must be a string' }
   const base = typeof input.base === 'string' && input.base.trim() ? input.base.trim() : null
+  // The issue the worker is bound to ([[issue-binding]]): an opaque id from the caller (a thread's `@new` dispatch, `--issue`),
+  // recorded as provenance beside `parent`; nothing here resolves it, so a forge id and a local id are equally legal.
+  if (input.issue !== undefined && typeof input.issue !== 'string') return { status: 400, error: 'session-create issue must be a string' }
+  const issue = typeof input.issue === 'string' && input.issue.trim() ? input.issue.trim() : null
   const cutoverState = sessionApplicationCutoverState()
   if (cutoverState === 'fenced') return { status: 409, error: 'legacy JSON session store is fenced for one-time migration', code: 'session_create_failed', phase: 'request' }
   if (cutoverState === 'migration-required') return { status: 409, error: 'legacy JSON session store must be migrated before creating sessions', code: 'session_create_failed', phase: 'request' }
@@ -1683,7 +1688,7 @@ export async function sessionCreateRequest(body: unknown, options: SessionCreate
   // Keep no-name retries byte-compatible with pre-name receipts; an explicit non-empty name is one more
   // immutable creation input because it publishes the record's existing display override. `base` joins them
   // for the same reason and with the same shape: absent, it must not perturb an existing receipt's bytes.
-  const payloadHash = digest(JSON.stringify({ prompt, parent: parentage.id, launcher: launcher ?? null, ...(name ? { name } : {}), ...(base ? { base } : {}) }))
+  const payloadHash = digest(JSON.stringify({ prompt, parent: parentage.id, launcher: launcher ?? null, ...(name ? { name } : {}), ...(base ? { base } : {}), ...(issue ? { issue } : {}) }))
   let freshStoreOwned = false
   let freshStoreCommitted = false
   try {
@@ -1707,7 +1712,7 @@ export async function sessionCreateRequest(body: unknown, options: SessionCreate
   traceSessionCreate(id, requestDigest, 'request', 'start')
   try {
     try {
-      const session = await prepareSession(prompt, parentage, launcher, name, { id, requestDigest, payloadHash, base, signal: controller.signal })
+      const session = await prepareSession(prompt, parentage, launcher, name, { id, requestDigest, payloadHash, base, issue, signal: controller.signal })
       await options.onPublished?.(session)
       freshStoreCommitted = true
       traceSessionCreate(id, requestDigest, 'request', 'finish')
@@ -1798,10 +1803,10 @@ async function probeSessionCreateAuthority(target: ApiBaseInfo): Promise<boolean
     return false
   } finally { clearTimeout(timer) }
 }
-export async function createSession(prompt: string, launcher?: string, name?: string, base?: string): Promise<Session> {
+export async function createSession(prompt: string, launcher?: string, name?: string, base?: string, issue?: string): Promise<Session> {
   const parent = ownSessionId()
   const requestKey = randomUUID()
-  const body = { prompt, parent, launcher, ...(name !== undefined ? { name } : {}), ...(base !== undefined ? { base } : {}) }
+  const body = { prompt, parent, launcher, ...(name !== undefined ? { name } : {}), ...(base !== undefined ? { base } : {}), ...(issue !== undefined ? { issue } : {}) }
   const target = await apiBaseInfo()
   const apiUrl = target.url
   const refused = await probeSessionCreateAuthority(target)
@@ -2109,7 +2114,7 @@ async function proveSessionCandidate(path: string, branch: string, signal: Abort
 }
 
 async function prepareSession(prompt: string, parentage: CreateParentage, launcher: string | undefined, name: string | null, context: SessionCreateContext): Promise<Session> {
-  const { id, requestDigest, payloadHash, base, signal } = context
+  const { id, requestDigest, payloadHash, base, issue, signal } = context
   const parent = parentage.id
   let phase: SessionCreatePhase = 'creation-lock'
   let shouldDrain = false
@@ -2244,6 +2249,7 @@ async function prepareSession(prompt: string, parentage: CreateParentage, launch
           let rec: SessRec = {
             session: id, governed: true, worktreePath: path, branch,
             title, name, parent: parent && parent !== id ? parent : null,
+            issue: issue ?? null,
             status: 'queued', proposal: null, merges: 0, note: null, sortKey: null, createdAt: Date.now(),
             harness: h.id, harnessSessionId: null, runtimeStartToken: randomUUID(), stopped: false, archived: false, closedAt: null, coldProof: null, adapterRecovery: null, launcher: chosen.name,
             launchCmd: pinned, launchConfigDir: chosen.configDir, launchOwner: backendLaunchAuthority(), createRequestId: requestDigest, createPayloadHash: payloadHash,

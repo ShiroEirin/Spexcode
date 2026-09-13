@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Issue 驱动：Issues 页里的 session（设计稿）</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #17231d; --muted: #5b6a62; --line: #d2dbd5; --paper: #f4f7f4; --surface: #fff;
+      --teal: #116466; --teal-bg: #e7f5f3; --amber: #87500a; --amber-bg: #fff5df; --red: #992d2d; --red-bg: #fbecec;
+      --navy: #18324a; --navy-bg: #edf3f8; --code: #1c2722; --code-ink: #ecf5ef; --max: 1080px;
+      /* dashboard status hues (light theme values from styles.css) */
+      --s-green: #0cb54f; --s-yellow: #bd8e37; --s-red: #e4374b; --s-muted: #a2aab3; --s-purple: #8250df; --s-open: #1a7f37;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: var(--ink); background: var(--paper); font: 15px/1.7 Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC", "Noto Sans CJK SC", sans-serif; }
+    main { width: min(var(--max), calc(100% - 32px)); margin: 0 auto; padding: 40px 0 80px; }
+    h1 { font-size: 30px; line-height: 1.25; margin: 0 0 8px; }
+    h2 { font-size: 21px; margin: 44px 0 12px; padding-top: 18px; border-top: 1px solid var(--line); }
+    h3 { font-size: 16px; margin: 26px 0 8px; }
+    p, li { max-width: 78ch; }
+    .lead { color: var(--muted); font-size: 16px; }
+    code, pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+    code { font-size: .9em; background: #e9eeeb; padding: 1px 5px; border-radius: 4px; }
+    pre { background: var(--code); color: var(--code-ink); padding: 14px 16px; border-radius: 8px; overflow-x: auto; font-size: 13px; line-height: 1.55; }
+    pre code { background: none; padding: 0; color: inherit; }
+    table { border-collapse: collapse; width: 100%; font-size: 14px; margin: 12px 0; }
+    th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+    th { color: var(--muted); font-weight: 600; font-size: 13px; }
+    .note { border-left: 3px solid var(--teal); background: var(--teal-bg); padding: 10px 14px; border-radius: 0 8px 8px 0; margin: 14px 0; }
+    .warn { border-left-color: var(--amber); background: var(--amber-bg); }
+    .decide { border-left-color: var(--red); background: var(--red-bg); }
+    .fact { color: var(--muted); font-size: 13px; }
+    .fact code { background: #eef1ef; }
+
+    /* ---------- wireframes ---------- */
+    .wire { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin: 16px 0; font-size: 13px; line-height: 1.45; }
+    .wire .cap { color: var(--muted); font-size: 12px; margin: -4px 0 10px; }
+    .row { display: grid; grid-template-columns: 22px 1fr auto; gap: 10px; align-items: start; padding: 9px 6px; border-top: 1px solid var(--line); }
+    .row:first-of-type { border-top: 0; }
+    .row .ttl { font-weight: 600; }
+    .row .meta { color: var(--muted); font-size: 12px; margin-top: 2px; }
+    .oi { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--s-open); display: inline-block; margin-top: 3px; position: relative; }
+    .oi::after { content: ""; position: absolute; inset: 3px; border-radius: 50%; background: var(--s-open); }
+    .aside { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; white-space: nowrap; }
+    .tag { border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; font-size: 11px; }
+    .fleet { display: inline-flex; align-items: center; gap: 3px; padding: 1px 6px 1px 4px; border-radius: 999px; border: 1px solid var(--line); }
+    .fleet.need { border-color: var(--s-yellow); background: #fff8e8; }
+    .fleet.run { border-color: var(--s-green); background: #eefaf1; }
+    .fleet.off { border-color: var(--s-muted); }
+    .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+    .g { background: var(--s-green); } .y { background: var(--s-yellow); } .r { background: var(--s-red); } .m { background: var(--s-muted); }
+    .glyph { font-family: monospace; font-size: 12px; width: 12px; display: inline-block; text-align: center; }
+    .cg { color: var(--s-green); } .cy { color: var(--s-yellow); } .cr { color: var(--s-red); } .cm { color: var(--s-muted); }
+
+    .detail { display: grid; grid-template-columns: 1fr 250px; gap: 18px; }
+    .detail .main { border-right: 1px dashed var(--line); padding-right: 18px; }
+    .band { display: inline-flex; gap: 8px; align-items: center; margin: 6px 0 12px; }
+    .pill { border-radius: 999px; padding: 1px 10px; font-size: 12px; color: #fff; }
+    .pill.open { background: var(--s-open); } .pill.need { background: var(--s-yellow); }
+    .body { color: var(--muted); border: 1px dashed var(--line); border-radius: 6px; padding: 10px; margin: 8px 0; }
+    .reply { padding: 8px 0; border-top: 1px solid var(--line); }
+    .reply .by { font-weight: 600; font-size: 12px; }
+    .reply .sys { color: var(--muted); font-style: italic; }
+    .compose { border: 1px solid var(--line); border-radius: 8px; padding: 8px; margin-top: 10px; }
+    .compose .ta { color: var(--muted); height: 34px; }
+    .compose .acts { display: flex; gap: 8px; align-items: center; margin-top: 6px; font-size: 12px; }
+    .btn { border: 1px solid var(--line); border-radius: 5px; padding: 1px 8px; font-size: 12px; background: #fafbfa; white-space: nowrap; }
+    .btn.primary { border-color: var(--teal); color: var(--teal); }
+    .btn.danger { color: var(--red); }
+    .spacer { flex: 1; }
+    .side .sec { margin-bottom: 14px; }
+    .side .lbl { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px; }
+    .side .val { font-family: monospace; font-size: 12px; }
+    .srow { display: flex; align-items: center; gap: 6px; padding: 3px 0; white-space: nowrap; overflow: hidden; }
+    .srow .hl { overflow: hidden; text-overflow: ellipsis; flex: 1; }
+    .srow.child { padding-left: 16px; position: relative; }
+    .srow.child::before { content: ""; position: absolute; left: 6px; top: 0; bottom: 0; border-left: 1px solid var(--line); }
+    .pod { border: 1px solid var(--s-green); color: var(--s-green); border-radius: 999px; font-size: 10px; padding: 0 5px; }
+    .doors { display: flex; gap: 6px; margin-top: 6px; }
+    .card { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 4px 0 6px 16px; background: #fafcfb; font-size: 12px; }
+    .card .k { color: var(--muted); }
+    .card .line { display: flex; gap: 8px; padding: 2px 0; }
+    .card .line span:first-child { width: 58px; flex: none; }
+    .menu { position: absolute; right: -8px; top: 22px; background: #fff; border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 6px 20px rgba(0,0,0,.08); padding: 4px 0; font-size: 12px; z-index: 2; min-width: 150px; }
+    .menu div { padding: 3px 12px; } .menu hr { border: 0; border-top: 1px solid var(--line); margin: 3px 0; }
+    .menu .dim { color: var(--muted); }
+    .rel { position: relative; }
+
+    .flow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 14px 0; }
+    .box { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; background: var(--surface); font-size: 13px; }
+    .box b { display: block; margin-bottom: 4px; }
+    .box.pri { border-color: var(--teal); background: var(--teal-bg); }
+    .kv td:first-child { width: 190px; color: var(--muted); }
+    @media (max-width: 720px) { .detail { grid-template-columns: 1fr; } .detail .main { border-right: 0; padding-right: 0; } .flow { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Issue 驱动：Issues 页里的 session</h1>
+  <p class="lead">设计稿 · 2026-09-13 · 面向 <code>[[issues-view]]</code> / <code>[[issues]]</code> / <code>[[session-nesting]]</code> / <code>[[mentions]]</code></p>
+  <p>一句话：<b>Issue 是任务的锚，session 是干活的人。</b>把「谁在为这个 issue 干活」做成 session 记录上的一根指针 <code>issue</code>——和 <code>parent</code> 是同一种东西：创建时写一次，读时派生——Issues 页面就能长出一个 fleet 栏，而所有对 session 的操作（关闭、退役、看子会话、验收合并）全部复用 dashboard 已有的零件。</p>
+
+  <h2>0. 现状事实（读源码得出）</h2>
+  <table>
+    <tr><th>事实</th><th>出处</th></tr>
+    <tr><td>Issue 对象字段：<code>id store concern by status nodes created body replies evidence labels url</code>。<b>没有任何 session 字段。</b></td><td><code>spec-cli/src/issues.ts</code></td></tr>
+    <tr><td>Issue ↔ session 目前只有三条<b>隐性</b>线：<code>by</code>（发起者，可能是 session id）、reply 作者、以及 <code>@new</code> 派工时 prompt <b>文本</b>里写了 thread id（记录上不留痕）。</td><td><code>mentions.ts newWorkerPrompt</code>、<code>reviewFilters.js issuePresent</code></td></tr>
+    <tr><td><code>@session</code> 是被动引用：不派发、不指派、不唤醒。<code>@new</code> 是语法里唯一的创建动作，<code>@parent:</code> 是唯一的寻址动作。</td><td><code>[[mentions]]</code> spec</td></tr>
+    <tr><td>session 记录已有 <code>parent</code>，树在读时由 <code>nestSessions</code> 重建，父关闭子自动升为根，不改子记录。</td><td><code>[[session-nesting]]</code>、<code>session.js</code></td></tr>
+    <tr><td>dashboard 已有：<code>SessionRow</code>（glyph+色+headline 的唯一行面）、<code>sessionForest</code>、<code>SessionContextMenu</code>（rename/stop/resume/close/多选/新 tab）、<code>SessionPicker</code>、launcher chooser、<code>UI_COMMANDS.when</code>（按状态露按钮的唯一规则）。wire 上每个 session 带 <code>status liveness note proposal activity files web widgets</code>。</td><td><code>spec-dashboard/src/*</code>、<code>sessions.ts toSession</code></td></tr>
+    <tr><td>验收的现有形态：worker <code>done --propose merge</code> → 状态 <code>review</code> → 人点 Merge（<code>POST /api/sessions/:id/merge</code>）；merge 后 worktree 没了读作 <code>retired</code>；close 永远是人做。</td><td><code>[[state]]</code>、<code>sessions.ts reconcile</code></td></tr>
+    <tr><td>侧栏已有一个「Originator」section：发起者是 live session 时是一个带状态点的可点芯片。</td><td><code>Thread.jsx OriginatorLiveness</code></td></tr>
+  </table>
+
+  <h2>1. 数据模型：一根指针，不是一张表</h2>
+  <p><code>session.issue: string | null</code> —— 这个 session <b>为哪个 issue 而存在</b>。放在 session 侧而不是 issue 侧，原因有三：</p>
+  <ul>
+    <li><b>存储位置</b>：session 记录在全局 store（session application），改它零成本；local issue 是 git 提交的 markdown，每次指派要一个 commit；forge issue 在 GitHub 上，根本放不下本地 session id。放 session 侧，对两种 store 的 issue<b>一样有效</b>。</li>
+    <li><b>基数对</b>：一个 worker 一个 worktree 一个任务，所以 session→issue 是 0..1；issue→sessions 是 0..n，由 join 得到。和 <code>parent</code> 完全同构。</li>
+    <li><b>不发明第二种东西</b>：它就是 provenance。<code>parent</code> 答「谁生的我」，<code>issue</code> 答「我为什么被生出来」。读时派生、不推断 lifecycle、不写回 issue，三条纪律都照搬 nesting 的。</li>
+  </ul>
+
+  <h3>写入：三条路，都走同一个 create boundary</h3>
+  <div class="flow">
+    <div class="box pri"><b>① <code>@new</code> 在 issue 线程里</b><code>dispatchNewMentions</code> 手上已经有 <code>ctx.threadId</code>，把它作为 <code>issue</code> 传进 <code>sessionCreateRequest</code>。<span class="fact">零新机制，一行。</span></div>
+    <div class="box"><b>② <code>spex session new --issue &lt;id&gt;</code></b>dashboard 侧栏的「New worker」按钮就是它的按钮形态；不新增 <code>@issue:</code> 这种语法动作。</div>
+    <div class="box"><b>③ <code>spex issue assign &lt;issue&gt; &lt;SEL&gt;</code></b>把<b>已存在</b>的 session 挂上来 = 写指针 + 一次现有 <code>session send</code>（把线程发给它，prompt 与 originator loop-in 同形）。它是 <code>reparent</code> 的孪生：reparent 动 <code>parent</code>，assign 动 <code>issue</code>。可重指向别的 issue；「解除」留给真实需求出现再做。</div>
+  </div>
+
+  <h3>派生（读时，前端一个纯函数）</h3>
+<pre><code>// issueFleet(issue, sessions) —— [[session-nesting]] 的同一套树，只是从另一个入口进
+assigned    = sessions.filter(s => s.issue === issue.id)
+fleet       = assigned ∪ 它们的全部后代（nestSessions 的 childrenOf 递归）
+participants= {issue.by} ∪ replies[].by 中能 resolve 到 session、且不在 fleet 里的
+workState   = rollup(fleet)：need（任一 asking/review/done/error/close-pending）
+            &gt; run（任一 working/parked） &gt; offline（全 offline/retired） &gt; none（无 fleet）</code></pre>
+  <p class="fact">子 session 不需要再写 <code>issue</code> 指针——它属于父的 fleet 是树给的，和「父关闭子自动升根」同一条读时规则。<code>workState</code> 就是 <code>subtreeRollup</code> 的逻辑用在 issue 上；它<b>不</b>存储，<b>不</b>改 issue 的 open/closed。</p>
+
+  <h2>2. 三个面</h2>
+
+  <h3>2.1 列表行：fleet 条 —— 一眼扫出「谁在等我」</h3>
+  <div class="wire">
+    <div class="cap">#/issues · 行不重排（API order 不变），aside 里多一个 fleet 条；点数 ≤ 4，多余 <code>+n</code>；条的 tone = workState</div>
+    <div class="row"><span class="oi"></span><div><div class="ttl">Sessions 页 offline zone 折叠后计数为 0</div><div class="meta">#fold-count-zero · opened by 2499a20b · 3h</div></div>
+      <div class="aside"><span class="fleet need" title="需要你：1 待审查 · 1 工作中"><span class="glyph cy">◑</span><span class="glyph cg">●</span></span><span>💬 4</span><span class="tag">session-forest</span></div></div>
+    <div class="row"><span class="oi"></span><div><div class="ttl">@new 在代码块里也会派工</div><div class="meta">#quoted-new · opened by human · 1d</div></div>
+      <div class="aside"><span class="fleet run"><span class="glyph cg">●</span><span class="glyph cg">●</span><span class="glyph cg">‖</span><span class="glyph cm">○</span><span class="fact">+2</span></span><span>💬 9</span><span class="tag">mentions</span></div></div>
+    <div class="row"><span class="oi"></span><div><div class="ttl">gateway 密码只挡 /projects</div><div class="meta">#gateway-scope · opened by human · 5d</div></div>
+      <div class="aside"><span class="fleet off"><span class="glyph cm">⚑</span></span><span class="tag">gateway-auth</span></div></div>
+    <div class="row"><span class="oi"></span><div><div class="ttl">issue 详情页 tab 名显示原始 id</div><div class="meta">#tab-name · opened by human · 6d</div></div>
+      <div class="aside"><span class="fact">— 无人认领 —</span><span class="tag">tab-strip</span></div></div>
+  </div>
+  <ul>
+    <li>glyph 和颜色就是 <code>STATUS_GLYPH</code> / <code>STATUS_COLOR</code>，不引入第二套词表；hover 出 headline · 状态词（与 session 行的 a11y 口径一致）。</li>
+    <li>sessions 本来就在 board 上、已经作为 <code>presenceKey</code> 喂给这页了，join 在客户端，<b>不加接口</b>。</li>
+    <li>v1.5：Filters 菜单里加低基数 facet <code>fleet:none|run|need|offline</code>，和现有 <code>session:present|missing</code> 并列（同一个 <code>[[review-filters]]</code> adapter 里加一行 presenceFacet 同款）。</li>
+  </ul>
+
+  <h3>2.2 详情页：侧栏 Sessions 栏 + 展开卡</h3>
+  <p>GitHub 语法里 assignee 住在侧栏，我们也放侧栏——但里面是<b>一棵小森林</b>而不是头像列表，行就是 <code>SessionRow</code>，右键就是 <code>SessionContextMenu</code>。「Originator」section 并进来当参与者子组，侧栏反而少一节。</p>
+  <div class="wire">
+    <div class="cap">#/issues/fold-count-zero · DetailShell 不变：标题 / 状态带 / 主列 + 侧栏</div>
+    <div class="detail">
+      <div class="main">
+        <div style="font-weight:700;font-size:15px">Sessions 页 offline zone 折叠后计数为 0</div>
+        <div class="band"><span class="pill open">Open</span><span class="pill need">需要你 · 1</span><span class="fact">← workState 派生，不入库</span></div>
+        <div class="body">折叠 offline zone 时 disclosure chip 读 0，展开才有数……（SpecBody）</div>
+        <div class="reply"><div class="by">2499a20b · 3h</div>复现了，根因在 sessionForest 的 count 只累加已 emit 的 root。</div>
+        <div class="reply"><div class="by">human · 2h</div>@new 修一下，顺手把 <code>[[session-forest]]</code> 的 spec 补上。</div>
+        <div class="reply sys"><div class="by">◑ 8a1f3c… 声明 待审查 · 1h</div>fix 已提交，spec 已改，等 merge。<span class="fact">（v2：读时合并 fleet 声明，不落库）</span></div>
+        <div class="compose"><div class="ta">回复… @ 会话 · [[ 节点</div><div class="acts"><span class="btn">@</span><span class="btn">[[</span><span class="spacer"></span><span class="btn">Promote</span><span class="btn">Close issue</span><span class="btn primary">➤</span></div></div>
+      </div>
+      <div class="side">
+        <div class="sec"><div class="lbl">Issue</div><div class="val">local#fold-count-zero</div></div>
+        <div class="sec"><div class="lbl">Sessions · 3</div>
+          <div class="srow rel"><span class="glyph cy">◑</span><span class="hl">修 offline zone 计数</span><span class="btn primary">Merge</span>
+            <div class="menu"><div>Open in new tab</div><div>Split right</div><hr><div>Rename…</div><div>Stop</div><div class="dim">Resume</div><hr><div>Reparent…</div><div class="dim">Close</div></div>
+          </div>
+          <div class="card">
+            <div class="line"><span class="k">状态</span><span>待审查 · <i>fix 已提交，spec 已改，等 merge</i></span></div>
+            <div class="line"><span class="k">分支</span><span>node/fold-count-zero-8a1f · +3 · 0 dirty</span></div>
+            <div class="line"><span class="k">文件</span><span><u>review-report.html</u></span></div>
+            <div class="line"><span class="k">Web</span><span><u>127.0.0.1:5177</u> ↗ 预览</span></div>
+            <div class="line"><span class="k"></span><span class="btn">Open console</span></div>
+          </div>
+          <div class="srow child"><span class="glyph cg">●</span><span class="hl">跑 e2e 补截图</span><span class="pod">1</span></div>
+          <div class="srow"><span class="glyph cm">○</span><span class="hl">原发起者 2499a20b</span><span class="fact">participant</span></div>
+          <div class="doors"><span class="btn">+ New worker</span><span class="btn">Assign…</span></div>
+        </div>
+        <div class="sec"><div class="lbl">Store</div><div class="val">local</div></div>
+        <div class="sec"><div class="lbl">Nodes</div><div class="val">session-forest</div></div>
+      </div>
+    </div>
+  </div>
+  <table class="kv">
+    <tr><td>树</td><td><code>sessionForest(fleet, expanded)</code> 渲染，assigned 为根、子会话折叠在 fold pod 里——与 Sessions 页同一个组件、同一个折叠状态存储。</td></tr>
+    <tr><td>右键</td><td>就是 <code>SessionContextMenu</code>：新 tab、rename、stop、resume、close、多选、reparent。所以「close / retire / 看子 session」<b>一行新代码都不用写</b>。</td></tr>
+    <tr><td>行上的主动作</td><td>每行最多露<b>一个</b>按钮，规则复用 <code>UI_COMMANDS.when</code>：<code>review</code>→Merge（现有 merge runner）、<code>asking</code>→Reply（在 issue composer 里预填 <code>@&lt;id&gt; </code>，发送即 <code>session send</code>——这一步需要 composer 有一个显式 send 门，见 §3）、liveness offline→Relaunch、<code>retired</code>→Close。</td></tr>
+    <tr><td>展开卡（预览）</td><td>点行不离开 issue，行下展开一张卡：状态词 + 声明 note 原文、live activity、branch/ahead、posted <code>files</code>（现有下载路由）、<code>web</code>（现有 gateway 代理预览）、<code>widgets</code>。全是 wire 上已有字段，<b>不加接口</b>。「Open console」= <code>#/sessions/&lt;id&gt;</code>；⌘ 点新 tab；Split 走 tab-strip 现有 split 语法。</td></tr>
+    <tr><td>两扇门</td><td><b>New worker</b>：launcher chooser → 走路②，等价于在 composer 里写 <code>@new</code>。<b>Assign…</b>：<code>SessionPicker</code> 选一个已在的 session → 路③。</td></tr>
+    <tr><td>参与者子组</td><td>原 Originator section 的内容搬进来（同一个 liveness 芯片），加上有 reply 的 session；标 participant，与 assigned 区分。</td></tr>
+  </table>
+
+  <h3>2.3 线程就是验收台账（v2）</h3>
+  <p>不新增写路径。issue-bound session 的每次声明（<code>done --propose</code> / <code>ask</code> / <code>park</code>）已经通过 hook 写进了它自己的记录；线程渲染时把 fleet 的声明<b>读时合并</b>成系统行（上图斜体那行），按时间与 replies 交错。这就对应 openteams「Work mode 主时间线只放需求确认 / 冲突升级 / 结果验收」——但我们不用 agent 往 issue 里写一条消息，而是把它本来就写过的状态投影进来。</p>
+  <p>v1 的验收动作只有两个、都已存在：session 行上的 <b>Merge</b>，composer 里的 <b>Close issue</b>。merge 完 session 读作 <code>retired</code>（旗子），人点 Close 清掉；issue 仍要人 close——<code>[[state]]</code>「merge 与 close 人做」一字不动。</p>
+
+  <h2>3. 需要你拍板的一点：<code>@session</code> 要不要变成指派</h2>
+  <div class="note decide">
+    <p><b>你的原话</b>：「用户可以 @ 他的 session」——预期 @ 就是指派。<b>现行 spec</b>（<code>[[mentions]]</code>）：<code>@session</code> 是被动引用，「mentioning it never … wakes its harness, creates a worker, or changes state」；spec 里还记着一次事故——issue 正文代码块里的 <code>@new</code> 真的派出了一个 worker。</p>
+    <p><b>我的建议：保留被动，指派走显式的门。</b>理由：这条语法已经写进每个 agent 的 prompt 和存量线程；给它加副作用，所有历史文本里的 @ 会在下一次渲染/重放时突然「做事」。指派用侧栏 Assign 门 + <code>spex issue assign</code> verb 承担，语义一眼可见。</p>
+    <p><b>折中方案（推荐）</b>：composer 草稿里出现 <code>@&lt;某个 live session&gt;</code> 时，action row 亮起一个一次性按钮「Send to @x」——文本不变，动作是显式点击，且是现有 <code>session send</code>。这样「@ 他的 session 然后发过去」的手感有了，语法没动。</p>
+    <p>三个选项：<b>A</b> 保留被动 + Assign 门；<b>B</b> A + composer 里的显式「Send to @x」按钮（推荐）；<b>C</b> 改 spec，让 issue 线程里的 <code>@session</code> = assign + send。</p>
+  </div>
+
+  <h2>4. 复杂度账</h2>
+  <table>
+    <tr><th>新增</th><th>复用（零改动）</th><th>删除 / 不做</th></tr>
+    <tr>
+      <td><ul>
+        <li>记录字段 <code>issue</code> + wire 字段（跟 <code>parent</code> 同路）</li>
+        <li>create 入参 <code>issue</code>、CLI <code>--issue</code>；<code>@new</code> 传 threadId（1 行）</li>
+        <li>verb <code>spex issue assign</code> + <code>POST /api/issues/:id/assign</code>（写字段 + 现有 send）</li>
+        <li>前端：<code>issueFleet()</code>（~20 行纯函数）、侧栏 <code>IssueSessions</code> section、列表 fleet 条、展开卡</li>
+        <li>i18n 十来个 key</li>
+      </ul></td>
+      <td><ul>
+        <li><code>SessionRow</code> / <code>sessionForest</code> / fold 状态</li>
+        <li><code>SessionContextMenu</code>（close/retire/子会话/reparent）</li>
+        <li><code>SessionPicker</code>、launcher chooser</li>
+        <li><code>UI_COMMANDS.when</code>、merge runner、resume 端点</li>
+        <li>files 下载、web 代理预览、widgets</li>
+        <li><code>STATUS_COLOR</code>/<code>STATUS_GLYPH</code></li>
+      </ul></td>
+      <td><ul>
+        <li>侧栏 Originator section 并入 Sessions（−1 节）</li>
+        <li>不做 issue 侧 <code>assignees</code> 字段</li>
+        <li>不做第二套 agent 状态词表</li>
+        <li>不做 kanban / 拖拽指派</li>
+        <li>不派生任何写回 issue 的状态</li>
+      </ul></td>
+    </tr>
+  </table>
+  <p class="fact">对照 <code>[[taste]]</code>：一种机制（provenance 指针 + 读时树）解决指派、子会话、状态汇总三件事；复杂度花在一个字段上，买回来的是整个 Issues 页对 session 的可操作性。</p>
+
+  <h2>5. 分期</h2>
+  <table>
+    <tr><th>里程碑</th><th>内容</th><th>验收（YATU）</th></tr>
+    <tr><td><b>M1 边 + 面</b></td><td><code>session.issue</code>；<code>@new</code>/<code>--issue</code> 写入；侧栏 Sessions 栏（森林 + 右键 + Merge/Relaunch/Close 按钮）；列表 fleet 条；workState 状态带</td><td>在 issue 里回复 <code>@new</code> → 侧栏立刻长出一行 working；worker 声明 review → 行变 ◑ 出 Merge；点 Merge → 行变 ⚑ → 右键 Close 消失；列表行 fleet 条同步</td></tr>
+    <tr><td><b>M2 门 + 预览</b></td><td>Assign 门 + <code>issue assign</code> verb；展开卡（files/web/widgets 预览）；「Send to @x」按钮（若选 B）</td><td>把一个已在跑的 session 指给 issue，它收到线程消息；卡里点 web 预览走 gateway</td></tr>
+    <tr><td><b>M3 台账</b></td><td>线程读时合并 fleet 声明；<code>fleet:</code> facet</td><td>不写一条 reply，线程里能看到 worker 的三次声明；<code>fleet:need</code> 过滤出等我的 issue</td></tr>
+  </table>
+
+  <h2>6. 对照 openteams</h2>
+  <p class="fact">来源：README、docs/core-features/chat-session-overview.mdx、ai-members.mdx、OpenTeams-Technical-Documentation.md（2026-09-13 抓取）。Issue↔session 的机制在其文档里基本是空的：README 只说 "developer-controlled Issues … link work to agent sessions"，技术文档没有 Issues 章节，Work mode 标注 v0.4.0 计划中。</p>
+  <table>
+    <tr><th>openteams</th><th>我们</th><th>差别</th></tr>
+    <tr><td>Chat session = 工作台；成员在里面被 @ 指派</td><td>Issue = 任务锚；session = 一个 worktree 里的 worker</td><td>他们的「会话」是聊天室，我们的 session 是有分支、有 worktree、能 merge 的工作单元；所以我们的验收是 git 事件，不是一条消息</td></tr>
+    <tr><td>成员状态 Idle / Running / Completed / Failed（技术文档：idle / running / waiting_approval / dead）</td><td><code>working parked asking review done error idle offline retired…</code> 两轴（lifecycle × liveness）</td><td>我们已经更细，且 asking/review 是「等人」的显式态——这正是 issue 页最该高亮的；不引入他们的四态</td></tr>
+    <tr><td>@mention 即指派</td><td><code>@session</code> 被动；<code>@new</code> 创建；指派走显式门（§3）</td><td>唯一的实质分歧，见 §3 的三个选项</td></tr>
+    <tr><td>Work mode（计划）：lead agent 拆任务、并行执行、主时间线只放需求确认 / 冲突升级 / 结果验收</td><td>parent/child 树已存在；线程读时合并声明（M3）</td><td>思路一致；我们不用 agent 往 issue 写消息，而是投影它本来就写过的状态——少一条写路径</td></tr>
+    <tr><td>Task message 交付最终产出</td><td>session 的 <code>files</code>/<code>web</code>/<code>widgets</code> 在展开卡里</td><td>产出挂在 session 上而不是消息上，merge 后仍可追溯</td></tr>
+    <tr><td>Build statistics（资源、成本）</td><td>无</td><td>暂不做；若做也是 session 属性，读时进卡</td></tr>
+  </table>
+
+  <h2>7. 相关 spec 节点会怎么动</h2>
+  <ul>
+    <li><code>[[session-nesting]]</code>：加一段「第二根 provenance 指针 <code>issue</code>」，或拆一个兄弟节点 <code>issue-binding</code>（建议后者，两者读时规则相同但回答的问题不同）。</li>
+    <li><code>[[mentions]]</code>：<code>@new</code> 段落加一句「spawned worker records the containing thread as its <code>issue</code>」；若选 C 则整段 <code>@session</code> 要改。</li>
+    <li><code>[[issues-view]]</code>：detail 侧栏一节从 Originator 改为 Sessions；list 行 aside 加 fleet 条；新增「workState 派生、不入库」的契约句。</li>
+    <li><code>[[issues-cli]]</code>：加 <code>spex issue assign</code>。</li>
+    <li><code>[[state]]</code> / <code>[[host-resource-budget]]</code>：不动——<code>issue</code> 与 <code>parent</code> 一样不参与任何 lifecycle 推断。</li>
+  </ul>
+</main>
+</body>
+</html>

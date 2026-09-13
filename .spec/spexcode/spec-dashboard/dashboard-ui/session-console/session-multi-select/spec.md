@@ -14,7 +14,9 @@ related:
 # session-multi-select
 
 The routed Sessions page owns the complete session forest. A row's context menu can enter multi-select,
-preselecting that row. While selecting, every visible session row is a checkbox-like toggle and clicking it
+preselecting that row — but only where the host owns a selectable list (the Sessions page forest, the dock): the
+shared menu offers its select row solely when the host wires `onMultiSelect`, so a rail that merely lists a
+few sessions (the Issues page's fleet, [[issue-binding]]) shows no dead row. While selecting, every visible session row is a checkbox-like toggle and clicking it
 never navigates or changes the active terminal, and the row button reports that state as `aria-pressed`.
 
 **The pick mark is the fold pod's own circle, never a second one.** While selecting, every visible row leads

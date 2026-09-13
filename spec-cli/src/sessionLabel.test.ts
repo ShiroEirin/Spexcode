@@ -10,7 +10,7 @@ import type { SessRec } from './session-record.js'
 
 const rec = (over: Partial<SessRec> = {}): SessRec => ({
   session: 'sess-1', governed: true, worktreePath: '/wt/x', branch: 'node/x-1',
-  title: 'seven word prompt truncation title here', name: null, parent: null,
+  title: 'seven word prompt truncation title here', name: null, parent: null, issue: null,
   status: 'active', proposal: null, merges: 0, note: null, sortKey: null, createdAt: 1,
   harness: 'claude', harnessSessionId: null, runtimeStartToken: null, stopped: false, archived: false, closedAt: null, launcher: null, launchCmd: null, launchOwner: null,
   ...over,

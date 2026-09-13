@@ -13,6 +13,7 @@ related:
   - spec-dashboard/src/Evidence.jsx
   - spec-dashboard/src/IssueCard.jsx
   - spec-dashboard/src/IssueLabels.jsx
+  - spec-dashboard/src/IssueSessions.jsx
   - spec-dashboard/src/mentions.jsx
   - packages/spec-core/src/review/reviewFilters.js
   - spec-dashboard/src/Thread.jsx
@@ -112,6 +113,14 @@ theatre is invented for a model that has none. An actually empty issue store say
   resident Spec document, never an inert tag; label chips are their own filter controls beside the row-detail anchor. At 390px those facts join the secondary line and the
   title may wrap without horizontal overflow. **The store is metadata, never identity**: it never leads a
   row and never sits on a title.
+- **The page shows the issue's FLEET ([[issue-binding]]).** Every list row's trailing meta carries the fleet strip —
+  up to four status glyphs in the board's own STATUS_COLOR/STATUS_GLYPH, `+n` past that, toned by the fleet's
+  rolled-up work state — joined client-side against the board `sessions` the page already holds (no request, no
+  re-sort). The detail's status band carries the work-state word and the same strip beside the issue's own state
+  mark, and the detail rail carries a **Sessions** section: the fleet as the one session forest with the one
+  session context menu, one state-gated action per row (Merge / Relaunch / Close), the **New worker** door that
+  posts `@new[:<launcher>]` to the thread, and the other thread voices as participants. Work state is derived and
+  never written onto the issue's open/closed lifecycle.
 - **The detail page NAMES ITS OWN TAB.** An issue is the one document the board carries no projection of —
   the list is paged, the detail is a single addressed read — so the frame cannot label its tab and drew the
   raw id where the reader had written a sentence. The detail reports the concern it already loaded
