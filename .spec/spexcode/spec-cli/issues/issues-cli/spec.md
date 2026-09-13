@@ -51,6 +51,15 @@ really asking, not a reason to widen a store module's exports.
 ([[issue-binding]]), through the same merged read `show` uses; no session identity, or a session bound to no issue, is
 said plainly with the way to bind one (`spex issue assign <id> .`), never guessed from prompt text.
 
+**The hierarchy verbs render the store's forward facts.** `spex issue open --parent <id>` passes the parent through
+`open`'s ordinary backend-first path; `spex issue reparent <id> --to <parent-id|none>`, `spex issue relate <id>
+blocks|related|duplicate <other-id>` and `spex issue close <id> --duplicate-of <canonical-id>` commit to the local
+store directly, the way `close` does, and `relate … duplicate` is spelled as that same close. The store's refusal —
+a missing or closed parent, a cycle, a self-edge — is printed as `spex issue <verb>: <message>` with exit 1. `show`
+and `mine` print the read-time projection under the header — parent, sub-issues with their closed count, blocks,
+blocked by, related (both directions), duplicate of, duplicated by — each line only when it has an id; `ls --json`
+carries the same fields on every row with no rendering of its own.
+
 **`assign` binds an existing session to an issue.** `spex issue assign <issue-id> <SEL>` is the CLI leg of the one
 assign verb ([[issue-binding]]'s `assignIssueSession`, the same function `POST /api/issues/:id/assign` runs): the
 issue is read through the same merged read `show` uses (a forge id pulls the live slice), the session through the

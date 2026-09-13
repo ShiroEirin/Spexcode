@@ -18,7 +18,7 @@ import { join, dirname, resolve as resolvePath } from 'node:path'
 import { git, repoRoot } from '@spexcode/spec-core'
 import { mainCheckout, envSessionId, readConfig } from '@spexcode/spec-core'
 import { dispatchNewMentions, parseMentions, type DispatchOutcome } from './mentions.js'
-import type { Issue, Reply } from './issues.js'
+import type { Issue, IssueRelation, IssueRelationType, Reply } from './issues.js'
 
 const LOCAL_STORE_REL = '.spec/.issues'
 // the pre-rename dir ([[issues-store-rename]]); ensureStoreMigrated() renames it to LOCAL_STORE_REL once.
@@ -115,8 +115,20 @@ function parse(id: string, text: string): Issue {
     replies: replies.map((r) => ({ ...r, body: r.body.trim() })),
     evidence: list(fm.evidence),
     labels: [],
+    parent: fm.parent || null,
+    relations: list(fm.relations).flatMap((entry): IssueRelation[] => {
+      const rm = /^(blocks|related|duplicate):(.+)$/.exec(entry)
+      return rm ? [{ type: rm[1] as IssueRelationType, id: rm[2] }] : []
+    }),
+    ...unrelated(),
   }
 }
+
+// the read-time half of the hierarchy, empty: only issues.ts's merged read (issueHierarchy) fills it in.
+const unrelated = () => ({
+  children: [] as string[], childCounts: { open: 0, closed: 0 },
+  blockedBy: [] as string[], relatedBy: [] as string[], duplicatedBy: [] as string[], duplicateOf: null,
+})
 
 // user body text must never FORGE a reply sentinel: a line matching `<!-- reply: … -->` in a body would be
 // re-read as a thread boundary, splitting the thread and truncating the body. Neutralize the marker in user
@@ -133,6 +145,8 @@ function serialize(p: Issue): string {
     `status: ${safeScalar(p.status)}`,
     p.nodes.length ? `nodes: ${p.nodes.join(', ')}` : '',
     p.evidence.length ? `evidence: ${p.evidence.join(', ')}` : '',
+    p.parent ? `parent: ${safeScalar(p.parent)}` : '',
+    p.relations.length ? `relations: ${p.relations.map((r) => `${r.type}:${r.id}`).join(', ')}` : '',
     `created: ${p.created}`,
   ].filter(Boolean)
   let out = `---\n${fm.join('\n')}\n---\n\n${safeBody(p.body)}\n`
@@ -309,21 +323,36 @@ function commitStore(message: string, prepare: () => Issue): { issue: Issue; cha
 // The thread's `nodes:` are INFERRED from the text's `[[node]]` topic links ([[mentions]] — the one in-text
 // reference primitive every input already carries), unioned with any explicitly-passed ids (`--node`): a
 // writer links nodes by writing them, never by re-typing ids into a separate field.
-export function openIssue(concern: string, opts: { nodes?: string[]; body?: string; evidence?: string[]; author?: string } = {}): Issue {
-  const nodes = [...new Set([...(opts.nodes || []), ...parseMentions(`${concern}\n${opts.body || ''}`).nodes])]
-  return commitStore(`issue: ${concern}`, () => ({
-    id: uniqueId(concern),   // minted INSIDE the lock, so two racing posts can't pick the same id
-    store: 'local',
-    concern,
-    by: opts.author || currentSession(),
-    status: 'open',
-    nodes,
-    created: new Date().toISOString(),
-    body: (opts.body || `(no detail given — ${concern})`).trim(),
-    replies: [],
-    evidence: opts.evidence || [],
-    labels: [],
-  })).issue
+// A sub-issue (`parent`) takes its parent's nodes as its explicit ids when it names none of its own; the parent is
+// read under the lock, so it is checked open at the instant the pointer lands.
+export function openIssue(concern: string, opts: { nodes?: string[]; body?: string; evidence?: string[]; author?: string; parent?: string } = {}): Issue {
+  return commitStore(`issue: ${concern}`, () => {
+    const parent = opts.parent ? openParent(opts.parent) : null
+    const explicit = opts.nodes?.length ? opts.nodes : parent?.nodes ?? []
+    return {
+      id: uniqueId(concern),   // minted INSIDE the lock, so two racing posts can't pick the same id
+      store: 'local',
+      concern,
+      by: opts.author || currentSession(),
+      status: 'open',
+      nodes: [...new Set([...explicit, ...parseMentions(`${concern}\n${opts.body || ''}`).nodes])],
+      created: new Date().toISOString(),
+      body: (opts.body || `(no detail given — ${concern})`).trim(),
+      replies: [],
+      evidence: opts.evidence || [],
+      labels: [],
+      parent: parent?.id ?? null,
+      relations: [],
+      ...unrelated(),
+    }
+  }).issue
+}
+
+// a pointer lands only on an OPEN local issue: one at a closed issue would read as a root the moment it was written.
+function openParent(id: string): Issue {
+  const p = loadOne(id)
+  if (p.status !== 'open') throw new Error(`parent '${id}' is ${p.status} — a sub-issue hangs under an open issue (a closed parent's children read as roots)`)
+  return p
 }
 
 // append one plain reply `{by, at, body}` to a thread — the ONE committed reply write. Returns the thread;
@@ -357,9 +386,9 @@ export async function replyLocalIssue(id: string, body: string, author: string, 
 
 export async function postLocalIssue(
   concern: string,
-  opts: { nodes?: string[]; body?: string; evidence?: string[]; author: string },
+  opts: { nodes?: string[]; body?: string; evidence?: string[]; author: string; parent?: string },
 ): Promise<{ thread: Issue; outcomes: DispatchOutcome[] }> {
-  const thread = openIssue(concern, { nodes: opts.nodes, body: opts.body, evidence: opts.evidence, author: opts.author })
+  const thread = openIssue(concern, { nodes: opts.nodes, body: opts.body, evidence: opts.evidence, author: opts.author, parent: opts.parent })
   return {
     thread,
     outcomes: await dispatchNewMentions(opts.body || concern, {
@@ -371,13 +400,52 @@ export async function postLocalIssue(
   }
 }
 
-export function closeLocalIssue(id: string): { status: 'landed'; already: boolean } {
-  const { changed } = commitStore(`issue(${id}): close`, () => {
+// `duplicateOf` closes the thread AS a duplicate: its `duplicate:` edge replaces any earlier one in the same write, so
+// "closed as a duplicate" is the existing closed reading plus an edge, never a status of its own.
+export function closeLocalIssue(id: string, opts: { duplicateOf?: string } = {}): { status: 'landed'; already: boolean } {
+  const canonical = opts.duplicateOf
+  const { changed } = commitStore(canonical ? `issue(${id}): close as a duplicate of ${canonical}` : `issue(${id}): close`, () => {
     const p = loadOne(id)
+    if (canonical) {
+      if (canonical === id) throw new Error(`'${id}' cannot be a duplicate of itself`)
+      loadOne(canonical)
+      p.relations = [...p.relations.filter((r) => r.type !== 'duplicate'), { type: 'duplicate', id: canonical }]
+    }
     p.status = 'landed'
     return p
   })
   return { status: 'landed', already: !changed }
+}
+
+// move a thread's stored `parent` pointer, or clear it with `null`. The new parent is checked open, and its stored
+// ancestor chain must not reach this thread: a cycle is refused at write, while the read still guards legacy ones.
+export function reparentLocalIssue(id: string, parent: string | null): Issue {
+  return commitStore(`issue(${id}): reparent under ${parent ?? 'none'}`, () => {
+    const p = loadOne(id)
+    if (parent) {
+      openParent(parent)
+      const pointers = new Map(loadLocalIssues().map((t) => [t.id, t.parent]))
+      const seen = new Set<string>()
+      for (let at: string | null | undefined = parent; at && !seen.has(at); at = pointers.get(at)) {
+        if (at === id) throw new Error(`reparenting '${id}' under '${parent}' would make a cycle — '${id}' is '${parent}' or one of its ancestors`)
+        seen.add(at)
+      }
+    }
+    p.parent = parent
+    return p
+  }).issue
+}
+
+// record a `blocks` or `related` edge on its initiator, once. `duplicate` is not taken here: it is a close
+// (closeLocalIssue's duplicateOf), so the edge and the closed state are never written apart.
+export function relateLocalIssue(id: string, type: 'blocks' | 'related', target: string): Issue {
+  return commitStore(`issue(${id}): ${type} ${target}`, () => {
+    if (target === id) throw new Error(`'${id}' cannot relate to itself`)
+    const p = loadOne(id)
+    loadOne(target)
+    if (!p.relations.some((r) => r.type === type && r.id === target)) p.relations.push({ type, id: target })
+    return p
+  }).issue
 }
 
 // the post-merge nudge TEXT ([[local-issues]]) — produced HERE so the toggle and the wording live in one

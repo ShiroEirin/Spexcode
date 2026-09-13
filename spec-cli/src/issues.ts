@@ -12,6 +12,9 @@ export type Reply = {
   body: string
 }
 
+export type IssueRelationType = 'blocks' | 'related' | 'duplicate'
+export type IssueRelation = { type: IssueRelationType; id: string }
+
 export type Issue = {
   id: string
   store: string
@@ -25,6 +28,16 @@ export type Issue = {
   evidence: string[]
   labels: unknown[]
   url?: string
+  // `parent` and `relations` are what a store holds; a store read hands the rest over empty. On the merged read
+  // all eight are issueHierarchy's projection, so `parent`/`relations` there are the EFFECTIVE values.
+  parent: string | null
+  relations: IssueRelation[]
+  children: string[]
+  childCounts: { open: number; closed: number }
+  blockedBy: string[]
+  relatedBy: string[]
+  duplicatedBy: string[]
+  duplicateOf: string | null
 }
 
 export type IssueLabel = ForgeLabel
@@ -79,7 +92,80 @@ export function fromForge(slice: ForgeSlice, nodeIds: string[]): Issue[] {
     evidence: [],
     labels: i.labels,
     url: i.url,
+    // a forge issue stores no hierarchy: sub-issues and relations live in the local store only.
+    parent: null,
+    relations: [],
+    children: [],
+    childCounts: { open: 0, closed: 0 },
+    blockedBy: [],
+    relatedBy: [],
+    duplicatedBy: [],
+    duplicateOf: null,
   }))
+}
+
+// @@@ issue hierarchy - the read-time tree and relation graph over ONE merged set ([[issues]] / [[local-issues]]).
+// Stores keep only the forward facts: a direct `parent` pointer and the initiator's `relations`. Everything else is
+// rebuilt here on every read, the way the session forest is: a pointer holds only while it names another OPEN issue
+// in this set, so a closed or missing parent promotes its child to a root; a parent cycle promotes its members;
+// an edge to an issue outside the set is dropped; and a `blocks` edge whose blocker is no longer open reads as
+// `related` — never rewritten in the store. Pure: the input objects are not touched.
+const isOpen = (i: Issue): boolean => i.status === 'open'
+
+export function issueHierarchy(issues: Issue[]): Issue[] {
+  const byId = new Map(issues.map((i) => [i.id, i]))
+  const pointer = new Map<string, string>()
+  for (const i of issues) {
+    const p = i.parent ? byId.get(i.parent) : undefined
+    if (p && p.id !== i.id && isOpen(p)) pointer.set(i.id, p.id)
+  }
+  const inCycle = (id: string): boolean => {
+    const seen = new Set<string>()
+    for (let at = pointer.get(id); at !== undefined && !seen.has(at); at = pointer.get(at)) {
+      if (at === id) return true
+      seen.add(at)
+    }
+    return false
+  }
+  const parentOf = new Map([...pointer].filter(([id]) => !inCycle(id)))
+
+  const relationsOf = new Map(issues.map((i) => {
+    const edges = i.relations
+      .filter((r) => r.id !== i.id && byId.has(r.id))
+      .map((r): IssueRelation => (r.type === 'blocks' && !isOpen(i) ? { type: 'related', id: r.id } : r))
+    return [i.id, edges.filter((r, k) => edges.findIndex((s) => s.type === r.type && s.id === r.id) === k)]
+  }))
+
+  const children = new Map<string, string[]>()
+  const reverse: Record<IssueRelationType, Map<string, string[]>> = { blocks: new Map(), related: new Map(), duplicate: new Map() }
+  const add = (m: Map<string, string[]>, key: string, id: string) => {
+    const arr = m.get(key) ?? []
+    if (!arr.includes(id)) arr.push(id)
+    m.set(key, arr)
+  }
+  const oldestFirst = [...issues].sort((a, b) => a.created.localeCompare(b.created) || a.id.localeCompare(b.id))
+  for (const i of oldestFirst) {
+    const p = parentOf.get(i.id)
+    if (p) add(children, p, i.id)
+    for (const r of relationsOf.get(i.id) ?? []) add(reverse[r.type], r.id, i.id)
+  }
+
+  return issues.map((i) => {
+    const kids = children.get(i.id) ?? []
+    const closed = kids.filter((k) => !isOpen(byId.get(k)!)).length
+    const relations = relationsOf.get(i.id) ?? []
+    return {
+      ...i,
+      parent: parentOf.get(i.id) ?? null,
+      relations,
+      children: kids,
+      childCounts: { open: kids.length - closed, closed },
+      blockedBy: reverse.blocks.get(i.id) ?? [],
+      relatedBy: reverse.related.get(i.id) ?? [],
+      duplicatedBy: reverse.duplicate.get(i.id) ?? [],
+      duplicateOf: relations.find((r) => r.type === 'duplicate')?.id ?? null,
+    }
+  })
 }
 
 // the one merged read: local issue-store threads + the caller-supplied forge slice, ONE time line — the
@@ -93,7 +179,7 @@ export function mergedIssues(forge: ForgeSlice | null, nodeIds: string[]): Issue
 
 function allThreads(forge: ForgeSlice | null, nodeIds: string[]): Issue[] {
   const remote = forge ? fromForge(forge, nodeIds) : []
-  return [...loadLocalIssues(), ...remote].sort((a, b) => b.created.localeCompare(a.created))
+  return issueHierarchy([...loadLocalIssues(), ...remote]).sort((a, b) => b.created.localeCompare(a.created))
 }
 
 export function boardThreads(forge: ForgeSlice | null, nodeIds: string[]): { issues: Issue[]; stamp: string } {
@@ -112,8 +198,8 @@ export function threadStamp(threads: Issue[]): string {
 
 export async function createIssue(
   concern: string,
-  opts: { store?: string; nodes?: string[]; body?: string; evidence?: string[]; author?: string } = {},
-): Promise<{ store: string; id: string; nodes: string[]; url?: string; outcomes: DispatchOutcome[] }> {
+  opts: { store?: string; nodes?: string[]; body?: string; evidence?: string[]; author?: string; parent?: string } = {},
+): Promise<{ store: string; id: string; nodes: string[]; parent: string | null; url?: string; outcomes: DispatchOutcome[] }> {
   const store = opts.store || 'local'
   const author = opts.author || envSessionId() || 'unknown'
   if (store === 'local') {
@@ -122,9 +208,11 @@ export async function createIssue(
       body: opts.body,
       evidence: opts.evidence,
       author,
+      parent: opts.parent,
     })
-    return { store: 'local', id: thread.id, nodes: thread.nodes, outcomes }
+    return { store: 'local', id: thread.id, nodes: thread.nodes, parent: thread.parent, outcomes }
   }
+  if (opts.parent) throw new Error(`a sub-issue is a local issue — '${store}' stores no parent (open it without --store, or without --parent)`)
 
   const driver = forgeDriverFor(store)
   if (!driver) throw new Error(`unknown issue store '${store}' (known: ${issueStores().map((s) => s.id).join(', ')})`)
@@ -134,7 +222,7 @@ export async function createIssue(
     body: forgeIssueBody(concern, opts.body, nodes, opts.evidence),
   })
   const id = `${driver.host}#${number}`
-  return { store: driver.host, id, nodes, url, outcomes: await dispatchNewMentions(opts.body || concern, { threadId: id, node: nodes[0] || null, author, status: 'open' }) }
+  return { store: driver.host, id, nodes, parent: null, url, outcomes: await dispatchNewMentions(opts.body || concern, { threadId: id, node: nodes[0] || null, author, status: 'open' }) }
 }
 
 export async function promote(id: string, opts: { author?: string } = {}): Promise<{ url: string; number: number; host: string }> {
@@ -176,9 +264,12 @@ export async function replyIssue(
   return { store: forge[1], url, author, outcomes: await dispatchNewMentions(body, { threadId: id, node: opts.node ?? null, author }) }
 }
 
-export async function closeIssue(id: string): Promise<{ store: string; status: string; url?: string }> {
+// `duplicateOf` closes a local issue AS a duplicate of its canonical — the relation is written in the same store
+// write as the close, so there is no state enum beyond the existing closed reading. A forge issue has nowhere to hold it.
+export async function closeIssue(id: string, opts: { duplicateOf?: string } = {}): Promise<{ store: string; status: string; url?: string }> {
   const forge = /^([A-Za-z0-9-]+)#(\d+)$/.exec(id)
-  if (!forge) return { store: 'local', status: closeLocalIssue(id).status }
+  if (!forge) return { store: 'local', status: closeLocalIssue(id, opts).status }
+  if (opts.duplicateOf) throw new Error(`'${id}' is a forge issue — relations live in the local store, so only a local issue closes as a duplicate`)
   const driver = forgeDriverFor(forge[1])
   if (!driver) throw new Error(`unknown forge host '${forge[1]}' — known: ${FORGE_DRIVERS.map((d) => d.host).join(', ')}`)
   const { url } = await driver.closeIssue({ number: parseInt(forge[2], 10) })

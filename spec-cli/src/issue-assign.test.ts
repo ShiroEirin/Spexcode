@@ -6,7 +6,8 @@ import type { Session } from './sessions.js'
 
 // [[issue-binding]]: the assign verb resolves its target with the ordinary selector and fails in the resolver's
 // words before touching any record; the prompt names the thread and its node.
-const issue: Issue = { id: 'local#fold', store: 'local', concern: 'fold count reads 0', by: 'human', status: 'open', nodes: ['session-forest'], created: '2026-09-13', body: '', replies: [], evidence: [], labels: [] }
+const issue: Issue = { id: 'local#fold', store: 'local', concern: 'fold count reads 0', by: 'human', status: 'open', nodes: ['session-forest'], created: '2026-09-13', body: '', replies: [], evidence: [], labels: [],
+  parent: null, relations: [], children: [], childCounts: { open: 0, closed: 0 }, blockedBy: [], relatedBy: [], duplicatedBy: [], duplicateOf: null }
 const row = (id: string, branch: string): Session => ({
   id, branch, path: `/wt/${id}`, label: id, title: id, raw: { name: null, title: null }, parent: null, issue: null,
   harness: 'claude', capabilities: { headless: false }, launcher: null, lifecycle: 'active', proposal: null, merges: 0,

@@ -430,13 +430,15 @@ app.post('/api/issues', async (c) => {
   const nodes = Array.isArray(body?.nodes) ? (body.nodes as unknown[]).filter((n): n is string => typeof n === 'string') : []
   const postBody = typeof body?.body === 'string' ? body.body : undefined
   const store = typeof body?.store === 'string' && body.store.trim() ? body.store.trim() : 'local'
+  // a sub-issue names its parent; the local store validates it and inherits its nodes when none were given
+  const parent = typeof body?.parent === 'string' && body.parent.trim() ? body.parent.trim() : undefined
   // typed evidence[] — content-addressed evidence hashes (the annotator's clip reference rides here, not prose)
   const evidence = Array.isArray(body?.evidence) ? (body.evidence as unknown[]).filter((h): h is string => typeof h === 'string' && /^[0-9a-f]{64}$/.test(h)) : []
   try {
-    const r = await createIssue(concern, { store, nodes, body: postBody, evidence, author: await claimedAuthor(body?.by) })
+    const r = await createIssue(concern, { store, nodes, body: postBody, evidence, parent, author: await claimedAuthor(body?.by) })
     if (r.store !== 'local') await refreshForgeNow()
     notifyBoardChanged('full')   // atomic with persistence — see the write-visibility note above the reply route
-    return c.json({ ok: true, id: r.id, store: r.store, url: r.url, outcomes: summarizeDispatch(r.outcomes) }, 201)
+    return c.json({ ok: true, id: r.id, store: r.store, nodes: r.nodes, parent: r.parent, url: r.url, outcomes: summarizeDispatch(r.outcomes) }, 201)
   } catch (e) {
     return c.json({ error: String((e as Error).message || e) }, store === 'local' ? 500 : 502)
   }

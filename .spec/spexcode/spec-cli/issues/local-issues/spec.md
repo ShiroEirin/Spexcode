@@ -66,7 +66,7 @@ it to `.spec/.issues` on its first store touch after a toolchain update — the 
   fails to load. `reply` is the store's only way a post enters a thread. Its frontmatter carries `by`
   (author session), `status`, optional `nodes:` (the product nodes it concerns, linked `[[…]]`), optional
   `evidence:` (content-addressed evidence hashes — the typed reference a cross-node finding carries, per
-  [[issues]] / video evidence). The sentinel is **unforgeable**: user body text is
+  [[issues]] / video evidence), and the optional hierarchy facts `parent:` and `relations:` (below). The sentinel is **unforgeable**: user body text is
   neutralized on write, so a body that itself contains that marker can't spawn a phantom reply or truncate
   the thread.
 - **An id is the concern's own words, in any script.** The file name a thread is minted under is its concern,
@@ -79,6 +79,20 @@ it to `.spec/.issues` on its first store touch after a toolchain update — the 
 - **Own lifecycle status**, store-authored never git-derived: current writes have one terminal state, `open` →
   `landed`. A legacy terminal `rejected` value is preserved as a distinct closed reading, so "we decided not
   to" is never rendered as "it shipped" and never reappears in the open drain.
+- **A sub-issue and a relation are forward facts, stored once.** A thread's frontmatter may carry `parent: <id>` —
+  its DIRECT parent only — and `relations: <type>:<id>, …` on the issue that INITIATED each edge (`blocks`,
+  `related`, `duplicate`). Nothing is written onto the parent or the target, and a thread with neither key keeps
+  its exact bytes: children, reverse edges, child counts and the closed-blocker downgrade are rebuilt on every
+  merged read by [[issues]]'s hierarchy projection, the way [[session-nesting]] rebuilds the forest from `parent`
+  pointers. The writes check what the store alone can check. A parent must be an existing OPEN local issue at the
+  moment the pointer lands (`open --parent`, `reparent --to`) — a pointer at a closed one would read as a root the
+  instant it was written — and `reparent` walks the stored pointers up from the new parent and refuses one that
+  would close a cycle; `--to none` removes the key. A sub-issue opened without its own `--node` takes its parent's
+  `nodes:` as its explicit ids (its own `[[node]]` links still union in). `relate` needs an existing local target
+  other than the issue itself and stores each edge once. `duplicate` is not a status: `close --duplicate-of
+  <canonical>` marks the thread `landed` and replaces any earlier `duplicate:` edge with the canonical in that same
+  commit, whose message names it. Only local issues hold these facts — a forge issue has no frontmatter — so every
+  parent and target a write accepts is a local id.
 - **The local issue store lives on the trunk, not per-branch.** A write reads and commits **straight to the main
   checkout's `.spec/.issues/`** — a local-issue file is data, not contract, and the write below commits it with
   `--no-verify` (provably a single `.spec/.issues/` path), so it lands on the trunk without needing any
@@ -158,7 +172,9 @@ it to `.spec/.issues` on its first store touch after a toolchain update — the 
   `spex issue reply <id> --body -|<text>
   [--evidence <hash>…]` (the evidence a reply carries accrues onto the thread's `evidence[]`, deduped — an
   anchored annotation's frame blob), and `spex issue close <id>` marks a local thread landed through
-  [[issues]]'s store-routed close. A new thread's `nodes:`
+  [[issues]]'s store-routed close (`--duplicate-of <canonical>` closes it as a duplicate); `spex issue open …
+  --parent <id>`, `spex issue reparent <id> --to <parent-id|none>` and `spex issue relate <id>
+  blocks|related|duplicate <other-id>` write the hierarchy facts above. A new thread's `nodes:`
   are **inferred from the `[[node]]` topic links in its own text** (concern + body, [[mentions]]'s one
   in-text reference primitive), unioned with any explicit `--node` — a writer links nodes by writing them,
   so no caller needs a separate ids field. Read and write share one
