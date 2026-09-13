@@ -68,3 +68,25 @@ test('the canonical bridge maps token text into engine state without a second pa
   assert.deepEqual(tokenFilterState('is:eval', 'issue'), { impossible: true, q: [] })
   assert.deepEqual(issueFilterModel(colonItems, tokenFilterState('state:open frobnicate:xyz', 'issue'), { sessions, t }).shown, [])
 })
+
+test('issue adapter rolls the fleet work state into a fixed-value facet through the one shared join', () => {
+  // one row per statement: each carries ONE status word, so no literal here mints a second status vocabulary
+  const w1 = { id: 'w1', issue: 'local:a', status: 'review', parent: null }
+  const kid = { id: 'w1-kid', issue: null, status: 'working', parent: 'w1' }
+  const w2 = { id: 'w2', issue: 'local:b', status: 'offline', parent: null }
+  const w3 = { id: 'w3', issue: 'local:b', status: 'retired', parent: null, archived: true }
+  const board = [w1, kid, w2, w3]
+  const items = [
+    { id: 'local:a', concern: 'a', status: 'open', store: 'local', by: 'human', nodes: [] },
+    { id: 'local:b', concern: 'b', status: 'open', store: 'local', by: 'human', nodes: [] },
+    { id: 'local:c', concern: 'c', status: 'open', store: 'local', by: 'human', nodes: [] },
+  ]
+  const shown = (raw) => issueFilterModel(items, raw, { sessions: board, t }).shown.map((item) => item.id)
+  assert.deepEqual(shown({ fleet: 'need' }), ['local:a'], 'a review row outranks its working child')
+  assert.deepEqual(shown({ fleet: 'stopped' }), ['local:b'], 'an archived row is off the board; the dead one remains')
+  assert.deepEqual(shown({ fleet: 'none' }), ['local:c'])
+  assert.deepEqual(shown({ fleet: 'run' }), [])
+  assert.deepEqual(tokenFilterState('is:issue fleet:need', 'issue'), { q: [], fleet: 'need' })
+  const options = issueFilterModel(items, {}, { sessions: board, t }).facets.fleet.options.map((option) => option.value)
+  assert.deepEqual(options, ['', 'need', 'stopped', 'none'], 'only states the data has, in the fixed order')
+})

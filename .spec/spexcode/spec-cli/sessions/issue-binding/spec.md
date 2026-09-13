@@ -59,7 +59,7 @@ with one visible fleet per issue, and close/retire/children/acceptance reachable
   descendant of those rows through the same read-time tree the forest is drawn from — a worker's children
   work its issue without each writing a pointer, exactly as a child is promoted when its parent closes. An
   issue's **work state** is rolled up from the fleet as a fold pod rolls up a subtree (`need` > `run` >
-  `offline`, `none` without a fleet); it is derived on every read, stored nowhere, and never written back onto
+  `stopped`, `none` without a fleet); it is derived on every read, stored nowhere, and never written back onto
   the issue's own open/closed lifecycle ([[issues]] keeps that). `issueParticipants` is the separate
   presence list — originator and reply authors that resolve to board rows outside the fleet — because
   talking on a thread is not the fact of being dispatched for it.
@@ -83,6 +83,11 @@ with one visible fleet per issue, and close/retire/children/acceptance reachable
   launcher is chosen through the shared launcher list. The **Assign…** door opens the ONE session picker
   ([[session-picker]]) in a modal over every retained board session not yet on the issue and calls the assign
   verb. A **participants** row lists the other thread voices as liveness chips. The originator row is unchanged.
+- **The `fleet:` facet.** The join and the work-state rollup live in the shared review package (`@spexcode/spec-core/review`'s
+  `issueFleet` / `fleetWorkState`), so the server's issue adapter exposes `fleet:need|run|stopped|none` as one more fixed-value
+  facet in [[review-chrome]]'s secondary Filters menu — `fleet:need` lists exactly the rows whose strip reads "needs you",
+  because both read the same function over the same board. Like [[live-session-filter]] it is token surgery + a history
+  PUSH, hides when the data is one-sided, and never hides an active off-switch.
 - **The composer's explicit send door.** The shared reply composer ([[issues-view]]) reads the draft's `@<id>`
   tokens that name a retained board session EXACTLY (`mentionedSessions`; the autocomplete writes full ids, so a
   prefix, a label, or the `@new`/`@parent:` doors are never deliveries) and shows one **Send to @x** button per
