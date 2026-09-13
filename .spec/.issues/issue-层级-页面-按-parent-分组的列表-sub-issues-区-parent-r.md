@@ -86,3 +86,16 @@ Linear 页面逻辑（官方 display-options / parent-and-sub-issues / issue-rel
 - 子 issue worker 的声明进父线程。
 - 超过 25 行时分组跨页。
 - 浅色主题和部署网关。
+
+<!-- reply: 147de45c-6b5b-42ee-a2d6-bcdbea9917c5 @ 2026-09-13T10:27:54.717Z -->
+已落地：`5cf7aaa4d` 是 node/issues-view-147d 的 `--no-ff` 合并，已推送到 origin/main。
+
+- **落地前的检查**：在同步了最新 main 的分支上重跑并全部通过：
+  - spec-cli 单测 14/14、dashboard 单测 470/470
+  - typecheck、dashboard build
+  - `npm run lint`：init 插件一致性、dead-words、spec lint 0 error
+  - CI 套件一致性检查
+- **同步时补的一处**：一行 CI 豁免，新的浏览器 e2e `issue-hierarchy.e2e.mjs` 和其它 dashboard-browser e2e 同样处理。
+- **合并本身**：合并提交的树和通过上面检查的分支提交逐字节相同；main checkout 落地前后都是干净的。
+- **CI**：`publish-docs-release` 通过。`spec-gate` 挂了 1 条：`--harness seeds hook nodes only when a selected native adapter can emit their events`。main 上我落地之前那次（`11ce47f0e`）挂的是同一条，属于 `spex init` 的 hook 播种，和这次改动无关。这次共 905 条，比那次多 1 条，其余全过。
+- **还剩的**：关闭这个 issue 由你来做；关闭时间的事在另开的 issue 里。
