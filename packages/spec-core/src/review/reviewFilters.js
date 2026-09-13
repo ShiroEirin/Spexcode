@@ -1,4 +1,4 @@
-import { sessionPresent } from './session.js'
+import { FLEET_STATES, fleetWorkState, issueFleet, sessionPresent } from './session.js'
 import { effectiveTokens, tokenize } from './reviewQuery.js'
 
 // [[review-filters]]: one pure filter engine — the single home of Issues FIELD SEMANTICS. The domain
@@ -63,6 +63,13 @@ export const reviewActorName = (actor) => String(actor || '').length > 22 ? `${S
 // resolves on the board — membership, never liveness.
 const issuePresent = (issue, sessions) => !!sessionPresent(sessions, issue.by)
   || (Array.isArray(issue.replies) && issue.replies.some((reply) => sessionPresent(sessions, reply.by)))
+// the FLEET facet ([[issue-binding]]): the issue's rolled-up work state over the sessions bound to it — the same
+// join the Issues page draws its strip from, so `fleet:need` lists exactly the rows whose strip reads "needs you".
+const fleetFacet = () => ({
+  key: 'fleet', label: 'reviewList.facetFleet', fixedValues: FLEET_STATES,
+  values: (issue, { sessions }) => fleetWorkState(issueFleet(issue.id, sessions).fleet),
+  labelValue: (value, { t }) => optionLabel(t, `reviewList.fleet${value[0].toUpperCase()}${value.slice(1)}`, value),
+})
 const presenceFacet = (valuesOf) => ({
   key: 'session', label: 'reviewList.facetSession', fixedValues: ['present', 'missing'],
   values: valuesOf,
@@ -77,6 +84,7 @@ export function issueFilterState(raw = {}, { defaultSection = '' } = {}) {
     q: raw.q || '', state, impossible: raw.impossible === true,
     author: raw.author || '', store: raw.store || '', node: raw.node || '', label: raw.label || '',
     session: raw.session || '',
+    fleet: raw.fleet || '',
   }
 }
 
@@ -97,6 +105,7 @@ const ISSUE_CONFIG = {
     { key: 'node', label: 'reviewList.facetNode', values: (issue) => issue.nodes || [] },
     { key: 'label', label: 'reviewList.facetLabel', values: (issue) => (issue.labels || []).map((label) => typeof label === 'string' ? label : label?.name), minValues: 1 },
     presenceFacet((issue, { sessions }) => issuePresent(issue, sessions) ? 'present' : 'missing'),
+    fleetFacet(),
   ],
 }
 
@@ -144,6 +153,7 @@ const TOKEN_MAPS = {
     node: (v) => ({ node: v }),
     label: (v) => ({ label: v }),
     session: (v) => ({ session: v }),
+    fleet: (v) => ({ fleet: v }),
   },
 }
 

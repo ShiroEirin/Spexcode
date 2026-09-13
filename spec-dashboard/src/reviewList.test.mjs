@@ -438,7 +438,7 @@ test('list metadata keeps native controls beside the real detail anchor', () => 
   assert.match(css, /\.rl-row-grid a, \.rl-row-grid button \{ pointer-events: auto; \}/)
   assert.match(issues, /IssueLabels labels=\{th\.labels\} onSelect=\{\(name\) => surgery\('label', name\)\}/)
   assert.match(issues, /<a className="rl-tag node" href=\{addressHash\(specAddress\(th\.nodes\[0\]\)\)\}>/)
-  assert.match(issues, /ISSUE_QUERY_KEYS = \['is', 'state', 'store', 'author', 'node', 'label', 'session'\]/)
+  assert.match(issues, /ISSUE_QUERY_KEYS = \['is', 'state', 'store', 'author', 'node', 'label', 'session', 'fleet'\]/)
 })
 
 test('issue evidence media keeps intrinsic geometry — shrink-only, no flex-stretch', () => {

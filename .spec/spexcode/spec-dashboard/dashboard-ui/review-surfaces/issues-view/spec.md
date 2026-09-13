@@ -89,7 +89,8 @@ pooled Issues document tied to its own mounted route.
   data the model actually has: the store pick and the source-session presence facet
   (`session:present|missing` — [[live-session-filter]]); store stays directly reachable at 390px while
   presence lives in [[review-chrome]]'s semantic secondary Filters menu — filter/funnel + localized text
-  + chevron, never a kebab/action affordance. Its stable active-group count reads the presence token.
+  + chevron, never a kebab/action affordance. Its stable active-group count reads the presence token. The same menu carries the fleet work-state facet
+  (`fleet:need|run|stopped|none`, [[issue-binding]]) beside presence.
   At 390px an active Store face condenses visually to the selected store while retaining its fully
   qualified accessible name, so Open/Closed, Store, and Filters never overlap. Originator and spec node are HIGH-cardinality: `author:` /
   `node:` / `label:` tokens, hand-typed or completed from the input's bounded inline autocomplete — no enumerating

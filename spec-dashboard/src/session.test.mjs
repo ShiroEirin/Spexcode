@@ -123,7 +123,7 @@ test('issueFleet joins sessions to an issue by pointer and inherits descendants 
   assert.deepEqual(fleet.map((s) => s.id), ['a', 'a1', 'a1x'], 'every descendant belongs to the fleet without a pointer of its own')
   assert.equal(fleetWorkState(fleet), 'need', 'a review row outranks working children')
   assert.equal(fleetWorkState(fleet.slice(1)), 'run')
-  assert.equal(fleetWorkState([sessions[2]]), 'offline')
+  assert.equal(fleetWorkState([sessions[2]]), 'stopped')
   assert.equal(fleetWorkState([]), 'none')
   assert.deepEqual(issueFleet(null, sessions), { assigned: [], fleet: [] })
   const issue = { by: 'd', replies: [{ by: 'human' }, { by: 'a1' }, { by: 'd' }, { by: 'ghost' }] }

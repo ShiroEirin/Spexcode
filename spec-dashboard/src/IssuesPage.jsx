@@ -53,7 +53,7 @@ const issueNumber = (id) => {
 
 // the page's recognized qualifier vocabulary — what the highlight overlay colors and the key
 // autocomplete offers; anything else stays plain and matches nothing.
-export const ISSUE_QUERY_KEYS = ['is', 'state', 'store', 'author', 'node', 'label', 'session']
+export const ISSUE_QUERY_KEYS = ['is', 'state', 'store', 'author', 'node', 'label', 'session', 'fleet']
 
 // The LIST page (`#/issues[?q=<raw tokens>]`) requests one resident-source page from the server; the WHOLE
 // face is ONE visible token query ([[review-query]]) bridged into the
@@ -128,6 +128,11 @@ export function IssuesListPage({ data, loading, error, query, onQueryText, sessi
     label: t('reviewList.facetSession'), value: readToken(text, 'session'),
     options: facetOptions(data, 'session', t('reviewList.all'), (value) => t(value === 'present' ? 'reviewList.sessionPresent' : 'reviewList.sessionMissing')),
   }
+  // the fleet's work state ([[issue-binding]]) — the same low-cardinality menu grammar the presence facet uses.
+  const fleetFacet = {
+    label: t('reviewList.facetFleet'), value: readToken(text, 'fleet'),
+    options: facetOptions(data, 'fleet', t('reviewList.all'), (value) => t(`reviewList.fleet${value[0].toUpperCase()}${value.slice(1)}`)),
+  }
 
   return (
     <ListPage
@@ -160,6 +165,7 @@ export function IssuesListPage({ data, loading, error, query, onQueryText, sessi
       }
       secondaryFilters={<SecondaryFilters label={t('reviewList.filters')} clearLabel={t('reviewList.all')} groups={[
         { label: sessionFacet.label, value: sessionFacet.value, active: !!sessionFacet.value, options: sessionFacet.options, onChange: (value) => surgery('session', value) },
+        { label: fleetFacet.label, value: fleetFacet.value, active: !!fleetFacet.value, options: fleetFacet.options, onChange: (value) => surgery('fleet', value) },
       ]} />}
       rows={rows}
       pagination={data ? {
