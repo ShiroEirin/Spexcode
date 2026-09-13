@@ -157,19 +157,33 @@ test('every package names only files that exist, and the ZCode skill points at t
   // root whose manifest names its plugins by relative path, so an adopter runs `codex plugin marketplace add
   // <dir>` then `codex plugin add atlas@spexcode`. Pointed at the plugin itself, Codex refuses with
   // "marketplace root does not contain a supported manifest".
-  const market = JSON.parse(readFileSync(join(root, 'distribution/codex/.agents/plugins/marketplace.json'), 'utf8'))
+  const market = JSON.parse(readFileSync(join(root, 'distribution/.agents/plugins/marketplace.json'), 'utf8'))
   assert.equal(market.name, 'spexcode')
   const entry = market.plugins.find((p) => p.name === 'atlas')
   assert.ok(entry, 'the marketplace lists the atlas plugin')
   assert.equal(entry.source.source, 'local')
   // ON_INSTALL | ON_USE are the only values Codex parses; anything else fails the manifest outright.
   assert.ok(['ON_INSTALL', 'ON_USE'].includes(entry.policy.authentication), entry.policy.authentication)
-  const codexPlugin = join(root, 'distribution/codex', entry.source.path)
+  // Claude Code reads its own manifest from the SAME root, under its own dotted path — one directory an
+  // adopter adds, two hosts that each find what they look for. A plugin manifest that validates is not a
+  // plugin that installs: `claude plugin validate` passes on the bare plugin directory that
+  // `claude plugin marketplace add` then rejects, so the root manifest is what the gate holds.
+  const ccMarket = JSON.parse(readFileSync(join(root, 'distribution/.claude-plugin/marketplace.json'), 'utf8'))
+  assert.equal(ccMarket.name, 'spexcode')
+  const ccEntry = ccMarket.plugins.find((p) => p.name === 'atlas')
+  assert.ok(ccEntry, 'the Claude Code marketplace lists the atlas plugin')
+  assert.ok(existsSync(join(root, 'distribution', ccEntry.source, '.claude-plugin/plugin.json')), ccEntry.source)
+  const codexPlugin = join(root, 'distribution', entry.source.path)
   assert.ok(existsSync(codexPlugin), entry.source.path)
   const codex = JSON.parse(readFileSync(join(codexPlugin, '.codex-plugin/plugin.json'), 'utf8'))
   assert.ok(existsSync(join(codexPlugin, codex.skills)), codex.skills)
   assert.ok(existsSync(join(codexPlugin, 'skills/atlas/SKILL.md')))
   assert.equal(existsSync(join(root, 'distribution/codex/atlas')), false, 'the bare-plugin layout Codex cannot install is gone')
+  // The mirror is what adopters add, and it is kept equal to this directory by CD rather than by hand —
+  // triggered only when this directory changes, so an unrelated push never republishes the packages.
+  const cd = readFileSync(join(root, '.github/workflows/distribution-sync.yml'), 'utf8')
+  assert.match(cd, /paths:\n\s+- 'distribution\/\*\*'/)
+  assert.match(cd, /node scripts\/distribution\.mjs --check/, 'the mirror carries generator output, never a hand-edit')
   for (const pkg of ['distribution/penguin/use-spexcode']) {
     const listed = JSON.parse(readFileSync(join(root, pkg, 'package.json'), 'utf8')).files
     for (const file of listed) assert.ok(existsSync(join(root, pkg, file)), `${pkg}/${file}`)

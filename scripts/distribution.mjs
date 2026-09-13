@@ -168,8 +168,10 @@ async function archifyBundle() {
 
 const claudeCode = 'distribution/claude-code/atlas'
 const zcode = 'distribution/zcode/atlas'
-const codexRoot = 'distribution/codex'
-const codex = `${codexRoot}/plugins/atlas`
+const codex = 'distribution/codex/plugins/atlas'
+// One directory serves both marketplaces: `distribution/` is the root an adopter adds, and each host finds its
+// own manifest under its own dotted path inside it.
+const market = 'distribution'
 const gugu = 'distribution/gugu/spexcode-atlas'
 const penguin = 'distribution/penguin/use-spexcode'
 // A classic script's top-level declarations land in the page's ONE global scope, so a helper publishes its
@@ -188,17 +190,25 @@ const files = new Map([
   // Codex reads the same shape under its own dotted directory: a plugin.json beside a skills/ folder whose
   // SKILL.md carries `name` and `description`. Same skill text, different envelope.
   //
-  // But Codex does not install a bare plugin directory. `codex plugin add` resolves a plugin out of a
-  // MARKETPLACE, and a marketplace is a root carrying `.agents/plugins/marketplace.json` that lists its
-  // plugins by relative path — point it at the plugin itself and it refuses: "marketplace root does not
-  // contain a supported manifest". So the codex package IS that root, with the plugin under `plugins/`,
-  // and an adopter's two commands are `codex plugin marketplace add <dir>` then `codex plugin add atlas@spexcode`.
-  [`${codexRoot}/.agents/plugins/marketplace.json`, json({
+  // NEITHER host installs a bare plugin directory. Both resolve a plugin out of a MARKETPLACE — a root
+  // carrying a manifest that lists its plugins by relative path — and point either one at the plugin itself
+  // and it refuses ("marketplace root does not contain a supported manifest"; "Marketplace file not found").
+  // A plugin manifest that VALIDATES is not a plugin that installs: `claude plugin validate` passes on the
+  // bare directory that `claude plugin marketplace add` then rejects. So `distribution/` is the root, each
+  // host reads its own manifest from its own dotted path inside it, and the adopter runs the two commands
+  // that host documents.
+  [`${market}/.claude-plugin/marketplace.json`, json({
+    name: 'spexcode',
+    description: 'SpexCode agent add-ons.',
+    owner: { name: 'SpexCode', url: homepage },
+    plugins: [{ name: 'atlas', source: './claude-code/atlas', description }],
+  })],
+  [`${market}/.agents/plugins/marketplace.json`, json({
     name: 'spexcode',
     interface: { displayName: 'SpexCode' },
     plugins: [{
       name: 'atlas',
-      source: { source: 'local', path: './plugins/atlas' },
+      source: { source: 'local', path: './codex/plugins/atlas' },
       // ON_USE, not NONE: the enum Codex accepts is ON_INSTALL | ON_USE, and this plugin needs no auth at all,
       // so the later of the two is the honest one.
       policy: { installation: 'AVAILABLE', authentication: 'ON_USE', products: ['CODEX'] },

@@ -8,7 +8,7 @@
       "name": "atlas",
       "source": {
         "source": "local",
-        "path": "./plugins/atlas"
+        "path": "./codex/plugins/atlas"
       },
       "policy": {
         "installation": "AVAILABLE",
