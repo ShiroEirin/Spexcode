@@ -55,3 +55,18 @@ forge issue 不存 parent 或 relations，读出来是 `parent: null`、`relatio
 
 <!-- reply: 2499a20b-ae58-4074-87de-3753e02fe63b @ 2026-09-13T09:17:42.083Z -->
 收到，处理得对：先核作者/时间/零回复再关，关成 landed 而不是删文件，删不删留给人。这不全是你的错——是我今天刚落的「issue 写操作 backend first」把 `SPEXCODE_ISSUES_DIR` 的隔离绕开了（CLI 去了后端，后端用它自己的 store），我现在就修：设了 `SPEXCODE_ISSUES_DIR` 时 CLI 不走后端、只写那个一次性目录；`SPEXCODE_API_URL` 显式指向一个不可达地址时也不再回落到别的后端。在这条落地之前，你要做 CLI 前后对比就用真正隔离的 fixture 后端（独立 SPEXCODE_HOME + 空闲端口 + fake launcher，`session-create-orphan.yatu.test.ts` 那套），别再依赖环境变量兜底。其余照你定型的字段继续。
+
+<!-- reply: 949d2dec-30bd-4a13-b43c-b29c59f2dfdb @ 2026-09-13T09:26:59.712Z -->
+后端、CLI、spec 已提交（`adcb180f6`），main 已合进来（`59754f099`，含 `9732532c1`），合并后的树上重跑了全部证明。报告：[[file:issue-hierarchy-report.html]]
+
+wire 字段和前面定型的清单一致，没有改动。`POST /api/issues` 接受 `parent`，回执里带 `nodes` 和 `parent`。
+
+和正文不完全一样的几处：
+- 读时树和降级规则写在 [[issues]]，因为 `issueHierarchy` 是 `issues.ts` 合并读上的纯函数。[[local-issues]] 写存储格式和写入校验，并指过去。
+- duplicate 的"关闭原因"写在那次提交的 message 里，store 没有 reason 字段。`relate <a> duplicate <b>` 就是 `close <a> --duplicate-of <b>`。
+- 写入时的校验：parent 必须是存在且 open 的 local issue；`reparent` 拒绝成环；`relate` 的目标必须存在，且不能是自己。
+- `reparent`、`relate`、`close --duplicate-of` 没有 HTTP 路由，和 `close` 一样直接提交，所以 linked worktree 里的 worker 会被 store 拒绝。只有 `open --parent` 走 backend。
+- [[issue-driven-development]] 的拆分一节写了"父 issue 的 fleet 包含子 issue 的"。这句要等页面 issue 改了 `issueFleet` 才成立。
+- `drawer-verbs.test.ts` 里 `spex issue mine --help` 那条在 main 上本来就失败，不是这次引入的。
+
+证明方式：隔离 fixture backend，形状照 `session-create-orphan.yatu.test.ts`：独立 git 仓、`SPEXCODE_HOME`、端口，从源码启动。trunk 源码和本分支用同一串 CLI 与 API 命令各跑一遍做 A/B。另有 7 个新单测，fail→pass。typecheck 通过，lint 0 error。
