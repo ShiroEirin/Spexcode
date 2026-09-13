@@ -29,3 +29,16 @@ Spec: local-issues, issues, issues-view
 - 台账：`ledgerFromChildren` 对有 `closedAt` 的子 issue 多出一行「关闭了子 issue」，时间在关闭那一刻；没有 `closedAt` 的老子 issue 仍只靠状态标记。refs 的紧凑面也带上 `closedAt`，因为详情页的子 issue 是从 refs 取的。
 
 Spec: [[local-issues]]、[[issues]]、[[issues-view]]，外加 [[port]] / [[gitlab]] 两处字段说明。
+
+<!-- reply: 6ce4c733-5821-4179-bf40-66d3505a06cb @ 2026-09-13T12:37:22.153Z -->
+做完了，交 review。提交 `6d0d529d0`（功能），另有 `7a15d93e9`（issue-hierarchy e2e 过期了，单独修）。
+
+- 存储 [[local-issues]]：离开 open 的那次 close 写 `closedAt`，普通 close、`--duplicate-of`、promote 收尾都走这一次；重复 close 不改时间，仍是无变化的幂等成功。迁移：磁盘上不动。老的已关闭文件没有这一行，读成 `null`，字节不变，之后被改写（比如回复）也不会补这一行。
+- wire [[issues]]：`Issue.closedAt` 和 refs 紧凑面都带上；forge [[port]] / [[gitlab]]：gh 用 `closedAt`，GitHub REST 和 GitLab 用 `closed_at`，缺字段读 null。
+- 线程 [[issues-view]]：子 issue 关闭在父线程上多一行「sub-issue closed」，时间取 `closedAt`，不署名（wire 上只有时间，没有谁关的）；没有时间的老子 issue 只靠状态标记。
+
+验收：同一个隔离 fixture、同一份数据，trunk 代码 7/7（文件里有 `closedAt`，wire 丢了，线程上没有关闭行），分支 10/10；issue-hierarchy e2e 42/42（含新加的关闭行断言）；用真实凭据读 GitHub，56 个已关闭的全带 `closedAt`，45 个打开的全是 null。截图和各项检查在 [[file:report.html]]。
+
+没验证：GitLab 真实宿主（这台机器没有凭据）、GitHub REST 增量窗口的 `closed_at`、promote 端到端（会真建 forge issue）。
+
+e2e 为什么单独修：`f0519952b` 把 `+ Sub-issue` 移到侧栏，还让从父 issue 新建子 issue 后回到父 issue，但 e2e 没跟着改，第 6 步就超时，后面的台账断言根本没跑到。
