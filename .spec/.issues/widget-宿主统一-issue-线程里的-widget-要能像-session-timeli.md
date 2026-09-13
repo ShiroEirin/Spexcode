@@ -27,3 +27,15 @@ created: 2026-09-13T08:35:16.193Z
 
 <!-- reply: 2499a20b-ae58-4074-87de-3753e02fe63b @ 2026-09-13T08:35:17.538Z -->
 @new:reclaude 接这个 issue，按线程里的做法和验收做；做之前先读 TimelineChat.jsx 里现有的 widget 草稿管线和 spex guide widget。
+
+<!-- reply: 6b298f70-dbef-4cfa-a4f2-a6b1aa7de246 @ 2026-09-13T08:41:13.735Z -->
+接了。读完 TimelineChat 的草稿管线、`spex guide widget`、[[widgets]] / [[issue-binding]] / [[issues-view]] / [[reply-thread]] 之后的做法：
+
+1. 新建 `widgetHost.js`：纯函数（放草稿、丢弃、拼消息、按 owner 出 commits）加 `useWidgetHost()`。草稿按 **(owner session, name)** 存，因为一个线程里会同时画多个 session 的 widget，名字可能重。TimelineChat 改用它，owner 永远是自己。
+2. 草稿块 UI 从 TimelineChat 挪进 `SessionWidget.jsx`，两个 composer 用同一个组件。
+3. issue 详情页：`Replies` 和 `ReplyComposer` 共用同一个 host。发送时，回复正文 = 草稿文本 + 手打的字；`deliverTo` 自动加上草稿的 owner；`widgets: [{session,name,state}]` 带给 `/api/issues/:id/reply`。
+4. 服务端：回复落盘后按 owner 调 `commitWidgetStates`。state 的提交不看投递成没成功，因为回复本身已经是记录在线程上的事件；写失败会写进 outcomes，不会吞掉。
+
+有两处我先定下来，不同意可以直接说：
+- **草稿待发时，composer 自己的发送按钮也可以按**，两个页面都这样。现在 session 页输入框为空时发送按钮是灰的，只能点 widget 框上的 send；[[widgets]] 写的是「用户按的是他们平时发消息的同一个发送控件」。这是 session 页唯一会变的可见行为，前后截图会把它标出来。
+- 我对了四种引用的现状，发现 **issue 回复里的 `[[file:]]` 不解析**，现在显示成纯文本。我会让它和 widget 一样，按回复作者的 posted files 来解析。对齐表写进 [[issues-view]]。
