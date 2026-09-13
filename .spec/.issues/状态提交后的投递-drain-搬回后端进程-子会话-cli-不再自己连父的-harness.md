@@ -24,3 +24,24 @@ created: 2026-09-13T10:31:46.968Z
 
 <!-- reply: 2499a20b-ae58-4074-87de-3753e02fe63b @ 2026-09-13T10:31:50.848Z -->
 @new:reclaude 接这个 issue，先读线程正文和它引用的 spec 节点，按验收做，严格隔离。
+
+<!-- reply: 5d23fcba-2710-4fe5-b87d-eaf6db1d0bf1 @ 2026-09-13T11:00:33.271Z -->
+修复与隔离 A/B 报告：[[file:drain-owner-report.html]]。提交 1d3071ebb（修复 + spec）、0f078d85a（404 断言）。
+
+做法：commit wake 仍在提交所在进程里把 watch 事件翻译成父队列的 prompt 和父 timeline 的 `sent` 事件；把队列交给 harness 改走按进程决定的 handover。默认原地 drain（后端、测试）；CLI 的 state kit（`done/park/ask` 与 `spex internal session-*` 共用）装 owner-first：调 `/push`，只有 ECONNREFUSED 才本地 drain。`/push` 启动 drain 后立即回 ok，不再等交接完成；对本后端没有记录的会话回 404。`reconcileWatchDeliveries` 去掉了内部 drain，因为它的两个调用方紧接着都会交接。spec 改了 [[session-follow]] [[delivery-queue]] [[sessions-core]] [[remote-client]] [[declaration]]，"backend only appends the event" 那句原样保留。
+
+A/B（fake-claude 不回 repaint；A=32dcc53e4，B=1d3071ebb）：
+- 声明 CLI 耗时：B ask/park/done 346/326/349 ms；A 16908/10346/10362 ms。
+- 父 timeline 的 sent 事件：B 在 CLI 启动后 255–265 ms 写入，376–424 ms 读到。
+- `ss -xp` 持有者：B 三步都只有后端子进程；A 的 park/done 是声明 CLI 自己。
+- 杀掉后端再声明：CLI 自己交接，pane 380 ms 收到，重启后 final timeline 里有这条事件。
+- 新回归测试改前 fail（CLI 10622 ms）、改后 pass；相关 11 个套件合跑时有 1 条 resume 就绪测试因负载超时，单跑在 A、B 上都过；sessions.test.ts 单跑 51/51；yatu 5 过、1 个跳过（需要真 Codex）；typecheck、eslint、import-cycles 通过，spec lint 0 error。进程、端口、tmux、worktree 已清理，记录在报告末节。
+
+同类但没在这里扩范围：`spex session watch <SEL>` 装关系时给自己入队的快照、`spex internal session-turn-fail`，仍在 CLI 进程里原地交接。已另开 issue `cli-里另外两处本地提交仍在-cli-进程里连-harness-交接-watch-通知`。
+
+<!-- reply: 5d23fcba-2710-4fe5-b87d-eaf6db1d0bf1 @ 2026-09-13T11:06:56.478Z -->
+已合入 main 并推送：3d9d2d368（--no-ff，父提交 4f771de0e 与同步后的分支 716a26862）。
+
+落地前把最新 main（4f771de0e，只有 dashboard 与 issue 文件的改动，和本分支无重叠）合进分支，在同步后的提交上重跑：typecheck 通过、spec lint 0 error、workspace 构建通过、相关套件 26/26、sessions.test.ts 51/51。main 的树与同步后分支的树逐字节相同（e2658f45e），所以这些结果就是 main 上的结果。源检出落地前后都是干净的。
+
+同类的两处 CLI 路径仍在 `cli-里另外两处本地提交仍在-cli-进程里连-harness-交接-watch-通知` 里，未处理。

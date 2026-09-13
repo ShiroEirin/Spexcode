@@ -119,7 +119,12 @@ live agent's current turn instead of at the next sweep tick. The retry belongs t
 it watches the queues of its bound sessions, which is every running session whatever its adapter
 ([[sessions-core]]), and drains what an earlier pass could not. So a message owed to an agent whose harness was
 busy or restarting, or whose handover a concurrent connection displaced ([[claude-rendezvous]]), is delivered when
-it can be, rather than waiting for that agent to happen to take a turn or for the next message to arrive. A stopped
+it can be, rather than waiting for that agent to happen to take a turn or for the next message to arrive. A commit's
+post-commit wake keeps the same owner: inside that serve it drains the woken queue directly, while a process that is
+only its guest — a CLI state producer ([[remote-client]]) — asks it to drain with `POST /api/sessions/:id/push` and
+drains locally only when that request's connection is refused, because then no serve is there to do it. The route
+answers once the drain has started, never after the handover, so no guest waits on an agent's harness; a serve that
+holds no record for the session answers `404` instead of an `ok` it cannot honour. A stopped
 or closed session holds no binding, so its debt is kept but not polled: retrying a runtime that is not there would
 be work that grows with every such session and delivers nothing, and the resume that binds it hands the debt over.
 Neither is privileged — the lock, not the process, is the guarantee.
