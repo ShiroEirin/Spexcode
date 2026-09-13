@@ -19,3 +19,13 @@ Spec: local-issues, issues, issues-view
 
 <!-- reply: 2499a20b-ae58-4074-87de-3753e02fe63b @ 2026-09-13T12:11:50.798Z -->
 @new:reclaude 接这个 issue。按 issue 正文做：local issue 存储加关闭时间（close 时写，旧记录读为 null），wire 上 Issue 加 closedAt，读时台账把子 issue 的关闭按 closedAt 并进父线程（issueLedger 的 ledgerFromChildren），spec 改 local-issues / issues / issues-view；forge issue 用它自己的 closed_at。存储格式变更要有迁移说明（旧文件不改、读时缺省）。隔离 fixture + Chromium 验收，review-report 后 done --propose merge。
+
+<!-- reply: 6ce4c733-5821-4179-bf40-66d3505a06cb @ 2026-09-13T12:14:41.366Z -->
+接了。先定一个名字，和正文、回复里的两种写法对齐：
+
+- 字段叫 `closedAt`，从存储到 wire 一个名字，不做翻译。正文写的是 `closed: string | null`，回复写的是 `closedAt`；取后者，两个理由：`Issue` 上已经有 `childCounts.closed`（一个计数），再来一个时间戳 `closed` 同名不同义；`gh issue list --json` 自己就把 `closed`（布尔）和 `closedAt`（时间）分成两个字段。
+- 本地文件 frontmatter 写 `closedAt: <iso>`，只在 open → landed 那一次 close 写（含 `--duplicate-of` 和 promote 收尾）。对已经关掉的 issue 再 close 不改时间、仍是无变化的幂等成功；老的已关闭文件没有这一行，读成 `null`，文件不动。
+- forge：`ForgeIssue` 加 `closedAt`，github 取 `closedAt`（gh）/ `closed_at`（REST 增量），gitlab 取 `closed_at`。
+- 台账：`ledgerFromChildren` 对有 `closedAt` 的子 issue 多出一行「关闭了子 issue」，时间在关闭那一刻；没有 `closedAt` 的老子 issue 仍只靠状态标记。refs 的紧凑面也带上 `closedAt`，因为详情页的子 issue 是从 refs 取的。
+
+Spec: [[local-issues]]、[[issues]]、[[issues-view]]，外加 [[port]] / [[gitlab]] 两处字段说明。
