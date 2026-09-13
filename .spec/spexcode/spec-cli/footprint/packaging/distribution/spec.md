@@ -71,10 +71,20 @@ reach. Every package names the public registry for its own fetch, which says not
 installs its own dependencies.
 
 **A package is installable by the command its host actually offers.** Matching a host's file shape is only half
-of it: Codex resolves a plugin out of a MARKETPLACE, never a bare plugin directory, so the Codex package IS a
-marketplace root — a manifest naming its plugins by relative path, with the plugin beneath it — and an adopter
-runs the two commands that host documents. A package whose layout is right and whose install path does not
-exist has not been packaged for that host at all.
+of it: Claude Code and Codex both resolve a plugin out of a MARKETPLACE, never a bare plugin directory. A plugin
+manifest that VALIDATES is not a plugin that installs — `claude plugin validate` passes on exactly the directory
+`claude plugin marketplace add` then refuses. So `distribution/` is one marketplace root and each host reads its
+own manifest from its own dotted path inside it, which is why one mirrored directory serves both. A package whose
+layout is right and whose install path does not exist has not been packaged for that host at all.
+
+**Authored here, installed from a repository that holds nothing else.** Both hosts clone the WHOLE repository a
+marketplace names — measured on this one, adding it fetches 33M and 1605 files for a skill that is four — and the
+`owner/repo` form reads the manifest only at the repository ROOT, so a subdirectory cannot be addressed. Putting
+the marketplace here would hand every adopter the product repository. The packages are therefore generated here,
+where the preset they come from lives, and mirrored to a thin repository that is only ever equal to
+`distribution/`. Keeping the two equal is CD's job, not a person's, and it runs only when `distribution/` itself
+changed: a mirror republished by an unrelated push is a mirror nobody can date. The job regenerates before it
+mirrors, so what adopters install is what the generator writes rather than a snapshot of a hand-edit.
 
 **The tree is written in the language the person asked in.** Titles, descriptions, bodies, diagram labels and
 the report: an atlas is read by a human, and one handed over in a language they did not use is a translation
