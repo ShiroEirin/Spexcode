@@ -20,7 +20,10 @@ interpreting relation names. Runtime identities and generation expectations are 
 model-facing message fact in `session-events` in the same transaction as the protocol queue write. Canonical event reads go through the application's `readEvents` boundary; consumers do not import the old file timeline reader. Durable follow cursors are also owned by the application and advance monotonically in the same SQLite store; a caller without a canonical session keeps a process-local cursor. Managed watch delivery belongs to the backend that owns the watcher's control channel: it polls the global event store by durable watch edge and cursor, then enqueues and hands over after the read transaction commits. Generic protocol
 messages remain opaque and do not become conversation history. The composition never reads JSON records or exposes
 an opt-in compatibility switch.
-Duplicate checks use the event store's scoped message lookup rather than replaying the session history. Generic protocol
+Duplicate checks use the event store's scoped message lookup rather than replaying the session history. In the same
+way, `readMessageKeys` answers the idempotency key of named messages addressed to one session by message id, so a
+reader that must tell which messages a policy minted never replays that session's queue; the keys stay opaque here
+and are interpreted only by the adopter that minted them. Generic protocol
 messages remain opaque and do not become conversation history. The composition never reads JSON records or exposes an
 opt-in compatibility switch. State replay folds `session.state.changed.v1` and passes over the conversation message
 fact recorded beside it; migrated legacy history carries its own ignorable types and is skipped by the same fold.

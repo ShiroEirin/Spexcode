@@ -21,11 +21,23 @@ events and the word the events BEFORE them left the agent on; it knows nothing o
 or liveness.
 
 **The items partition the session's time, and no stretch of work is ever dropped.** Every instant from the
-first event onward belongs to exactly one item: a QUOTE (a `sent` event; the addressing envelope
+first event onward belongs to exactly one item: a QUOTE (a `sent` event that is not a watch notice; the addressing envelope
 `spex session send` appends is stripped here and its sender kept, through the transcript package's own
 `spexEnvelope` row — the same row a quoted turn inside a transcript is read with, so the two never disagree), a SAY (a status event carrying a note,
 or any non-working status), an EVENT (`error`, `corrupt` — an instant, not a phase), or a SEAM — an interval
 in which the agent said nothing and worked, which owns the transcript for exactly that interval.
+
+**A managed watch notice is not speech, so it partitions nothing.** A `sent` event marked `system: "watch"`
+([[session-timeline]]) is the system describing ANOTHER session's state; it neither closes a stretch of work nor
+opens one. Landing on a working agent it belongs to the seam it arrived inside (`seam.notices`); landing on an agent
+that is not working it joins the notices immediately before it as one NOTICES item, and anything else that happens
+ends that run. The reason is measured, not assumed: a supervisor's burst lands while it works — three notices
+inside one working stretch on this project's own supervisor — and splitting the stretch at each drew notice ·
+worked 24s · notice · worked 11s · notice, a run that could never sit together long enough to be folded. Each
+notice's state word and note are read from the one producer's sentence (`[spex watch] <id> is <word> — <note>`,
+[[session-follow]]); a marked text that does not read that way keeps its whole text as the note rather than vanishing.
+So every event that is not a bare `working` is still shown exactly once and in order — a notice inside its seam or
+its run, everything else as its own item — and the theorem below is untouched.
 
 **A window is not the whole history.** The reader holds the newest events of a session that may hold
 thousands ([[session-timeline]]), so this derivation can be handed a stretch that begins in the middle of the

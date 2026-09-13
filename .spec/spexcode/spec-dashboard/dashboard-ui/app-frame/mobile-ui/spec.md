@@ -90,7 +90,8 @@ The two planes, made native to touch:
   is touch-sized. Opening one is the terminal-free conversation: a header (current status +
   liveness are the board row's, present-tense), the timeline — day-separated, each status event a
   colored glyph + word + timestamp with the FULL note text beneath, each sent prompt attributed
-  (you / the sending session) — and a docked composer whose input and send action share one stable
+  (you / the sending session), and what a managed watch delivered drawn as the same compact system line and folded
+  run the desktop Conversation draws, never a bubble ([[conversation]]) — and a docked composer whose input and send action share one stable
   vertical box (matching top and bottom edges). It uses [[composer]]'s `ComposerTextarea` and the one
   `fitTextarea` measurement path shared by every dashboard-authored composer: two and three lines grow the
   input without a scrollbar, while content beyond its declared cap scrolls inside. As a **message**

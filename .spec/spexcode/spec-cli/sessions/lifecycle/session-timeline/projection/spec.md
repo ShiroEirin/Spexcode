@@ -30,3 +30,8 @@ walk back from the window's end that stops at whichever bound arrives first — 
 authored text — and never at zero events, so a single note longer than the whole budget is still served. The projection reports
 the window's `offset`, the history's `total`, and the `priorWorking` the events before the window already said,
 so no reader has to infer any of the three from the events it happens to have been given.
+
+**The watch mark is joined for what is handed out, and nothing more.** A `sent` fact carries no idempotency key,
+so the projection asks the application for the keys of exactly the messages in the window it cut, or in the growth
+it read — a scoped lookup by message id — and marks those a managed watch minted. Marking before the cut would
+look up the whole history on every read; marking what is handed out keeps a growth poll as cheap as its growth.
