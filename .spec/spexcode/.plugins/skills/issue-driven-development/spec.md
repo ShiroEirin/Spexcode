@@ -3,7 +3,7 @@ title: issue-driven-development
 surface: skill
 status: active
 hue: 30
-desc: How a session works an issue so the Issues page stays true — find the issue you are bound to, read its thread before code, report on the thread (prose for reasoning, a widget for shape), let your declarations be the status, hand work over with assign, and never write state the board already derives. Use when your prompt names an issue thread, when `spex issue mine` returns one, or when a human asks you to take an issue.
+desc: How a session works an issue so the Issues page stays true — find the issue you are bound to, read its thread before code, report on the thread (prose for reasoning, a widget for shape), let your declarations be the status, hand work over with assign, and never write state the board already derives. Use ONLY when your prompt names an issue thread, when `spex issue mine` returns one, or when a human asks you to take an issue — never volunteer issues or this workflow when the human has not mentioned one.
 ---
 
 # issue-driven-development
@@ -14,6 +14,11 @@ record's `issue` pointer, your declarations, your posted files and widgets, your
 skill is about producing those facts in the right place, so the page needs no second channel and you need no
 second vocabulary. One rule underneath everything: **say it where it is read**. Reasoning goes on the thread;
 state goes in a declaration; shape goes in a widget. Nothing goes in a private note the board cannot see.
+
+**This skill is opt-in, never volunteered.** It applies when your prompt names an issue thread, `spex issue mine`
+returns one, or the human asks you to take an issue. When none of that is true — the human simply asked for work
+— do the work: do not bring up issues, do not open one to house the task, and do not steer the conversation into
+this workflow. An issue is the human's way of stating a task, not a form you make them fill.
 
 ## 1. find your issue
 
