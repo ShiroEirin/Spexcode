@@ -67,9 +67,11 @@ with one visible fleet per issue, and close/retire/children/acceptance reachable
   fleet strip: up to four status glyphs in the board's own STATUS_COLOR/STATUS_GLYPH, `+n` past that, the chip
   toned by the work state, every session and status on hover — so the list answers "whose turn is it" without
   re-sorting. The DETAIL status band carries the work-state word and the same strip beside the issue's own
-  state mark. The DETAIL rail carries a **Sessions** section: the fleet as the ONE session forest
-  (`SessionConsoleTreeRow`, fold pods, [[session-forest]]), a plain click opening the session's console and
-  ctrl/⌘ a new tab ([[tab-strip]]), a right-click opening the ONE session context menu (rename, attach,
+  state mark. The DETAIL rail carries a **Sessions** section drawn in [[review-chrome]]'s OWN vocabulary — never the console
+  sidebar's row: each fleet row is the rail's SideValue (a status dot in the board's STATUS_COLOR leading a
+  truncating headline), indented by its depth in the forest with the icon-system chevron as its only fold control,
+  and every control on the page is the ONE `ds-action` rail button (the composer's lifecycle actions wear the same
+  control in their own tones). A right-click opens the ONE session context menu (rename, attach,
   detach, close — the menu offers its select row only to a host that owns a selectable list), and at most
   ONE state-gated action button per row on the same facts the console toolbar gates on: `review` → Merge
   (POST `/api/sessions/:id/merge`, the only declaration that offers a clickable merge — [[state]]),
@@ -88,6 +90,11 @@ with one visible fleet per issue, and close/retire/children/acceptance reachable
   facet in [[review-chrome]]'s secondary Filters menu — `fleet:need` lists exactly the rows whose strip reads "needs you",
   because both read the same function over the same board. Like [[live-session-filter]] it is token surgery + a history
   PUSH, hides when the data is one-sided, and never hides an active off-switch.
+- **A reply draws its author's widgets.** A `[[widget:<name>]]` in a reply written by a board session renders THAT
+  session's widget in the thread ([[widgets]]): the scope is the author's own widget list, so a worker reports
+  shape on the issue with the same picture it draws in its conversation, and a name it never put stays the
+  unresolved chip. `spex issue mine` is the worker's first read — the issue its record points at, with its thread.
+  The behaviour a worker owes the page is the [[issue-driven-development]] skill: say it where it is read.
 - **The composer's explicit send door.** The shared reply composer ([[issues-view]]) reads the draft's `@<id>`
   tokens that name a retained board session EXACTLY (`mentionedSessions`; the autocomplete writes full ids, so a
   prefix, a label, or the `@new`/`@parent:` doors are never deliveries) and shows one **Send to @x** button per

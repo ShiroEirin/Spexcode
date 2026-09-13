@@ -281,6 +281,21 @@ export async function clientCapture(id: string): Promise<CaptureResult> {
 
 // POST /api/sessions/:id/input {kind:"text"} appends the prompt to the durable timeline, then best-effort
 // pokes the resolved adapter. HTTP failure means the append was refused, including a proven stranded transport.
+
+// The issue WRITES through the backend ([[issue-binding]]'s reporting path): a worker in a linked worktree cannot
+// commit to the trunk's local store itself, so its `spex issue reply`/`open` post to the backend it was launched
+// from — the same store-routed verbs the dashboard's composer calls — carrying its session id as the author claim
+// (`by`, honoured only when it names a board session). The response is the route's own receipt.
+export type IssueWriteReceipt = { ok?: boolean; error?: string; id?: string; store?: string; url?: string; replies?: unknown[]; outcomes?: string }
+export async function clientIssueReply(id: string, body: string, evidence: string[] = [], by?: string): Promise<IssueWriteReceipt> {
+  const r = await apiFetch(`/api/issues/${seg(id)}/reply`, post({ body, ...(evidence.length ? { evidence } : {}), ...(by ? { by } : {}) }))
+  return await r.json().catch(() => ({ ok: false, error: `bad backend response (${r.status})` })) as IssueWriteReceipt
+}
+export async function clientIssueOpen(input: { concern: string; nodes?: string[]; body?: string; evidence?: string[]; store?: string }, by?: string): Promise<IssueWriteReceipt> {
+  const r = await apiFetch('/api/issues', post({ ...input, ...(by ? { by } : {}) }))
+  return await r.json().catch(() => ({ ok: false, error: `bad backend response (${r.status})` })) as IssueWriteReceipt
+}
+
 export async function clientSend(id: string, text: string, from?: string): Promise<DispatchResult> {
   await guarded('session send')
   // `from` = the sending agent's own session id; the recipient's log records the sender ([[session-timeline]]) only when

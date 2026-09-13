@@ -345,6 +345,17 @@ app.get('/api/issues/:id', (c) => {
 // never race an async fs event into the stale cache. This explicit nudge is the ONE in-process mechanism
 // (the store dir is deliberately NOT in the watch set); a cross-process write (a CLI `spex issue reply`)
 // reaches the board through its trunk commit via the existing refs watcher instead.
+
+// HTTP carries no authenticated identity, but a worker writing to a thread through the backend it was launched
+// from ([[issue-binding]]'s reporting path — a linked worktree cannot commit to the trunk store itself) may CLAIM its
+// session id as the author. The claim is honoured only when it names a session on this board; anything else is
+// the human, so a forged or stale id can never sign a reply.
+async function claimedAuthor(raw: unknown): Promise<string> {
+  const claim = typeof raw === 'string' ? raw.trim() : ''
+  if (!claim) return 'human'
+  const sessions = await listSessions(true)
+  return sessions.some((s) => s.id === claim) ? claim : 'human'
+}
 app.post('/api/issues/:id/reply', async (c) => {
   if (!issuesEnabled()) return c.json({ error: 'issues workflow is off' }, 403)
   const body = await c.req.json().catch(() => ({}))
@@ -359,7 +370,8 @@ app.post('/api/issues/:id/reply', async (c) => {
     const node = id.includes('#')
       ? mergedIssues({ host: resolveForgeHost(), state: residentForgeState() }, loadSpecsLite().map((s) => s.id)).find((i) => i.id === id)?.nodes[0] ?? null
       : null
-    const r = await replyIssueWithLoopIn(id, text, { author: 'human', node, evidence })
+    const author = await claimedAuthor(body?.by)
+    const r = await replyIssueWithLoopIn(id, text, { author, node, evidence })
     if (r.store !== 'local') await refreshForgeNow()
     // the EXPLICIT deliveries the composer asked for ([[issue-binding]]): exact session ids the human pressed
     // "Send to @x" on. The reply is durable first; each delivery is one ordinary send, reported by outcome, and a
@@ -367,7 +379,7 @@ app.post('/api/issues/:id/reply', async (c) => {
     const deliverTo = Array.isArray(body?.deliverTo) ? [...new Set((body.deliverTo as unknown[]).filter((v): v is string => typeof v === 'string' && !!v.trim()))] : []
     const deliveries: string[] = []
     for (const target of deliverTo) {
-      const sent = await sendText(target, mentionDeliveryPrompt(id, node, 'human', text), 'issues')
+      const sent = await sendText(target, mentionDeliveryPrompt(id, node, author, text), 'issues')
       deliveries.push(sent.ok ? `sent to @${target.slice(0, 8)}` : `@${target.slice(0, 8)} NOT sent (${sent.error})`)
     }
     notifyBoardChanged('full')   // atomic with persistence — see the write-visibility note above the reply route
@@ -421,7 +433,7 @@ app.post('/api/issues', async (c) => {
   // typed evidence[] — content-addressed evidence hashes (the annotator's clip reference rides here, not prose)
   const evidence = Array.isArray(body?.evidence) ? (body.evidence as unknown[]).filter((h): h is string => typeof h === 'string' && /^[0-9a-f]{64}$/.test(h)) : []
   try {
-    const r = await createIssue(concern, { store, nodes, body: postBody, evidence, author: 'human' })
+    const r = await createIssue(concern, { store, nodes, body: postBody, evidence, author: await claimedAuthor(body?.by) })
     if (r.store !== 'local') await refreshForgeNow()
     notifyBoardChanged('full')   // atomic with persistence — see the write-visibility note above the reply route
     return c.json({ ok: true, id: r.id, store: r.store, url: r.url, outcomes: summarizeDispatch(r.outcomes) }, 201)

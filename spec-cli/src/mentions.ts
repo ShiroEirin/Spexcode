@@ -100,7 +100,8 @@ export function newWorkerPrompt(threadId: string, node: string | null, author: s
     : ''
   return `Issue thread "${threadId}"${scope} @-mentioned @new (by ${author}) for a fresh look:\n\n  ${text.trim()}\n\n` +
     settled +
-    `Read the thread (\`spex issue ls --all\`, find ${threadId}) and act on it${node ? `; the relevant node is ${node}` : ''}.`
+    `Read the thread (\`spex issue mine\` — you are bound to it) and act on it${node ? `; the relevant node is ${node}` : ''}. ` +
+    `Work it the issue-driven way (the issue-driven-development skill): report on the thread, let your declarations be your status.`
 }
 
 export function commandWorkerPrompt(sessionId: string, text: string): string {

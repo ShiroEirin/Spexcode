@@ -2224,11 +2224,7 @@ body.is-session-dragging .si-pill.archive:hover {
 .fv-originator.openable:hover { background: color-mix(in srgb, var(--green) 16%, transparent); }
 .fv-originator.openable:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
 .fv-originator.offline { opacity: .7; }
-.fv-close-issue {
-  flex: none; font-family: var(--ui-font); font-size: var(--type-meta); color: var(--orange);
-  background: var(--paper); border: 1px solid color-mix(in srgb, var(--orange) 35%, var(--line));
-  padding: 4px 12px; border-radius: var(--radius); cursor: pointer;
-}
+.fv-close-issue { color: var(--orange); border-color: color-mix(in srgb, var(--orange) 35%, var(--line)); }
 .fv-close-issue:hover { background: var(--orange); color: var(--paper); border-color: var(--orange); }
 .fv-close-issue:disabled { opacity: .5; cursor: default; }
 /* promote is a move to the forge; close keeps the default conclusion hue. */
@@ -4112,46 +4108,36 @@ body.is-session-dragging .si-pill.archive:hover {
   .pg-resize { display: none; }
 }
 
-/* [[issue-binding]]: the issue's FLEET on the Issues page — the list-row strip, the status-band work state,
-   and the detail rail's session forest. The rows ARE the console's rows (`.si-item`), re-fitted to a rail. */
-.fv-fleet { display: inline-flex; align-items: center; gap: 2px; padding: 0 6px 0 4px; border: 1px solid var(--line); border-radius: var(--radius-full); color: var(--muted); font-family: var(--mono); font-size: var(--type-meta); line-height: var(--leading-none); white-space: nowrap; }
-.fv-fleet-need { border-color: color-mix(in srgb, var(--yellow) 55%, var(--line)); background: color-mix(in srgb, var(--yellow) 10%, transparent); }
-.fv-fleet-run { border-color: color-mix(in srgb, var(--green) 55%, var(--line)); background: color-mix(in srgb, var(--green) 8%, transparent); }
+/* [[review-chrome]]'s ONE rail control: a quiet outlined button in the rail's own type. The composer's lifecycle
+   actions (`.fv-close-issue`) are the same control wearing their own tones, so a button here and a button in the
+   action row are one thing. `danger` is the only other tone. */
+.ds-action, .fv-close-issue {
+  flex: none; display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; min-height: 24px;
+  font-family: var(--ui-font); font-size: var(--type-meta); line-height: var(--leading-ui); color: var(--ink2);
+  background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); text-decoration: none; cursor: pointer;
+}
+.ds-action:hover { background: var(--wash-hover); color: var(--ink); border-color: color-mix(in srgb, var(--ink) 25%, var(--line)); }
+.ds-action:disabled, .fv-close-issue:disabled { opacity: .5; cursor: default; }
+.ds-action.danger { color: var(--red); border-color: color-mix(in srgb, var(--red) 35%, var(--line)); }
+.ds-action.danger:hover { background: var(--red); color: var(--paper); border-color: var(--red); }
+.ds-select { max-width: 120px; padding: 2px 4px; min-height: 24px; color: var(--ink2); background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); font-family: var(--ui-font); font-size: var(--type-meta); }
+
+/* [[issue-binding]]: the issue's FLEET in [[review-chrome]]'s vocabulary — the list-row strip and work state are the
+   row-aside tag; the rail rows are SideValues with a status dot, indented by depth; the card is more SideValues. */
+.fv-fleet { display: inline-flex; align-items: center; gap: 2px; font-family: var(--mono); }
 .fv-fleet-glyph { display: inline-block; width: 11px; text-align: center; }
-.fv-fleet-more { margin-left: 2px; }
-.fv-work { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: var(--radius-full); color: var(--muted); background: color-mix(in srgb, var(--ink) 6%, transparent); font-family: var(--ui-font); font-size: var(--type-meta); white-space: nowrap; }
-.fv-work-need { color: var(--yellow); background: color-mix(in srgb, var(--yellow) 12%, transparent); }
-.fv-work-run { color: var(--green); background: color-mix(in srgb, var(--green) 10%, transparent); }
-/* the rail body aligns its children flex-start (shrink-to-fit); the forest and its doors take the rail's full width instead. */
-.fv-fleet-rows { display: flex; flex-direction: column; gap: 1px; align-self: stretch; min-width: 0; margin: 0 -4px; }
-.fv-fleet-row .si-tree-row { --sess-fold-pad-x: 6px; }
-.fv-fleet-row { display: flex; align-items: center; gap: 4px; min-width: 0; }
-.fv-fleet-row .sess-tree-row { flex: 1 1 auto; min-width: 0; }
-/* a <button> sizes to its content under width:auto, so the row is told to take the tree row's width; the
-   positioned tree row would otherwise paint over the action beside it. */
-.fv-fleet-row .si-item { width: 100%; margin: 0; padding: 3px 4px 3px 6px; font-size: var(--type-meta); }
-.fv-fleet-row .si-tree-row::before { display: none; }
-.fv-fleet-row .sess-id { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fv-fleet-act { flex: none; position: relative; z-index: 1; }
-.fv-fleet-empty { color: var(--muted); font-size: var(--type-meta); }
+.fv-fleet-need, .fv-work-need { color: var(--yellow); background: color-mix(in srgb, var(--yellow) 12%, transparent); }
+.fv-fleet-run, .fv-work-run { color: var(--green); background: color-mix(in srgb, var(--green) 10%, transparent); }
+.fv-fleet-rows { display: flex; flex-direction: column; gap: 2px; align-self: stretch; min-width: 0; }
+.fv-fleet-item { min-width: 0; padding-left: calc(var(--fleet-depth, 0) * 14px); }
+.fv-fleet-row { display: flex; align-items: center; gap: 4px; min-width: 0; padding: 1px 2px; border-radius: var(--radius); }
+.fv-fleet-row:hover { background: var(--wash-hover); }
+.fv-fleet-row.open { background: var(--wash-selected); }
+.fv-fleet-fold { flex: none; width: 16px; height: 16px; padding: 0; color: var(--muted); }
+.fv-fleet-row .fv-fleet-name { flex: 1 1 auto; min-width: 0; }
+.fv-fleet-row .ds-action { margin-left: auto; }
+.fv-fleet-card { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; margin: 2px 0 6px 20px; padding: 6px 8px; border-left: 2px solid var(--line); }
+.fv-card-key { flex: none; width: 52px; }
+.fv-fleet-card .ds-action { margin-top: 3px; }
 .fv-fleet-doors { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 4px; align-self: stretch; }
-.fv-fleet-doors .fv-close-issue { display: inline-flex; align-items: center; gap: 4px; }
-.fv-fleet-launcher { max-width: 120px; padding: 1px 4px; color: var(--ink2); background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); font: inherit; font-size: var(--type-meta); }
-.fv-close-issue.fv-life-merge, .fv-close-issue.fv-life-new { color: var(--green); border-color: color-mix(in srgb, var(--green) 35%, var(--line)); }
-.fv-close-issue.fv-life-merge:hover, .fv-close-issue.fv-life-new:hover { background: var(--green); color: var(--paper); border-color: var(--green); }
-.fv-close-issue.fv-life-relaunch { color: var(--blue); border-color: color-mix(in srgb, var(--blue) 35%, var(--line)); }
-.fv-close-issue.fv-life-relaunch:hover { background: var(--blue); color: var(--paper); border-color: var(--blue); }
-/* the fleet row's expanded CARD ([[issue-binding]]): the session's own facts under its row, real anchors into its
-   console surfaces; and the composer's explicit send doors. */
-.fv-fleet-card { display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: 8px; row-gap: 3px; margin: 2px 0 6px 18px; padding: 6px 8px; border: 1px solid var(--line); border-radius: var(--radius); background: color-mix(in srgb, var(--panel2) 60%, transparent); font-size: var(--type-meta); color: var(--ink2); }
-.fv-fleet-card .k { color: var(--muted); }
-.fv-fleet-card .v { min-width: 0; overflow-wrap: anywhere; }
-.fv-fleet-card a { color: var(--blue); text-decoration: none; }
-.fv-fleet-card a:hover { text-decoration: underline; }
-.fv-fleet-card .fv-fleet-links { display: flex; flex-direction: column; gap: 2px; }
-.fv-fleet-card .fv-fleet-open { grid-column: 1 / -1; justify-self: start; margin-top: 2px; }
-.fv-fleet-row .si-item[aria-expanded="true"] { background: var(--wash-selected); }
-.fv-close-issue.fv-send-to { display: inline-flex; align-items: center; gap: 4px; color: var(--blue); border-color: color-mix(in srgb, var(--blue) 35%, var(--line)); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fv-close-issue.fv-send-to:hover { background: var(--blue); color: var(--paper); border-color: var(--blue); }
 .fv-assign-modal .legend-body { min-width: 320px; }
-.fv-assign-none { color: var(--muted); font-size: var(--type-meta); }

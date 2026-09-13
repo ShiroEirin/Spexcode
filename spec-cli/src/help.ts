@@ -470,6 +470,7 @@ edit the spec instead — same commit as the code.`,
     line: 'issue <verb>          concern threads, local + forge merged: ls · show · open · reply · close · promote · links',
     body: `Usage: spex issue ls [--node <id>] [--store local|<host>] [--all] [--json]
        spex issue show <id> [--json]
+       spex issue mine [--json]              the issue THIS session is bound to, with its thread (the worker's first read)
        spex issue open "<concern>" [--store local|<host>] [--node <id>…] [--evidence <hash>…] [--body -|<text>]
        spex issue reply <id> --body -|<text> [--evidence <hash>…]
        spex issue assign <id> <SEL>          bind an existing session to the issue and tell it (SEL = id | id-prefix | branch)

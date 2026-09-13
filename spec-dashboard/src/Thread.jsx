@@ -10,6 +10,8 @@ import { Icon, IconButton } from './icons.jsx'
 import { useLaunchers } from './launch.js'
 import { routeHash } from './route.js'
 import { newTabAnchor } from './tabs.js'
+import { WidgetRef } from './SessionWidget.jsx'
+import { SessionWidgetsContext } from './widgetRefs.js'
 
 // The ONE thread UI ([[issues-view]]): the reply list + the reply composer, shared by every home an
 // Issue thread renders in — the issue detail (BOTH stores: a forge issue's GitHub comments are the same
@@ -60,9 +62,14 @@ export function OriginatorLiveness({ originator, sessions = [], onOpenSession = 
 }
 
 // The reply list: every reply renders as author · time · prose, whatever store it came from. A time anchor
-// in the prose renders as a static chip — its label as written — never hidden.
-export function Replies({ replies }) {
+// in the prose renders as a static chip — its label as written — never hidden. A `[[widget:<name>]]` in a
+// reply written by a board session draws THAT session's widget here ([[widgets]] / [[issue-binding]]): the
+// scope is the author's own widget list, so an agent reports progress on the issue with the same picture it
+// draws in its conversation, and a name the author never put stays the honest unresolved chip.
+export function Replies({ replies, sessions = [] }) {
   return replies.map((r, i) => {
+    const author = (sessions || []).find((s) => s.id === r.by)
+    const widgetScope = { sessionId: author?.id || null, widgets: author?.widgets || [] }
     return (
       <div className="fv-reply" key={i}>
         <div className="fv-reply-meta">
@@ -76,7 +83,8 @@ export function Replies({ replies }) {
               return <a className="doc-link" href={href} {...provenance} onClick={(event) => newTabAnchor(event, href)}>{id}</a>
             }}
             renderTimeAnchor={(meta, token, provenance) => <span className="fv-anchor" {...provenance}>{meta.label}</span>}
-            renderEvidence={(meta, token, provenance) => <span className="fv-reply-media" data-evidence-hash={meta.hash} {...provenance}><BlobMedia hash={meta.hash} alt={meta.alt || 'evidence'} /></span>}>
+            renderEvidence={(meta, token, provenance) => <span className="fv-reply-media" data-evidence-hash={meta.hash} {...provenance}><BlobMedia hash={meta.hash} alt={meta.alt || 'evidence'} /></span>}
+            renderWidgetRef={(name, token, provenance) => <span {...provenance}><SessionWidgetsContext.Provider value={widgetScope}><WidgetRef name={name} /></SessionWidgetsContext.Provider></span>}>
             {r.body}
           </Prose>
         </div>}
@@ -150,7 +158,7 @@ export function ReplyComposer({ onSend, specs = [], sessions = [], focusId = nul
         {err && <span className="fv-error">{err}</span>}
         <div className="fv-actions-end">
           {mentioned.map((s) => (
-            <button type="button" key={s.id} className="fv-close-issue fv-send-to" disabled={busy || !body.trim()} data-tip={t('thread.sendToTitle', { to: s.id })}
+            <button type="button" key={s.id} className="ds-action fv-send-to" disabled={busy || !body.trim()} data-tip={t('thread.sendToTitle', { to: s.id })}
               onMouseDown={(e) => e.preventDefault()} onClick={() => send([s.id])}>
               <Icon name="send" size={12} />{t('thread.sendTo', { to: sessionHeadline(s) })}
             </button>
