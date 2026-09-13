@@ -17,3 +17,6 @@ created: 2026-09-13T10:31:48.349Z
 验收：隔离 fixture（独立 SPEXCODE_HOME、空闲端口、fake launcher）里父 watch 子，子声明三次；真实 Chromium 打开父的会话页：三条通知是系统行、折叠计数正确、普通 agent 消息仍是气泡；API 上 `system: 'watch'` 只出现在这三条上；dashboard 单测、typecheck、lint 0 error；review-report 后 `done --propose merge`。
 
 与另一个 issue「状态提交后的投递 drain 搬回后端进程」并行；两者都碰 spec-cli，但那个改 sessions.ts 的提交路径，这个改 session-timeline.ts 的投影和 dashboard，注意各自同步 main。
+
+<!-- reply: 2499a20b-ae58-4074-87de-3753e02fe63b @ 2026-09-13T10:31:55.034Z -->
+@new:reclaude 接这个 issue，先读线程正文和它引用的 spec 节点，按验收做，严格隔离。
