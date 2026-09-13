@@ -107,3 +107,25 @@ test('presentation order keeps dashboard zones and recursive parent-before-child
     ['need-new', 'need-parent', 'need-child', 'run-new', 'run-old', 'offline'],
   )
 })
+
+test('issueFleet joins sessions to an issue by pointer and inherits descendants at read time', () => {
+  const { issueFleet, fleetWorkState, issueParticipants } = sessionModule
+  const sessions = [
+    { id: 'a', issue: 'local#x', status: 'review', liveness: 'online', parent: null },
+    { id: 'a1', issue: null, status: 'working', liveness: 'online', parent: 'a' },
+    { id: 'a1x', issue: null, status: 'offline', liveness: 'offline', parent: 'a1' },   // a dead child reads `offline` (reconcile publishes liveness as the status)
+    { id: 'b', issue: 'local#x', status: 'retired', liveness: 'offline', parent: null, archived: true },
+    { id: 'c', issue: 'local#other', status: 'working', liveness: 'online', parent: null },
+    { id: 'd', issue: null, status: 'working', liveness: 'online', parent: null },
+  ]
+  const { assigned, fleet } = issueFleet('local#x', sessions)
+  assert.deepEqual(assigned.map((s) => s.id), ['a'], 'only live rows pointing at the issue are assigned; an archived row is off the board')
+  assert.deepEqual(fleet.map((s) => s.id), ['a', 'a1', 'a1x'], 'every descendant belongs to the fleet without a pointer of its own')
+  assert.equal(fleetWorkState(fleet), 'need', 'a review row outranks working children')
+  assert.equal(fleetWorkState(fleet.slice(1)), 'run')
+  assert.equal(fleetWorkState([sessions[2]]), 'offline')
+  assert.equal(fleetWorkState([]), 'none')
+  assert.deepEqual(issueFleet(null, sessions), { assigned: [], fleet: [] })
+  const issue = { by: 'd', replies: [{ by: 'human' }, { by: 'a1' }, { by: 'd' }, { by: 'ghost' }] }
+  assert.deepEqual(issueParticipants(issue, sessions, fleet).map((s) => s.id), ['d'], 'participants resolve to board rows outside the fleet, once each')
+})

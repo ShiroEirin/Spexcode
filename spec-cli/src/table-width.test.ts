@@ -9,7 +9,7 @@ import type { Session } from './sessions.js'
 
 const sess = (over: Partial<Session> = {}): Session => ({
   id: 'abcdef1234', branch: 'node/x', path: '/wt/x',
-  label: 'x', title: 'x', raw: { name: null, title: null }, parent: null,
+  label: 'x', title: 'x', raw: { name: null, title: null }, parent: null, issue: null,
   harness: 'claude', capabilities: { headless: false }, launcher: null,
   lifecycle: 'active', proposal: null, merges: 0, status: 'working', liveness: 'online', note: null, archived: false, closedAt: null,
   prompt: null, promptPreview: null, created: 1, activity: null, sortKey: null,

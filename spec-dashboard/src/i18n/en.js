@@ -410,6 +410,27 @@ export default {
     backToIssues: 'back to issues',
     sideIssue: 'issue',
     sideNode: 'spec node',
+    sideSessions: 'sessions',
+    sideParticipants: 'also on the thread',
+  },
+
+  // the issue's FLEET ([[issue-binding]]): the sessions bound to it, their rolled-up work state, and the
+  // rail's one state-gated action per row.
+  fleet: {
+    none: 'no session',
+    need: ({ n }) => `needs you · ${n}`,
+    run: ({ n }) => `working · ${n}`,
+    offline: ({ n }) => `offline · ${n}`,
+    newWorker: 'New worker',
+    newWorkerTitle: 'dispatch a fresh worker bound to this issue — posts  to the thread',
+    launcher: 'launcher for the new worker',
+    merge: 'Merge',
+    mergeTitle: 'dispatch the gated merge to this session',
+    relaunch: 'Relaunch',
+    relaunchTitle: 'resume this offline session',
+    close: 'Close',
+    closeTitle: 'close this retired session',
+    refused: ({ what }) => `${what} refused`,
   },
 
   thread: {

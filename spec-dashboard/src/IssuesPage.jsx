@@ -14,6 +14,8 @@ import { routeHash } from './route.js'
 import { addressHash, detailBackHash, specAddress } from './address.js'
 import { Icon } from './icons.jsx'
 import IssueLabels from './IssueLabels.jsx'
+import IssueSessions, { FleetStrip, FleetWorkState } from './IssueSessions.jsx'
+import { issueFleet } from './session.js'
 import { useLaunchers } from './launch.js'
 import { useReportDocumentName } from './documentActions.jsx'
 import { usePaneActive } from './workspace.jsx'
@@ -63,7 +65,7 @@ const facetOptions = (data, key, allLabel, labelValue = (value) => value) => (da
   label: option.value === '' ? allLabel : labelValue(option.value),
 }))
 
-export function IssuesListPage({ data, loading, error, query, onQueryText }) {
+export function IssuesListPage({ data, loading, error, query, onQueryText, sessions = [] }) {
   const t = useT()
   if (data && !data.enabled) return <div className="fv-note">{t('session.issuesOff')}</div>
 
@@ -103,6 +105,8 @@ export function IssuesListPage({ data, loading, error, query, onQueryText }) {
             )}
             aside={(
               <>
+                {/* who is on it ([[issue-binding]]): the fleet strip, joined client-side against the board the page already holds */}
+                <FleetStrip fleet={issueFleet(th.id, sessions).fleet} />
                 {(th.replies?.length ?? 0) > 0 && <span className="rl-comments" data-tip={t('session.issuesReplies', { n: th.replies.length })}><Icon name="message-square" size={14} />{th.replies.length}</span>}
                 {stores.length > 1 && <span className={`rl-tag fv-store-${th.store === 'local' ? 'local' : 'forge'}`}>{th.store}</span>}
                 {th.nodes?.[0] && <a className="rl-tag node" href={addressHash(specAddress(th.nodes[0]))}>{th.nodes[0]}</a>}
@@ -186,6 +190,7 @@ export function IssueDetailPage({ issue: th, specs, sessions, onOpenSession, onW
   const labels = Array.isArray(th.labels) ? th.labels : []
   const replies = Array.isArray(th.replies) ? th.replies : []
   const status = th.status || 'open'
+  const { fleet } = issueFleet(th.id, sessions)
   const run = (name, fn) => async () => {
     if (acting) return
     setActing(name)
@@ -209,7 +214,12 @@ export function IssueDetailPage({ issue: th, specs, sessions, onOpenSession, onW
       backHref={detailBackHash('issues')}
       backLabel={t('detail.backToIssues')}
       status={
-        <ReviewState kind="issue" state={status} showLabel className="ds-status-pill" size={16} />
+        <>
+          <ReviewState kind="issue" state={status} showLabel className="ds-status-pill" size={16} />
+          {/* the fleet's rolled-up work state beside the issue's own lifecycle mark ([[issue-binding]]) — derived, never stored */}
+          <FleetWorkState fleet={fleet} />
+          <FleetStrip fleet={fleet} />
+        </>
       }
       side={
         <>
@@ -228,6 +238,10 @@ export function IssueDetailPage({ issue: th, specs, sessions, onOpenSession, onW
               <IssueLabels labels={labels} onSelect={(name) => onQueryText?.(setToken(ISSUE_QUERY_DEFAULT, 'label', name))} />
             </SideSection>
           )}
+          {/* the issue's FLEET ([[issue-binding]]): the sessions dispatched for it, as the one session forest with the
+              one session menu, plus the dispatch door — the rail is where GitHub keeps assignees, and here the
+              assignees are worktrees you can merge, relaunch, or close. */}
+          <IssueSessions issue={th} sessions={sessions} onOpenSession={onOpenSession} onWrite={onWrite} onError={(message) => setActErr(message)} />
           {/* the originator (who filed) + whether their session is still ALIVE — a local thread's `by` is a
               session id (join it against the board for liveness, click through when live); a forge issue's
               `by` is a github login that resolves to no session, so it stays a plain labeled value. */}
@@ -352,7 +366,7 @@ export default function IssuesPage({ param = null, query = EMPTY_QUERY, onOpenSe
     }
     return <IssueDetailPage issue={detail.issue} specs={specs} sessions={sessions} onOpenSession={onOpenSession} onWrite={onWrite} onQueryText={onQueryText} />
   }
-  return <IssuesListPage data={list.data} loading={list.loading} error={list.error} query={query} onQueryText={onQueryText} />
+  return <IssuesListPage data={list.data} loading={list.loading} error={list.error} query={query} onQueryText={onQueryText} sessions={sessions} />
 }
 
 // canonical store display names — the permalink label derives from the issue's OWN `store` identity

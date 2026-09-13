@@ -86,8 +86,8 @@ type SessionVerbHelp = readonly [usage: string | readonly string[], detail: stri
 // Keeping the behavioral prose here prevents a compact probe from becoming a second, drifting manual.
 function sessionHelpDefinitions(): Record<string, SessionVerbHelp> {
   return {
-    new: [['spex session new "<prompt>" [--prompt-file <path>|-] [--launcher <name>] [--name <name>] [--base <commit-ish>]',
-      'spex session new --ssh <address> <FULL-SESSION-ID> "<prompt>" [--prompt-file <path>|-] [--launcher <name>] [--name <name>] [--base <commit-ish>]'],
+    new: [['spex session new "<prompt>" [--prompt-file <path>|-] [--launcher <name>] [--name <name>] [--base <commit-ish>] [--issue <id>]',
+      'spex session new --ssh <address> <FULL-SESSION-ID> "<prompt>" [--prompt-file <path>|-] [--launcher <name>] [--name <name>] [--base <commit-ish>] [--issue <id>]'],
       `Launch a worker in its own node worktree. The materialized system contract reaches it
 automatically; the prompt supplies the task context. Its first [[id]] mention names the
 worktree and, when that node exists, points the worker at its spec.
@@ -95,6 +95,8 @@ worktree and, when that node exists, points the worker at its spec.
 (exclusive with the inline prompt). --name sets the session's initial display name without changing the prompt.
 --base <commit-ish> pins the fork point instead of the source-of-truth branch's current head, so a run can be
 reproduced against a frozen commit; a base that names no commit is refused before anything is created.
+--issue <id> binds the worker to an issue (a local thread id or a forge id such as github#12): recorded on its
+record beside parent, joined at read by the Issues page, never resolved or validated here. A thread's @new dispatch sets it itself.
 The prompt may carry @parent:<SEL> to attach the new row under a retained supervisor; @parent:none creates
 it at top level when no session selector named none resolves (an exact id, unique prefix, or branch still wins).
 The successful receipt names what to read, monitor, and reply on. --ssh uses an existing gateway-to-gateway

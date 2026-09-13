@@ -403,6 +403,25 @@ export default {
     backToIssues: '返回 issues 列表',
     sideIssue: '议题',
     sideNode: '规格节点',
+    sideSessions: '会话',
+    sideParticipants: '也在线程里',
+  },
+
+  fleet: {
+    none: '无会话',
+    need: ({ n }) => `需要你 · ${n}`,
+    run: ({ n }) => `工作中 · ${n}`,
+    offline: ({ n }) => `离线 · ${n}`,
+    newWorker: '新建 worker',
+    newWorkerTitle: '为此 issue 派一个新 worker——向线程发送 ',
+    launcher: '新 worker 的启动器',
+    merge: '合并',
+    mergeTitle: '向该会话派发受门控的合并',
+    relaunch: '重启',
+    relaunchTitle: '恢复这个离线会话',
+    close: '关闭',
+    closeTitle: '关闭这个已退役的会话',
+    refused: ({ what }) => `${what}被拒绝`,
   },
 
   thread: {

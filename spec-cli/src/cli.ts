@@ -106,7 +106,7 @@ function flushExit(code = 0): Promise<never> {
 }
 const has = (name: string) => process.argv.includes(`--${name}`)
 // bare positionals after argv index `from`, skipping flags and their values (selectors for ls/watch).
-const VALUE_FLAGS = new Set(['--status', '--as', '--interval', '--propose', '--note', '--node', '--prompt', '--prompt-file', '--timeout', '--reason', '--out', '--content-dir', '--html', '--password', '--tls-cert', '--tls-key', '--harness', '--launcher', '--harness-session', '--port', '--api', '--api-port', '--host', '--preset', '--limit', '--session', '--depth', '--focus', '--keys', '--ssh', '--allow-stop', '--allow-resume', '--ttl-ms', '--wait-ms', '--adapter', '--thread', '--tmux', '--worktree', '--branch', '--to', '--name', '--base', '--candidate', '--path', '--owner', '--details', '--variant', '--cli', '--count', '--ids', '--title'])
+const VALUE_FLAGS = new Set(['--status', '--as', '--interval', '--propose', '--note', '--node', '--prompt', '--prompt-file', '--timeout', '--reason', '--out', '--content-dir', '--html', '--password', '--tls-cert', '--tls-key', '--harness', '--launcher', '--harness-session', '--port', '--api', '--api-port', '--host', '--preset', '--limit', '--session', '--depth', '--focus', '--keys', '--ssh', '--allow-stop', '--allow-resume', '--ttl-ms', '--wait-ms', '--adapter', '--thread', '--tmux', '--worktree', '--branch', '--to', '--name', '--base', '--issue', '--candidate', '--path', '--owner', '--details', '--variant', '--cli', '--count', '--ids', '--title'])
 const EXPLICIT_BACKEND_ROUTE_FLAGS = ['api', 'port', 'password', 'insecure'] as const
 const EXPLICIT_BACKEND_VALUE_FLAGS = EXPLICIT_BACKEND_ROUTE_FLAGS
   .filter((name) => VALUE_FLAGS.has(`--${name}`))
@@ -235,7 +235,7 @@ function sessionPeerAnchorUsage(verb: 'ls' | 'new', detail: string): never {
   console.error(`spex session ${verb}: ${detail}`)
   console.error(verb === 'ls'
     ? 'usage: spex session ls [SEL...] [--status a,b] [--all] [--json]\n       spex session ls --ssh <address> <FULL-SESSION-ID> [--status a,b] [--json]'
-    : 'usage: spex session new "<prompt>" [--prompt-file <path>|-] [--launcher <name>] [--name <name>] [--base <commit-ish>]\n       spex session new --ssh <address> <FULL-SESSION-ID> "<prompt>" [--prompt-file <path>|-] [--launcher <name>] [--name <name>] [--base <commit-ish>]')
+    : 'usage: spex session new "<prompt>" [--prompt-file <path>|-] [--launcher <name>] [--name <name>] [--base <commit-ish>] [--issue <id>]\n       spex session new --ssh <address> <FULL-SESSION-ID> "<prompt>" [--prompt-file <path>|-] [--launcher <name>] [--name <name>] [--base <commit-ish>] [--issue <id>]')
   process.exit(2)
 }
 
@@ -374,7 +374,7 @@ async function followKit(selectors: string[], verb: string): Promise<{
       label: id,
       title: id,
       raw: { name: null, title: null },
-      parent: state.parentSessionId,
+      parent: state.parentSessionId, issue: null,
       harness: 'unknown',
       capabilities: { headless: false },
       launcher: null,
@@ -891,7 +891,7 @@ if (cmd === 'serve') {
     }
     const newPositionals = positionals(4)
     const peerAnchor = parseSessionPeerAnchor('new', newPositionals)
-    rejectUnknownBackendFlags('spex session new', 4, ['prompt', 'prompt-file', 'launcher', 'name', 'base', 'ssh'])
+    rejectUnknownBackendFlags('spex session new', 4, ['prompt', 'prompt-file', 'launcher', 'name', 'base', 'issue', 'ssh'])
     if (peerAnchor && newPositionals.length > 2) sessionPeerAnchorUsage('new', '--ssh accepts one full-id anchor and one inline prompt at most')
     const { createSession, ownSessionId } = await import('./sessions.js')
     const { withPeerSenderHint } = await import('./session-prompt.js')
@@ -918,9 +918,9 @@ if (cmd === 'serve') {
     }
     const created = peerAnchor
       ? await (await import('./client.js')).clientCreateThroughPeer(peerAnchor.sshAddress, peerAnchor.sessionId, {
-        prompt: peerPrompt, launcher: flag('launcher') ?? undefined, name: flag('name') ?? undefined, base: flag('base') ?? undefined,
+        prompt: peerPrompt, launcher: flag('launcher') ?? undefined, name: flag('name') ?? undefined, base: flag('base') ?? undefined, issue: flag('issue') ?? undefined,
       })
-      : await createSession(prompt, flag('launcher') ?? undefined, flag('name') ?? undefined, flag('base') ?? undefined)
+      : await createSession(prompt, flag('launcher') ?? undefined, flag('name') ?? undefined, flag('base') ?? undefined, flag('issue') ?? undefined)
     let watchEstablished = false
     if (!peerAnchor && created.parent && created.parent === ownSessionId()) {
       try {

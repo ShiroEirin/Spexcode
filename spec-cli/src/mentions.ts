@@ -131,6 +131,8 @@ export async function dispatchNewMentions(text: string, ctx: NewDispatchContext)
           : newWorkerPrompt(ctx.threadId, ctx.node, ctx.author, text, ctx.status),
         parent: spawnParent(author, sessions),
         launcher: request.launcher,
+        // a thread's worker is bound to that thread ([[issue-binding]]); a Command Box child has no issue to inherit.
+        ...(command ? {} : { issue: ctx.threadId }),
       })
       if (created.status !== 201) throw new Error(`${created.code || 'session_create_failed'}: ${created.error}`)
       outcomes.push({ token: request.token, result: 'spawned', detail: created.session.id, ...(settled ? { note: `thread ${settled}` } : {}) })

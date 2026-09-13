@@ -1851,7 +1851,7 @@ test('launchPreflight refuses a launch that cannot succeed, naming which fact se
   const home = mkdtempSync(join(tmpdir(), 'spex-preflight-'))
   const base: SessRec = {
     session: 'preflight-test', governed: true, worktreePath: join(home, 'gone'), branch: null,
-    title: null, name: null, parent: null, status: 'idle', proposal: null, merges: 0, note: null,
+    title: null, name: null, parent: null, issue: null, status: 'idle', proposal: null, merges: 0, note: null,
     sortKey: null, createdAt: 1, harness: 'claude', harnessSessionId: null, runtimeStartToken: null, stopped: false, archived: false, closedAt: null,
     launcher: null, launchCmd: '/bin/true', launchOwner: null,
   }
@@ -1900,7 +1900,7 @@ test('a failed creation-time materialize is reported loud and stamped on the rec
   try {
     const rec: SessRec = {
       session: 'mat-fail-test', governed: true, worktreePath: '/tmp/spex-mat-fail-worktree', branch: 'node/mat-fail',
-      title: 'mat fail', name: null, parent: null,
+      title: 'mat fail', name: null, parent: null, issue: null,
       status: 'queued', proposal: null, merges: 0, note: null, sortKey: null, createdAt: 1,
       harness: 'claude', harnessSessionId: null, runtimeStartToken: null, stopped: false, archived: false, closedAt: null,
       launcher: 'reclaude', launchCmd: 'claude', launchOwner: null,
@@ -2039,7 +2039,7 @@ test('owned queues are public-authority leased and raw-state fenced from legacy 
 
   const base: SessRec = {
     session: 'owned-q', governed: true, worktreePath: '/wt/q', branch: 'node/q', title: null,
-    name: null, parent: null, status: 'queued', proposal: null, merges: 0, note: null, sortKey: null,
+    name: null, parent: null, issue: null, status: 'queued', proposal: null, merges: 0, note: null, sortKey: null,
     createdAt: 1, harness: 'codex', harnessSessionId: null, runtimeStartToken: null, stopped: false, archived: false, closedAt: null, launcher: 'codex', launchCmd: 'codex',
     launchOwner: publicAuthority,
   }
@@ -2174,4 +2174,21 @@ test('the launch readiness identity stage exits on the bound identity, whoever c
     rmSync(home, { recursive: true, force: true })
     assertLiveSessionsUnchanged(liveBefore, 'readiness identity stage fixture')
   }
+})
+
+// [[issue-binding]]: the create boundary takes an opaque issue id as provenance beside `parent` — typed like
+// the other optional inputs, refused when it is not a string, never resolved here.
+test('session-create API types the issue binding without resolving it', serial, async () => {
+  const wrong = await sessionCreateRequest({ prompt: 'probe', launcher: 'claude', issue: 5 })
+  assert.deepEqual(wrong, { status: 400, error: 'session-create issue must be a string' })
+})
+
+test('a record binds to an issue only when written to, and reads back the exact id', () => {
+  const raw = {
+    session_id: 'bound-1', governed: true, worktree_path: '/wt/bound', branch: 'node/bound', title: null, name: null,
+    status: 'active', proposal: null, merges: 0, note: null, sortkey: null, createdAt: 1, harness: 'claude',
+  }
+  assert.equal(fromRaw(raw).issue, null, 'a record written before issue binding has no issue')
+  assert.equal(fromRaw({ ...raw, issue: 'github#12' }).issue, 'github#12')
+  assert.equal(fromRaw({ ...raw, issue: '' }).issue, null, 'an empty pointer is no pointer')
 })

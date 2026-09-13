@@ -89,6 +89,12 @@ ordinary resolver for an exact id, id-prefix, or branch; only a true no-match fo
 `parent: null` with directive provenance. Thus a real session id or branch named `none` remains addressable, a
 prefix/branch collision remains ambiguous, and every other no-match still returns the ordinary `400`.
 
+**A create may bind its issue.** Creation accepts an optional `issue` — the id of the issue the worker is for
+([[issue-binding]]): a thread's `@new` passes its thread id, `spex session new --issue <id>` passes one by hand.
+It is typed like `name` and `base` (a non-string is refused before the transaction), trimmed, bound into the
+idempotency payload, and copied onto the record as provenance beside `parent`. Nothing here resolves it against
+an issue store — the boundary records what the caller said, and the Issues page's read-time join gives it meaning.
+
 **A node branch never tracks the base branch.** Creation passes `--no-track` when forking from any start point,
 including a remote-tracking ref, because landing explicitly merges the base and the node has no business upstream.
 This keeps concurrent creates from contending on `.git/config` while Git writes branch upstream metadata.

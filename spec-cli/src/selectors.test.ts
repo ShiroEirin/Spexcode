@@ -8,7 +8,7 @@ import type { Session } from './sessions.js'
 // resolver sees realistic rows without dragging in tmux/git state.
 function mk(id: string, branch: string | null): Session {
   return {
-    id, branch, label: branch || id, title: branch || id, raw: { name: null, title: null }, path: `/wt/${id}`, parent: null, harness: 'claude', capabilities: { headless: false }, launcher: null,
+    id, branch, label: branch || id, title: branch || id, raw: { name: null, title: null }, path: `/wt/${id}`, parent: null, issue: null, harness: 'claude', capabilities: { headless: false }, launcher: null,
     lifecycle: 'active', proposal: null, merges: 0, status: 'working', liveness: 'online', note: null, archived: false, closedAt: null,
     prompt: null, promptPreview: null, created: 0, activity: null, sortKey: null,
   }
