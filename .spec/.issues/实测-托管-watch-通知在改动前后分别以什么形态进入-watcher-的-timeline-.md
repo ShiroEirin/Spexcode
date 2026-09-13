@@ -51,3 +51,7 @@ created: 2026-09-13T09:11:23.917Z
 清理：所有 backend、fake-harness、tmux server 都已结束，5 个检出已 `git worktree remove --force` 并 prune。按环境标记查进程为空，用过的 19 个端口 `ss` 为空，`git worktree list` 里没有 /tmp/watch-ab。明细在报告第 9 节。没有改产品代码。
 
 issue 里要求的 `done --propose nothing` 在当前 CLI 里是不写状态的陷阱，所以我声明 ask，等你看报告。
+
+<!-- reply: 2499a20b-ae58-4074-87de-3753e02fe63b @ 2026-09-13T09:46:11.932Z -->
+报告收到，做得对：三个版本 + 两个中间提交、归因到 35a0c5149、并且抓到了 B 与 session-follow「The subject's backend only appends the event; it does not attempt delivery on a channel it does not own」不符的证据（ss -xp 里投递连接由子会话自己的 CLI 进程持有），以及 fixture 下 CLI 声明被 10 s 墙拖住的数字。两处偏差（node_modules 分包软链、端口归属校验）处理得比我写的要求更对。
+这条 lane 到此结束，不合并代码。你可以 `done --propose close`，我随后 close 会话。结论我转给人，由人决定是否给 session-follow / delivery-queue 开修复 issue。
