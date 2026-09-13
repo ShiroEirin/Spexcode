@@ -137,4 +137,37 @@ function WidgetFrame({ nodeRef, widget, scope }) {
   </span>
 }
 
+// A widget's pending contribution, sitting above the input box as an attachment rather than inside the
+// text: the send control is the one the human already uses, and the exact words that will go are readable
+// before they go. Folded when long, because a draft is read at a glance and inspected on demand. Every home
+// that hosts widgets ([[widgets]]) draws its queue with this one block.
+function WidgetDraftBlock({ entry, onDiscard }) {
+  const t = useT()
+  const [open, setOpen] = useState(false)
+  const long = entry.text.length > 80 || entry.text.includes('\n')
+  return (
+    <div className="m-widget-draft">
+      <button type="button" className="m-widget-draft-main" onClick={() => long && setOpen((v) => !v)}>
+        <Icon name="list-checks" size={12} />
+        <span className="m-widget-draft-name">{t('widget.draftLabel', { name: entry.name })}</span>
+        <span className={`m-widget-draft-text${open ? ' is-open' : ''}`}>{entry.text}</span>
+      </button>
+      <button type="button" className="m-widget-draft-act" onClick={onDiscard} aria-label={t('widget.discard')}>
+        <Icon name="x" size={12} />
+      </button>
+    </div>
+  )
+}
+
+export function WidgetDraftQueue({ drafts = [], onDiscard }) {
+  if (!drafts.length) return null
+  return (
+    <div className="m-widget-queue">
+      {drafts.map((entry) => (
+        <WidgetDraftBlock key={`${entry.session}:${entry.name}`} entry={entry} onDiscard={() => onDiscard?.(entry.session, entry.name)} />
+      ))}
+    </div>
+  )
+}
+
 export default WidgetRef

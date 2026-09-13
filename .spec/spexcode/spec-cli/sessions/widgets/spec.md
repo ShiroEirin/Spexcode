@@ -1,10 +1,15 @@
 ---
 title: widgets
 hue: 165
-desc: A session-owned named HTML component the agent redraws at will, rendered inline in the conversation, whose only way to reach the agent is a draft the human sends.
+desc: A session-owned named HTML component the agent redraws at will, rendered inline wherever that session's prose is read — its conversation or an issue thread — whose only way to reach the agent is a draft the human sends.
 code:
   - spec-cli/src/session-widgets.ts
 related:
+  - spec-dashboard/src/widgetHost.js
+  - spec-dashboard/src/widgetHost.test.mjs
+  - spec-dashboard/test/issue-thread-widget.e2e.mjs
+  - spec-dashboard/src/Thread.jsx
+  - spec-dashboard/src/IssuesPage.jsx
   - spec-cli/src/cli.ts
   - spec-cli/src/guide.ts
   - spec-dashboard/src/widgetGuide.test.mjs
@@ -134,6 +139,29 @@ finished clicking should not have to travel to the bottom of the page to act on 
 places drive one send: the message that goes is whatever the input box holds, typed text and other
 widgets' blocks included, so pressing a widget's send is pressing the human's own send from a closer
 place, never a second private channel out of that frame.
+
+A pending block is a message on its own. The human can send it without typing anything, using that same send
+control, and a frame's own send presses the same control.
+
+## one host, many homes
+
+A widget does not know where it is drawn, and it never has to. The bridge it calls is the same everywhere; what
+answers it is the HOST, and the host belongs to the surface the widget landed in. Two surfaces are homes: the
+session's conversation, and an issue thread, where a reply the session wrote draws its widget
+([[issue-binding]]). Both keep their pending drafts in one shared host, so the block above the input box, the
+discard that reloads the frame and the send that commits both halves are one implementation, not two that agree
+only because someone kept them in step.
+
+The home decides the three things a widget cannot: where a draft waits (above that surface's own input box),
+what the send posts (the conversation sends its session a message; the thread posts a reply and hands it to the
+session as a message), and where the state is committed. The last one has the same answer in every home: the
+session that OWNS the widget. A thread draws several sessions' widgets at once, and two of them may share a name,
+so the host keys a draft by owner and name, and a thread's send carries each state together with its owner's id.
+
+A thread's send delivers the reply to every owner whose widget contributed. The widget asked that session's
+question, so the answer has to reach that session as a message, exactly as it would in the conversation; the
+reply stays on the thread for everyone else. The state commits once the reply is durable, because the reply is
+the event, and before the delivery, so an owner woken by the message already reads the value that was chosen.
 
 ## where a widget's numbers come from
 

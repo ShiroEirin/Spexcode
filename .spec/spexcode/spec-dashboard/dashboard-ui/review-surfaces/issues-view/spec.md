@@ -161,14 +161,32 @@ theatre is invented for a model that has none. An actually empty issue store say
   through the ONE store-routed verb; sign/accept/reject are not product verbs. Replies post as `'human'`
   via `replyIssue` — a local reply git-commits, a forge reply posts a REAL comment — then the list
   refetches. A reply renders as author · time · prose ([[reply-thread]]) — no per-reply verb, no state
-  badge; a `[[widget:<name>]]` written by a board session draws that session's widget in place ([[issue-binding]]); the
+  badge; a `[[widget:<name>]]` or `[[file:<name>]]` written by a board session resolves against that session's widgets
+  and posted files ([[reply-thread]]), and the widget is live: its draft joins this composer's preview, and the send
+  answers the session that drew it ([[issue-binding]]); the
   fleet's declarations (review / asking / parked / error, with their notes) ride the same thread as read-time ledger
   rows between the replies, never stored on the issue; a `▶m:ss · step` first line is a time anchor; attached blobs render through the one shared evidence
   renderer. An `@session` in any composer is a passive [[mentions]] reference retained in the posted prose;
   an exact `@new` dispatches a fresh worker after the write is durable and flashes its creation outcome through
   [[transient-notices]]. A draft that names a retained session by exact `@<id>` grows one explicit **Send to @x**
   button per session in the action row ([[issue-binding]]): pressing it posts the reply AND hands it to that
-  session as a message; the plain Send never delivers, and the token alone never does.
+  session as a message; the plain Send delivers only to the owners of pending widget drafts, and the token alone
+  never does.
+- **Four references, two composers, two readings — one table.** A human writes in a session's conversation
+  composer ([[conversation]]) and in this thread's composer, and a session's prose is read in its conversation and
+  in this thread. The references behave the same in both places. Where a cell differs, the reason is who reads the
+  text (an agent reads a message, a human reads a thread) or whose lists a reference resolves against:
+
+  | reference | typed in the conversation | typed in the thread | read in the conversation | read in the thread |
+  |---|---|---|---|---|
+  | `@<session>` | the `@` door writes the full id; passive, and the send still goes only to this session | the same door; passive, and an exact id adds a **Send to @x** button that delivers | plain prose | plain prose |
+  | `@new[:<launcher>]`, `@parent:` | the same door; creates a child of this session once the send is durable | the same door; creates a worker bound to this issue once the reply is durable | plain prose | plain prose |
+  | `[[node]]` | the `[[` door; expanded to the node's live spec pointer at send, because an agent reads it | the `[[` door; kept as written, because a human reads it | a link to the node | a link to the node |
+  | `[[file:<name>]]` | no door: the CLI prints it when a session posts a file | no door | opens this session's posted file | opens the reply author's posted file |
+  | `[[widget:<name>]]` | no door: the CLI prints it when a session puts a widget | no door | this session's widget, live: drafts wait above this composer, and the send messages the session and commits the state | the reply author's widget, live: drafts wait above this composer, and the send replies, delivers to the owner and commits the state to the owner |
+
+  A reference that resolves to nothing (a file or widget name the author never posted, or a reply by the human or
+  a forge login) is the same unresolved chip in both readings.
 - **New is a PAGE — `#/issues/new`, GitHub's compose grammar.** The list's New is the page-title action and
   a REAL anchor into that address: a click is the same hash transaction the address bar produces, so
   middle-click/new-tab/copy-address come free and the page itself survives a reload, a bookmark, and a

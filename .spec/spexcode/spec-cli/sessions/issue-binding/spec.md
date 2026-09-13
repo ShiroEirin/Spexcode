@@ -90,10 +90,18 @@ with one visible fleet per issue, and close/retire/children/acceptance reachable
   facet in [[review-chrome]]'s secondary Filters menu — `fleet:need` lists exactly the rows whose strip reads "needs you",
   because both read the same function over the same board. Like [[live-session-filter]] it is token surgery + a history
   PUSH, hides when the data is one-sided, and never hides an active off-switch.
-- **A reply draws its author's widgets.** A `[[widget:<name>]]` in a reply written by a board session renders THAT
-  session's widget in the thread ([[widgets]]): the scope is the author's own widget list, so a worker reports
-  shape on the issue with the same picture it draws in its conversation, and a name it never put stays the
-  unresolved chip. `spex issue mine` is the worker's first read — the issue its record points at, with its thread.
+- **A reply draws its author's widgets, live.** A `[[widget:<name>]]` in a reply written by a board session renders
+  THAT session's widget in the thread ([[widgets]]), and a `[[file:<name>]]` opens THAT session's posted file
+  ([[files]]): the scope is the author's own lists, so a worker reports shape on the issue with the same picture
+  and the same file it shows in its conversation, and a name it never put stays the unresolved chip. The widget is
+  as live as in the conversation, because the issue page is one more home of [[widgets]]' one host: a click
+  drafts into the thread composer's queue, and the send posts the draft text (with whatever was typed) as ONE
+  reply, delivers it to every session whose widget contributed — the question was that session's, so the answer
+  reaches it — and commits each state to the session that OWNS the widget. The write carries
+  `widgets: [{ session, name, state }]`; the server groups them by owner and commits after the reply is durable and
+  before any delivery, whether or not the owner is reachable, naming a commit that failed in the outcome. A worker
+  that needs a decision therefore asks it on the issue with a widget, and receives the answer as a message.
+  `spex issue mine` is the worker's first read — the issue its record points at, with its thread.
   The behaviour a worker owes the page is the [[issue-driven-development]] skill: say it where it is read.
 - **The thread is the ledger.** The declarations of every fleet session — `awaiting` (shown as the board's
   review / done / close-pending word), `asking`, `parked`, `error` — are read from each session's own timeline
@@ -112,8 +120,11 @@ with one visible fleet per issue, and close/retire/children/acceptance reachable
   prefix, a label, or the `@new`/`@parent:` doors are never deliveries) and shows one **Send to @x** button per
   session in its action row. Pressing it posts the reply and hands the same text to that session as one ordinary
   send (`deliverTo` on the reply write; the server posts first, then delivers, and names a failed target in the
-  outcome). The `@` token itself stays a passive reference ([[mentions]]): the BUTTON is the act, so historical
-  prose, quoted tokens, and agent prompts gain no side effect.
+  outcome). A delivery is accepted when it is appended to the target's queue, and the handoff to the target's
+  harness runs after the response, as the Command Box's does: the human's send never waits on a slow pane. The `@` token itself stays a passive reference ([[mentions]]): the BUTTON is the act, so historical
+  prose, quoted tokens, and agent prompts gain no side effect. The plain Send makes one delivery without a button:
+  to the owner of a pending widget draft (above). That answer belongs to the widget, so it goes to the session
+  that asked the question.
 - **Honest faces.** No fleet reads as `no session`, never as an empty control; a refused merge/relaunch/dispatch
   surfaces its error in the detail's action row; everything repaints on the board push the page already
   follows, since the fleet is a join over the board's own `sessions`.

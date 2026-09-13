@@ -2,7 +2,7 @@
 title: reply-thread
 status: active
 hue: 250
-desc: The ONE thread surface every discussion home renders — the reply list, its docked composer, and the marks a reply can carry (time anchor, evidence) — so a local thread and a forge thread are the same component, never two dialects.
+desc: The ONE thread surface every discussion home renders — the reply list, its docked composer, and the marks a reply can carry (time anchor, evidence, its author's files and live widgets) — so a local thread and a forge thread are the same component, never two dialects.
 code:
   - spec-dashboard/src/Thread.jsx
 related:
@@ -10,6 +10,9 @@ related:
   - spec-dashboard/src/Evidence.jsx
   - spec-dashboard/src/mentions.jsx
   - spec-dashboard/src/styles.css
+  - spec-dashboard/src/widgetHost.js
+  - spec-dashboard/src/SessionWidget.jsx
+  - spec-dashboard/src/Transcript.jsx
 ---
 
 # reply-thread
@@ -38,6 +41,16 @@ one governing home, and the two pages reference it instead of re-describing it.
   chip rather than being hidden, and the composer offers no stamp for it. A reply
   row carries no per-reply verb and no state badge: the thread's lifecycle acts (close, promote) ride the
   composer's action row, never a reply.
+- **A reply's session references resolve against its AUTHOR.** A `[[file:<name>]]` and a `[[widget:<name>]]` are
+  a session's own vocabulary ([[files]], [[widgets]]), so a reply written by a board session resolves them against
+  that session's posted files and widgets, through the SAME file-reference and widget components the conversation
+  renders — never a thread-side copy. A reply by the human or a forge login resolves to no session, and a name the
+  author never posted stays the unresolved chip.
+- **The widget host spans both halves.** A home that wants its widgets live passes one `widgetHost`
+  ([[widgets]]' `useWidgetHost`) to the reply list AND the composer: a frame drafts into that host, the composer
+  shows the queue with the one shared draft block in its preview slot, a pending block alone makes the draft
+  sendable, and a frame's own send presses the composer's send. Without a host the widgets still draw, and a click
+  in one reaches nothing.
 - **The writing surface is not this node's to invent.** The composer's shell — the quiet bordered container,
   the auto-growing borderless textarea, the persistent action row, the IME Enter boundary — is [[composer]];
   the `@`/`[[` doors and their menu are [[mentions]]. This node owns what a THREAD needs from them: which
@@ -48,8 +61,10 @@ one governing home, and the two pages reference it instead of re-describing it.
   originator chip where the home can join it against the board, and as a plain labelled value where it
   cannot (a forge login resolves to no session). The chip's behaviour is the shared side-rail primitive's
   ([[review-chrome]]), skinned — never a parallel span/anchor variant.
-- **Delivery stays the caller's.** `onSend(text, evidence)` is the whole write contract: the thread does not
-  know whether it is replying to a local file, a forge comment, or creating a thread lazily — the home routes
-  it by the issue's own store ([[issues]]). An `@session` reference remains in that authored text and never
-  dispatches; `@new` is [[mentions]]'s one explicit worker action, and the thread's composer offers the same
-  launcher chooser every other input box does.
+- **Delivery stays the caller's.** `onSend(text, evidence, { deliverTo, widgets })` is the whole write contract:
+  the thread does not know whether it is replying to a local file, a forge comment, or creating a thread lazily —
+  the home routes it by the issue's own store ([[issues]]). The text is the pending widget blocks' text followed by
+  what was typed; `deliverTo` is the sessions a **Send to @x** button named plus the owner of every pending widget
+  block; `widgets` is each block's `{ session, name, state }`. An `@session` reference remains in that authored
+  text and never dispatches; `@new` is [[mentions]]'s one explicit worker action, and the thread's composer offers
+  the same launcher chooser every other input box does.
