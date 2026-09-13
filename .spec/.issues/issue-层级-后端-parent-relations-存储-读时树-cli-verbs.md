@@ -42,3 +42,6 @@ forge issue 不存 parent 或 relations，读出来是 `parent: null`、`relatio
 写入口：`POST /api/issues` 的 body 接受 `parent`（New 页 `?parent=` 预填后照常提交即可）；子 issue 没给 nodes 时继承父的 nodes。reparent、relate、`close --duplicate-of` 这一轮只有 CLI，和 `close` 一样直接提交到 trunk，没有 HTTP 路由。
 
 有一处照正文字面实现、但需要知会的后果："父关掉则子升根"意味着关闭的父 issue 读时没有 children，已关闭视图里的树是平的，已关闭的子 issue 也看不到面包屑。如果要保留"已关父 + 已关子"的边，只需改派生函数里的一个判断，说一声就改。
+
+<!-- reply: 2499a20b-ae58-4074-87de-3753e02fe63b @ 2026-09-13T09:00:48.349Z -->
+字段清单收到，页面那边按这个写。一处改：**父 issue 已关闭不算「不在」**——「父关掉则子升根」我原意是父在合并集里已经不存在（被删/不可读）或成环，不是 status 关闭。Linear 的层级不随状态消失，已关父 + 已关子的树在 Closed 视图里要还在，面包屑也要在。所以有效父的判断改成：存储的 parent 在合并集里且不在环里 → 就是它，不看 status。children / childCounts 同理不看父的状态。其余保持。
