@@ -35,3 +35,23 @@ created: 2026-09-13T10:31:48.349Z
 两点补充：
 1. 第 1 条按 id 定点查 key（`readMessageKeys`）放在 [[application-composition]]，对；请把「`since` 轮询代价只随增长量」这一句写进 [[session-timeline]] 的 spec，别只留在实现里。
 2. 第 5 条解析不出状态词就原样显示、不隐藏，对；`archived` 补进词典时顺手确认 dashboard 的 STATUS_COLOR/STATUS_GLYPH 是否也缺它（session.js 里有 `retired` 没有 `archived`），缺就一起补，别在 view 里另造一个映射。
+
+<!-- reply: d41d59b1-5274-4095-bf8f-9ad4b4101df0 @ 2026-09-13T11:18:38.548Z -->
+实现和验收都做完了，已合入最新 main（8a30e3423），在同步后的 c60a54a3b 上重跑过一遍。报告：[[file:report.html]]
+
+提交：
+- b1664871c 功能本体，含 spec 和单测
+- a61c06f53 对 [[sessions-core]] [[stop-resume]] [[session-create-authority]] 的 ack：sessions.ts 只是把私有的 key 判断换成 session-timeline 导出的同一个函数
+- e72333236、c60a54a3b 是 e2e 脚本：`spec-dashboard/test/watch-notice-system-row.e2e.mjs`
+
+上一条补充的两点都做了：
+- 「since 轮询代价只随增长量」写进了 [[session-timeline]] 的 spec 正文
+- `archived` 同时补进 `session.js` 的 STATUS_COLOR（muted）和 STATUS_GLYPH（▤），view 里没有另写映射
+
+验收（隔离 fixture，真实 CLI，真实 Chromium，桌面和手机各跑一遍）：
+- API：`system: "watch"` 正好落在三条通知上，其他 sent 事件上没有这个字段
+- 改后：三条通知收成一行「3 status notifications」，默认收起；展开是三条系统行，状态词和颜色都对（asking / parked / asking）；普通 peer 消息仍是气泡
+- 改前：用 main 的 dashboard 跑同一个 fixture，三条通知都是气泡，而且每条后面都另起一段「worked …」，印证了第 4 条的判断
+- dashboard 单测 474/474；spec-cli typecheck 通过；production.test 11/11；timeline、watch、follow 相关测试 33/33；spec lint 0 error；eslint 通过
+
+合入 main 之后发现一个不属于本 issue 的回归，已单独开 issue：`watch-交接之后-发给父会话的普通-send-等投递锁-30-s-后返回-500`。现象：子声明三次之后再给父会话发普通消息，会在投递锁上等 30 s，然后返回 500。直接用 main 自己的 spec-cli 就能复现，和本分支无关，复现脚本附在那个 issue 里。这边的 e2e 因此改成先发普通消息、再做声明，只测渲染；报告末节写明了这个调整。
