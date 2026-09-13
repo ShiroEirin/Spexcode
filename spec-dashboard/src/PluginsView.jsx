@@ -89,7 +89,7 @@ function Detail({ name, row, t }) {
       </dl>
       <div className="pg-detail-body">
         {error && <p className="pg-error">{t('plugins.failed', { reason: error })}</p>}
-        {!error && !detail && <p className="pg-detail-wait">{t('plugins.reading')}</p>}
+        {!error && !detail && <p className="pg-detail-wait">{t('plugins.loading')}</p>}
         {detail && <>
           <pre className="pg-text pg-prose">{detail.body}</pre>
           {detail.files.map((file) => (
@@ -140,8 +140,8 @@ export default function PluginsView() {
     }
   }, [query, surface])
 
-  if (error) return <div className="pg-board"><p className="pg-error">{t('plugins.failed', { reason: error })}</p></div>
-  if (!view) return <div className="pg-board" />
+  if (error) return <div className="pg-frame"><p className="pg-error">{t('plugins.failed', { reason: error })}</p></div>
+  if (!view) return <div className="pg-frame" />
 
   const { rows, spine, profile } = view
   const shown = rows.filter(keep)
@@ -159,7 +159,7 @@ export default function PluginsView() {
   )
 
   return (
-    <div className="pg-board">
+    <div className="pg-frame">
       {/* The bar carries what the reader acts WITH — never what the tab strip already says. */}
       <header className="pg-bar">
         <span className="pg-count">{t('plugins.count', { shown: shown.length, total: rows.length })}</span>

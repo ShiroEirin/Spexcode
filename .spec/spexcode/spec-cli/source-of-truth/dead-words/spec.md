@@ -51,3 +51,11 @@ the retired term in a new product protocol.
 The scanner distrusts itself: every run starts with a self-check that plants a dead word in a string,
 one in a comment, and one in a regex, and refuses to report a clean tree (exit 2) unless exactly the
 string hit fires — a silently broken tokenizer must not green-wash the gate.
+
+**A gate nobody can run is a gate that catches things after they land.** This one lived only in the
+workflow for a while, so `npm run lint` — the gate the contract tells a worker to run — was green on a
+tree the gate was already failing, and the red arrived on main, after the merge, belonging to nobody.
+So it runs inside `npm run lint`, where naming is already judged, and CI calls that same script rather
+than the file: one command, one verdict, no way for a workstation and CI to disagree about what is
+dead. `ci-suite-parity` holds the general form — a CI step spelled as a bare `node scripts/…` is a
+gate no one can reach by name, and it fails.

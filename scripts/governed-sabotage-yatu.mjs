@@ -17,7 +17,7 @@
 //
 // usage: node scripts/governed-sabotage-yatu.mjs
 import { spawn, spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -181,7 +181,6 @@ await stopBackend()
 
 // ---------------------------------------------------------------- counts, with calibration in the same tracer
 const backendText = readTrace(backendTrace)
-const runtimeReads = hits(backendText, loopStart).filter((l) => !hits(backendText.slice(beforeRestart, restartLoopStart)).includes(l)).length
 const runtimeReadsSplit = { firstServe: hits(backendText.slice(loopStart, beforeRestart)).length, restartServe: hits(backendText, restartLoopStart).length }
 // Every CLI call is a fresh process, and a fresh process must look for residue at its first canonical access — that
 // is the cutover contract, and with poison planted it absorbs (quarantines) it. Its reads are therefore importer reads
