@@ -46,18 +46,26 @@ jobs:
           node -e "JSON.parse(require('fs').readFileSync('distribution/.claude-plugin/marketplace.json','utf8'))"
           node -e "JSON.parse(require('fs').readFileSync('distribution/.agents/plugins/marketplace.json','utf8'))"
 
+      # A DEPLOY KEY, not an account token. The only thing this job may do outside this repository is push one
+      # mirror, and a deploy key is scoped to exactly that repository — an account token in CI could write to
+      # everything the account owns, for a job whose whole purpose is to copy four files.
       - name: Mirror distribution/ into the plugins repository
         env:
           MIRROR_REPO: ${{ vars.SPEXCODE_DISTRIBUTION_REPO }}
-          MIRROR_TOKEN: ${{ secrets.SPEXCODE_DISTRIBUTION_TOKEN }}
+          MIRROR_KEY: ${{ secrets.SPEXCODE_DISTRIBUTION_KEY }}
         shell: bash
         run: |
           set -euo pipefail
-          if [ -z "${MIRROR_REPO:-}" ] || [ -z "${MIRROR_TOKEN:-}" ]; then
-            echo "SPEXCODE_DISTRIBUTION_REPO / SPEXCODE_DISTRIBUTION_TOKEN are not configured" >&2
+          if [ -z "${MIRROR_REPO:-}" ] || [ -z "${MIRROR_KEY:-}" ]; then
+            echo "SPEXCODE_DISTRIBUTION_REPO / SPEXCODE_DISTRIBUTION_KEY are not configured" >&2
             exit 1
           fi
-          git clone --depth 1 "https://x-access-token:${MIRROR_TOKEN}@github.com/${MIRROR_REPO}.git" mirror
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$MIRROR_KEY" > ~/.ssh/mirror_key
+          chmod 600 ~/.ssh/mirror_key
+          ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/mirror_key -o IdentitiesOnly=yes"
+          git clone --depth 1 "git@github.com:${MIRROR_REPO}.git" mirror
           # Replace the tree wholesale so a package deleted here disappears there; the mirror owns nothing of
           # its own except its git history.
           find mirror -mindepth 1 -maxdepth 1 -not -name .git -exec rm -rf {} +
