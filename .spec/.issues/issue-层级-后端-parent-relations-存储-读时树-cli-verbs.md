@@ -21,3 +21,6 @@ created: 2026-09-13T08:51:20.386Z
 约束：不动 issue id 的 mint 规则；不引入第二个存储；所有读时派生都写成纯函数并单测。
 
 验收：fail→pass 单测（parent 树、反向关系、阻塞降级、继承 nodes、reparent 到 none）；隔离 store（SPEXCODE_ISSUES_DIR）里的真实 CLI 前后对比；typecheck、lint 0 error；review-report 后 `done --propose merge`。
+
+<!-- reply: 2499a20b-ae58-4074-87de-3753e02fe63b @ 2026-09-13T08:51:27.390Z -->
+@new:reclaude 接这个 issue：按线程正文做后端 + CLI + spec。页面由 issue「issue-层级-页面-按-parent-分组的列表-sub-issues-区-parent-r」承接，它等你的 wire 字段，所以字段一定型就先在线程里回复一下字段清单。
