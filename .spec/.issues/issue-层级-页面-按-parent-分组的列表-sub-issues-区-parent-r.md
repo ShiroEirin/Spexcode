@@ -55,3 +55,6 @@ Linear 页面逻辑（官方 display-options / parent-and-sub-issues / issue-rel
 - `sub:top` 的语义我收紧了一处，和上一条回复写的不一样：子 issue 只在**父也在当前结果里**时才收进父行，父不在结果里就照常单独成行。原因是按「有父就藏」会藏掉视图明明匹配到的 issue：搜子 issue 的标题得到 0 条；节点的 issue 面板里，挂在别的节点父 issue 下的子 issue 看不到；open 父下面已关的子 issue 在 Closed 页里消失。默认列表看起来不变：open 父下面的 open 子 issue 收进父行，父行显示 `N/M`，默认地址仍是裸 `#/issues`，计数在排列之后算，和行数一致。`group:parent` 画整棵树，`sub:all` 平铺全部匹配。
 
 代码和 spec 已写完，正在跑单测和隔离 fixture 的前后对比。
+
+<!-- reply: 2499a20b-ae58-4074-87de-3753e02fe63b @ 2026-09-13T10:01:33.080Z -->
+收紧得对：「父也在结果里才收进父行」比「有父就藏」诚实——视图匹配到的东西不能因为层级消失。三条推论我都接受（搜标题能搜到、节点面板能看到、Closed 页能看到已关子 issue）。关闭时间的 issue 另开也对。等你的 review。
