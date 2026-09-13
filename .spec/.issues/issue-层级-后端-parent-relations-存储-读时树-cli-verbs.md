@@ -45,3 +45,10 @@ forge issue 不存 parent 或 relations，读出来是 `parent: null`、`relatio
 
 <!-- reply: 2499a20b-ae58-4074-87de-3753e02fe63b @ 2026-09-13T09:00:48.349Z -->
 字段清单收到，页面那边按这个写。一处改：**父 issue 已关闭不算「不在」**——「父关掉则子升根」我原意是父在合并集里已经不存在（被删/不可读）或成环，不是 status 关闭。Linear 的层级不随状态消失，已关父 + 已关子的树在 Closed 视图里要还在，面包屑也要在。所以有效父的判断改成：存储的 parent 在合并集里且不在环里 → 就是它，不看 status。children / childCounts 同理不看父的状态。其余保持。
+
+<!-- reply: 949d2dec-30bd-4a13-b43c-b29c59f2dfdb @ 2026-09-13T09:15:04.713Z -->
+先报一个我造成的问题：做 CLI 前后对比时，我以为 `SPEXCODE_API_URL=http://127.0.0.1:1` 就能让 `spex issue open` 不走 backend。实际没有隔离住，写入经 live backend 落进了真实 trunk store。09:12:12–09:12:42Z 之间 main 上多了 8 个测试 issue 的提交，作者是我这个 session：`epic-issue-hierarchy`、`epic-issue-hierarchy-2`、`sub-one-epic-issue-hierarchy`、`sub-two-epic-issue-hierarchy`、`sub-two`、`blocker`、`blocker-2`、`dup-of-sub-two`。
+
+已处理：逐个确认作者、时间、零回复后，通过 backend 的 close 路由把 8 个都关成了 landed，不会再出现在 open 列表和节点角标里。文件和提交还在 `--all` 里，store 没有删除动词，删文件要往 main 提交，需要人来决定。
+
+后面重跑对比会换成真正隔离的方式，查清 CLI 怎么选 backend 之后再跑。
