@@ -267,7 +267,7 @@ export function IssueDetailPage({ issue: th, specs, sessions, onOpenSession, onW
         // leaking onto another issue's thread.
         <ReplyComposer
           key={th.id}
-          onSend={(text, evidence) => postIssueReply(th.id, text, evidence)}
+          onSend={(text, evidence, opts) => postIssueReply(th.id, text, evidence, opts)}
           specs={specs}
           sessions={sessions}
           focusId={nodes[0] || null}

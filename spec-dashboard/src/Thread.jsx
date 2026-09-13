@@ -3,10 +3,10 @@ import Prose from './Prose.js'
 import { BlobMedia } from './Evidence.jsx'
 import { useMentionAutocomplete, TriggerButton, typeTrigger } from './mentions.jsx'
 import { ComposerSurface, ComposerTextarea, composingKey } from './Composer.jsx'
-import { STATUS_COLOR, liveSession } from './session.js'
+import { STATUS_COLOR, liveSession, mentionedSessions, sessionHeadline } from './session.js'
 import { SideValue } from './ReviewShell.jsx'
 import { useT } from './i18n/index.jsx'
-import { IconButton } from './icons.jsx'
+import { Icon, IconButton } from './icons.jsx'
 import { useLaunchers } from './launch.js'
 import { routeHash } from './route.js'
 import { newTabAnchor } from './tabs.js'
@@ -108,18 +108,22 @@ export function ReplyComposer({ onSend, specs = [], sessions = [], focusId = nul
   const { launchers } = useLaunchers()
   const ac = useMentionAutocomplete({ inputRef: taRef, value: body, setValue: setBody, specs, sessions, launchers, focusId, up: true })
   const frames = bodyEvidence(body)         // the blob links currently in the body (preview + the send's evidence[])
+  // the retained sessions the draft names by exact id ([[issue-binding]]): each gets an explicit "Send to @x" door
+  // in the action row. The token stays a passive reference ([[mentions]]); the BUTTON is the act, and it hands
+  // the reply to that session beside posting it — one press, one durable reply, one ordinary send.
+  const mentioned = mentionedSessions(body, sessions)
 
   // the grammar's discoverability doors ([[mentions]]) — the ONE shared insertion mechanism (`typeTrigger`),
   // so this composer and the Issues compose page open the same menu the same way. No second menu, no
   // dispatch: the button only types what the hand would.
   const insertTrigger = (trigger) => typeTrigger(taRef.current, trigger, setBody, (el) => ac.sync(el))
 
-  const send = async () => {
+  const send = async (deliverTo = []) => {
     const text = body.trim()
     if (!text || busy) return
     setBusy(true)
     try {
-      const res = await onSend(text, bodyEvidence(text))
+      const res = await onSend(text, bodyEvidence(text), { deliverTo })
       if (res?.ok) { setBody(''); setErr(''); await onDone?.(res.outcomes || '') }
       else setErr(res?.error || 'reply failed')
     } finally { setBusy(false) }
@@ -145,9 +149,15 @@ export function ReplyComposer({ onSend, specs = [], sessions = [], focusId = nul
         <TriggerButton label={t('thread.mentionNode')} disabled={busy} onClick={() => insertTrigger('[[')}>[[</TriggerButton>
         {err && <span className="fv-error">{err}</span>}
         <div className="fv-actions-end">
+          {mentioned.map((s) => (
+            <button type="button" key={s.id} className="fv-close-issue fv-send-to" disabled={busy || !body.trim()} data-tip={t('thread.sendToTitle', { to: s.id })}
+              onMouseDown={(e) => e.preventDefault()} onClick={() => send([s.id])}>
+              <Icon name="send" size={12} />{t('thread.sendTo', { to: sessionHeadline(s) })}
+            </button>
+          ))}
           {actionsEnd}
           <IconButton icon="send" size={14} className="fv-send" label={busy ? t('session.issuesSending') : t('session.issuesSend')}
-            disabled={busy || !body.trim()} onMouseDown={(e) => e.preventDefault()} onClick={send} />
+            disabled={busy || !body.trim()} onMouseDown={(e) => e.preventDefault()} onClick={() => send()} />
         </div>
       </div>
   )

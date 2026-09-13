@@ -10,7 +10,8 @@ import { closeIssue, createIssue, findIssue, mergedIssues, promote } from './iss
 import { replyIssueWithLoopIn } from './loop-in.js'
 import { residentForgeState, refreshForgeNow } from '@spexcode/spec-forge/resident'
 import { resolveForgeHost } from '@spexcode/spec-forge/drivers'
-import { dispatchNewMentions, summarizeDispatch, summarizeLoopIn } from './mentions.js'
+import { dispatchNewMentions, mentionDeliveryPrompt, summarizeDispatch, summarizeLoopIn } from './mentions.js'
+import { AssignError, assignIssueSession, summarizeAssign } from './issue-assign.js'
 import { resolveLayout, mainBranch } from '@spexcode/spec-core'
 import { getBoardJson } from './graphCache.js'
 import { boardStream, closeBoardFileWatchers, ensureBoardFileWatchers, notifyBoardChanged, flushDeferredWorktreeRegistryChange } from './graphStream.js'
@@ -360,11 +361,38 @@ app.post('/api/issues/:id/reply', async (c) => {
       : null
     const r = await replyIssueWithLoopIn(id, text, { author: 'human', node, evidence })
     if (r.store !== 'local') await refreshForgeNow()
+    // the EXPLICIT deliveries the composer asked for ([[issue-binding]]): exact session ids the human pressed
+    // "Send to @x" on. The reply is durable first; each delivery is one ordinary send, reported by outcome, and a
+    // dead or unknown target is named rather than swallowed. Never inferred from the prose's @ tokens.
+    const deliverTo = Array.isArray(body?.deliverTo) ? [...new Set((body.deliverTo as unknown[]).filter((v): v is string => typeof v === 'string' && !!v.trim()))] : []
+    const deliveries: string[] = []
+    for (const target of deliverTo) {
+      const sent = await sendText(target, mentionDeliveryPrompt(id, node, 'human', text), 'issues')
+      deliveries.push(sent.ok ? `sent to @${target.slice(0, 8)}` : `@${target.slice(0, 8)} NOT sent (${sent.error})`)
+    }
     notifyBoardChanged('full')   // atomic with persistence — see the write-visibility note above the reply route
-    return c.json({ ok: true, replies: r.replies, url: r.url, outcomes: [summarizeDispatch(r.outcomes), summarizeLoopIn(r.loopIn)].filter(Boolean).join('  |  ') })
+    return c.json({ ok: true, replies: r.replies, url: r.url, outcomes: [summarizeDispatch(r.outcomes), summarizeLoopIn(r.loopIn), ...deliveries].filter(Boolean).join('  |  ') })
   } catch (e) {
     const msg = String((e as Error).message || e)
     return c.json({ error: msg }, id.includes('#') ? 502 : 404)
+  }
+})
+// bind an EXISTING session to this issue ([[issue-binding]]): the ordinary session selector picks the session, its
+// record gains the `issue` pointer, and the session is told through the one send path. Re-pointing is allowed and
+// reported; a closed session or an unknown/ambiguous selector fails with the resolver's own words.
+app.post('/api/issues/:id/assign', async (c) => {
+  if (!issuesEnabled()) return c.json({ error: 'issues workflow is off' }, 403)
+  const id = c.req.param('id')
+  const issue = findIssue(id, { host: resolveForgeHost(), state: residentForgeState() }, loadSpecsLite().map((s) => s.id))
+  if (!issue) return c.json({ error: `no issue '${id}'` }, 404)
+  const body = await c.req.json().catch(() => ({}))
+  try {
+    const outcome = await assignIssueSession(issue, typeof body?.session === 'string' ? body.session : '', 'human')
+    notifyBoardChanged('sessions')
+    return c.json({ ...outcome, outcomes: summarizeAssign(outcome) })
+  } catch (e) {
+    if (e instanceof AssignError) return c.json({ ok: false, error: e.message }, e.status as 400)
+    return c.json({ ok: false, error: String((e as Error).message || e) }, 500)
   }
 })
 // store-routed lifecycle close ([[issues]]): local resolves the local thread, forge closes the remote

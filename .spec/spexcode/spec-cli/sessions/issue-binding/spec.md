@@ -9,6 +9,9 @@ related:
   - spec-cli/src/session-record.ts
   - spec-cli/src/sessions.ts
   - spec-cli/src/mentions.ts
+  - spec-cli/src/issue-assign.ts
+  - spec-cli/src/issues-cli.ts
+  - spec-cli/src/index.ts
   - spec-cli/src/cli.ts
   - spec-cli/src/sessions.test.ts
   - packages/spec-core/src/layout.ts
@@ -43,9 +46,14 @@ with one visible fleet per issue, and close/retire/children/acceptance reachable
   id against a store: the create boundary records what the caller said, and the Issues page's join is what
   gives it meaning. The three writers: a thread's `@new` ([[mentions]]) passes the containing thread id — a
   Command Box `@new` has no issue to inherit and passes none; `spex session new --issue <id>` (and the peer
-  create it forwards) passes it by hand; and an existing session is bound later by the assign verb
-  ([[issues-cli]], pending: `spex issue assign <issue> <SEL>` = write the pointer + one ordinary
-  `session send` carrying the thread — the twin of [[session-reparent]], moving `issue` instead of `parent`).
+  create it forwards) passes it by hand; and an existing session is bound later by the assign verb — `spex issue assign <issue> <SEL>` and
+  `POST /api/issues/:id/assign {session}` are one function (`assignIssueSession`): the ordinary session selector
+  ([[session-selectors]]) over the working board picks the session (a closed one is off the board and refused; an
+  unknown or ambiguous selector fails with the resolver's own words), its record gains the pointer under the
+  record lock (re-pointing from another issue is allowed and named in the outcome), and the session is TOLD through
+  the one ordinary send path with an assignment message that says it is taking this thread on beside its own task.
+  Both halves are one verb: a pointer nobody told the worker about is a lie on the board, and a message without the
+  pointer leaves the Issues page blind. It is the twin of [[session-reparent]], moving `issue` instead of `parent`.
 - **Joined at read, descendants inherited.** The dashboard's `issueFleet(issueId, sessions)` is the ONE
   issue→session join: `assigned` are the unarchived board rows whose `issue` is this id; `fleet` adds every
   descendant of those rows through the same read-time tree the forest is drawn from — a worker's children
@@ -65,11 +73,23 @@ with one visible fleet per issue, and close/retire/children/acceptance reachable
   detach, close — the menu offers its select row only to a host that owns a selectable list), and at most
   ONE state-gated action button per row on the same facts the console toolbar gates on: `review` → Merge
   (POST `/api/sessions/:id/merge`, the only declaration that offers a clickable merge — [[state]]),
-  `retired` → Close (the menu's own confirm), liveness `offline` and not `queued` → Relaunch. The section's
-  **New worker** door posts the SAME durable `@new[:<launcher>]` token a hand would type as a reply on the
-  thread, so the dispatch is recorded where it happened and spawns through the one grammar; a second launcher
-  is chosen through the shared launcher list. A **participants** row lists the other thread voices as
-  liveness chips. The originator row is unchanged.
+  `retired` → Close (the menu's own confirm), liveness `offline` and not `queued` → Relaunch. A plain click on a
+  row opens its **card** in place (a second click closes it): the session's status word and declaration note,
+  its branch, and its posted files / web services / widgets as REAL anchors into the console surface that shows
+  each ([[resource-tabs]]' address grammar) — every fact already on the wire, no second viewer — plus an **Open
+  console** anchor, the door a plain click used to be; ctrl/⌘-click still opens the console in a new tab. The
+  section's **New worker** door posts the SAME durable `@new[:<launcher>]` token a hand would type as a reply on
+  the thread, so the dispatch is recorded where it happened and spawns through the one grammar; a second
+  launcher is chosen through the shared launcher list. The **Assign…** door opens the ONE session picker
+  ([[session-picker]]) in a modal over every retained board session not yet on the issue and calls the assign
+  verb. A **participants** row lists the other thread voices as liveness chips. The originator row is unchanged.
+- **The composer's explicit send door.** The shared reply composer ([[issues-view]]) reads the draft's `@<id>`
+  tokens that name a retained board session EXACTLY (`mentionedSessions`; the autocomplete writes full ids, so a
+  prefix, a label, or the `@new`/`@parent:` doors are never deliveries) and shows one **Send to @x** button per
+  session in its action row. Pressing it posts the reply and hands the same text to that session as one ordinary
+  send (`deliverTo` on the reply write; the server posts first, then delivers, and names a failed target in the
+  outcome). The `@` token itself stays a passive reference ([[mentions]]): the BUTTON is the act, so historical
+  prose, quoted tokens, and agent prompts gain no side effect.
 - **Honest faces.** No fleet reads as `no session`, never as an empty control; a refused merge/relaunch/dispatch
   surfaces its error in the detail's action row; everything repaints on the board push the page already
   follows, since the fleet is a join over the board's own `sessions`.

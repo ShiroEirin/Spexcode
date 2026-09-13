@@ -299,3 +299,19 @@ export const issueParticipants = (issue, sessions = [], fleet = []) => {
   }
   return out
 }
+
+// the `@<session>` tokens of a draft that name a RETAINED board session, exactly ([[issue-binding]]'s explicit
+// send door): the autocomplete writes full ids, so only an exact id match counts — a prefix, a display label,
+// or the reserved `@new`/`@parent:` doors are not deliveries. Each session once, in order of first mention.
+const AT_TOKEN = /(?:^|\s)@([\p{L}\p{N}_-]+)/gu
+export const mentionedSessions = (text, sessions = []) => {
+  const out = []
+  const seen = new Set()
+  for (const m of String(text || '').matchAll(AT_TOKEN)) {
+    const id = m[1]
+    if (seen.has(id)) continue
+    const s = (sessions || []).find((x) => x.id === id && !isArchived(x))
+    if (s) { seen.add(id); out.push(s) }
+  }
+  return out
+}

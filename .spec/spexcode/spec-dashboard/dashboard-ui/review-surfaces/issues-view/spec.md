@@ -163,7 +163,9 @@ theatre is invented for a model that has none. An actually empty issue store say
   badge; a `▶m:ss · step` first line is a time anchor; attached blobs render through the one shared evidence
   renderer. An `@session` in any composer is a passive [[mentions]] reference retained in the posted prose;
   an exact `@new` dispatches a fresh worker after the write is durable and flashes its creation outcome through
-  [[transient-notices]].
+  [[transient-notices]]. A draft that names a retained session by exact `@<id>` grows one explicit **Send to @x**
+  button per session in the action row ([[issue-binding]]): pressing it posts the reply AND hands it to that
+  session as a message; the plain Send never delivers, and the token alone never does.
 - **New is a PAGE — `#/issues/new`, GitHub's compose grammar.** The list's New is the page-title action and
   a REAL anchor into that address: a click is the same hash transaction the address bar produces, so
   middle-click/new-tab/copy-address come free and the page itself survives a reload, a bookmark, and a

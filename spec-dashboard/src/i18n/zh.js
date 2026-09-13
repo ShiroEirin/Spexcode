@@ -422,12 +422,25 @@ export default {
     close: '关闭',
     closeTitle: '关闭这个已退役的会话',
     refused: ({ what }) => `${what}被拒绝`,
+    assign: '指派…',
+    assignTitle: '把一个已存在的会话挂到这个 issue 上，并通知它',
+    assignPick: '选择要挂到这个 issue 的会话',
+    assignNone: '看板上的会话都已经在这个 issue 上了',
+    openConsole: '打开控制台',
+    cardStatus: '状态',
+    cardBranch: '分支',
+    cardFiles: '文件',
+    cardWeb: '网页',
+    cardWidgets: '组件',
+    cardNothing: '尚未发布任何东西',
   },
 
   thread: {
     mentionActor: '插入 @ —— 提及会话',
     mentionNode: '插入 [[ —— 引用规格节点',
     originatorIssue: '打开发起此 issue 的会话：{by}',
+    sendTo: ({ to }) => `发给 @${to}`,
+    sendToTitle: '发布这条回复，并把它作为消息交给会话 {to}',
   },
 
 

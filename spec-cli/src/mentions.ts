@@ -188,6 +188,15 @@ function originatorPrompt(threadId: string, node: string | null, replier: string
     `\`spex issue ls --all\` lists threads and \`spex issue reply ${threadId} --body -\` replies.`
 }
 
+// the EXPLICIT delivery a composer asks for beside its reply ([[issue-binding]]): the human pressed "Send to @x", so
+// the reply is handed to that session as a message — a deliberate act, never a side effect of the `@` token, which
+// stays a passive reference. Distinct wording from the originator courtesy: this one IS addressed to the reader.
+export function mentionDeliveryPrompt(threadId: string, node: string | null, replier: string, text: string): string {
+  const re = node ? ` (re: [[${node}]])` : ''
+  return `${replier} sent you a reply from issue thread "${threadId}"${re}:\n\n  ${text.trim()}\n\n` +
+    `Read the thread (\`spex issue show ${threadId}\`) and act on what concerns you; reply with \`spex issue reply ${threadId} --body -\`.`
+}
+
 export async function notifyOriginator(
   chain: (string | null)[],
   replier: string,

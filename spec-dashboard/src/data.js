@@ -670,10 +670,21 @@ export async function loadIssue(id) {
 // human writes — store-routed through the unified issue port ([[issues-view]] / [[issues]]) — local commits
 // to the trunk store, forge choices call the configured driver. @session stays passive; @new creates only
 // after the write commits. Returns parsed json ({ ok, …, outcomes }).
-export async function postIssueReply(id, body, evidence) {
+// `deliverTo` carries the exact session ids the human pressed "Send to @x" for ([[issue-binding]]): the server
+// posts the reply first, then hands it to each as one ordinary send. Never derived here from the prose.
+export async function postIssueReply(id, body, evidence, { deliverTo = [] } = {}) {
   const res = await apiFetch(`/api/issues/${encodeURIComponent(id)}/reply`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ body, ...(evidence?.length ? { evidence } : {}) }),
+    body: JSON.stringify({ body, ...(evidence?.length ? { evidence } : {}), ...(deliverTo.length ? { deliverTo } : {}) }),
+  })
+  return res.json()
+}
+
+// bind an EXISTING session to an issue ([[issue-binding]]) — the Assign door's one write.
+export async function postIssueAssign(id, session) {
+  const res = await apiFetch(`/api/issues/${encodeURIComponent(id)}/assign`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session }),
   })
   return res.json()
 }
