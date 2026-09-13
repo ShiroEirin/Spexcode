@@ -472,6 +472,7 @@ edit the spec instead — same commit as the code.`,
        spex issue show <id> [--json]
        spex issue open "<concern>" [--store local|<host>] [--node <id>…] [--evidence <hash>…] [--body -|<text>]
        spex issue reply <id> --body -|<text> [--evidence <hash>…]
+       spex issue assign <id> <SEL>          bind an existing session to the issue and tell it (SEL = id | id-prefix | branch)
        spex issue close <id>
        spex issue promote <id>
        spex issue links [--store <host>] [--node <id>] [--json]

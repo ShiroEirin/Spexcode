@@ -129,3 +129,12 @@ test('issueFleet joins sessions to an issue by pointer and inherits descendants 
   const issue = { by: 'd', replies: [{ by: 'human' }, { by: 'a1' }, { by: 'd' }, { by: 'ghost' }] }
   assert.deepEqual(issueParticipants(issue, sessions, fleet).map((s) => s.id), ['d'], 'participants resolve to board rows outside the fleet, once each')
 })
+
+test('mentionedSessions names only exact retained ids a draft @-mentions, once each', () => {
+  const { mentionedSessions } = sessionModule
+  const sessions = [{ id: 'abc-1', status: 'working' }, { id: 'abc-2', status: 'offline' }, { id: 'gone', archived: true }]
+  const text = 'ping @abc-1 and @abc-2, also @abc (a prefix), @new, @gone and @abc-1 again'
+  assert.deepEqual(mentionedSessions(text, sessions).map((s) => s.id), ['abc-1', 'abc-2'])
+  assert.deepEqual(mentionedSessions('no mentions', sessions), [])
+  assert.deepEqual(mentionedSessions('email me@abc-1', sessions), [], 'an @ inside a word is not a mention')
+})

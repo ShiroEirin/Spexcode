@@ -431,12 +431,25 @@ export default {
     close: 'Close',
     closeTitle: 'close this retired session',
     refused: ({ what }) => `${what} refused`,
+    assign: 'Assign…',
+    assignTitle: 'bind a session that already exists to this issue, and tell it',
+    assignPick: 'pick the session to bind to this issue',
+    assignNone: 'every board session is already on this issue',
+    openConsole: 'Open console',
+    cardStatus: 'status',
+    cardBranch: 'branch',
+    cardFiles: 'files',
+    cardWeb: 'web',
+    cardWidgets: 'widgets',
+    cardNothing: 'nothing posted yet',
   },
 
   thread: {
     mentionActor: 'insert @ — mention a session',
     mentionNode: 'insert [[ — link a spec node',
     originatorIssue: 'open the session that filed this issue: {by}',
+    sendTo: ({ to }) => `Send to @${to}`,
+    sendToTitle: 'post this reply AND hand it to session {to} as a message',
   },
 
   time: {

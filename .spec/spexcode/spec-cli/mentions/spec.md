@@ -52,7 +52,8 @@ grammar it wears a reserved qualified token, so reading a draft tells you which 
   offline one but never a closed one. Autocomplete inserts the stable full id rather than a display label. The
   receiving agent may inspect it, run `/distill <id>`, or deliberately send it a message with
   `spex session send <id>`. Mentioning it never reads its transcript, appends to its log, wakes its harness,
-  creates a worker, or changes state.
+  creates a worker, or changes state. A composer may offer an explicit **Send to @x** button beside the draft for
+  each exactly-named retained session ([[issue-binding]]); that button, never the token, is what delivers.
   **`@new` is the one explicit worker action in the grammar:** after its containing write is durable, it creates
   a fresh worker through the same bounded session-create owner as every other creation request. `@new:<launcher>`
   selects that one worker's named launcher; an unknown name is reported in the dispatch outcome while the

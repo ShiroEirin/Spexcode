@@ -3,7 +3,7 @@ import { closeIssue, findIssue, mergedIssues, promote, type ForgeSlice, type Iss
 import { FORGE_DRIVERS, forgeDriverFor, resolveForgeHost } from '@spexcode/spec-forge/drivers'
 import { issuesEnabled } from './localIssues.js'
 import { summarizeDispatch, summarizeLoopIn } from './mentions.js'
-import { loadSpecsLite } from '@spexcode/spec-core'
+import { envSessionId, loadSpecsLite } from '@spexcode/spec-core'
 
 // @@@ issues-cli - the `spex issue` CLI surface: argv parsing, console output, exit codes.
 // It lives ABOVE the eval layer, which is the whole point. These handlers used to sit in `issues.ts` and
@@ -126,7 +126,7 @@ async function issueVerbs(args: string[]): Promise<number> {
     }
   }
   if (args[0] !== 'ls') {
-    console.error(`spex issue: unknown verb '${args[0]}' — ls | show | open | reply | close | promote | links  (spex help issue)`)
+    console.error(`spex issue: unknown verb '${args[0]}' — ls | show | open | reply | assign | close | promote | links  (spex help issue)`)
     return 2
   }
   args = args.slice(1)
@@ -195,13 +195,25 @@ export async function runIssueWrite(args: string[]): Promise<number> {
       if (s) console.log(`  ${s}`)
       return 0
     }
+    if (sub === 'assign') {
+      // bind an EXISTING session to the issue ([[issue-binding]]) — the twin of `session reparent`: write the
+      // pointer, then tell the session. The issue is read through the same merged read `show` uses.
+      const [id, selector] = bare(args.slice(1))
+      if (!id || !selector) { console.error('usage: spex issue assign <issue-id> <SEL>   (SEL = session id | id-prefix | branch)'); return 2 }
+      const issue = findIssue(id, id.includes('#') ? await liveForgeSlice('assign') : null, loadSpecsLite().map((s) => s.id))
+      if (!issue) { console.error(`spex issue assign: no issue '${id}'`); return 2 }
+      const { assignIssueSession, summarizeAssign } = await import('./issue-assign.js')
+      const outcome = await assignIssueSession(issue, selector, envSessionId() || 'human')
+      console.log(summarizeAssign(outcome))
+      return outcome.delivered ? 0 : 1
+    }
     // `open`: start a new issue — STORE-ROUTED through the one creation port ([[issues]] createIssue, the
     // same routine POST /api/issues runs): default local commits to the trunk store; `--store <host>`
     // creates the real forge issue through that store's driver (no promote round-trip when the concern is
     // born forge-visible). The concern is the bare positional(s) after the sub.
     const concern = sub === 'open' ? bare(args.slice(1)).join(' ').trim() : ''
     if (!concern) {
-      console.error('usage: spex issue open "<concern>" [--store local|<host>] [--node <id>…] [--evidence <hash>…] [--body -|<text>]\n       spex issue reply|close|promote <issue-id> …')
+      console.error('usage: spex issue open "<concern>" [--store local|<host>] [--node <id>…] [--evidence <hash>…] [--body -|<text>]\n       spex issue reply|assign|close|promote <issue-id> …')
       return 2
     }
     const r = await (await import('./issues.js')).createIssue(concern, {
@@ -227,5 +239,5 @@ export async function runIssueWrite(args: string[]): Promise<number> {
 // router and the runner can never drift. (`nudge` is not here: it is machine plumbing, called only by the
 // post-merge hook as `spex internal nudge`; the on|off|status toggle verbs died in v0.3.0 — the switch is
 // the `issues.enabled` settings key.)
-export const ISSUE_WRITE_SUBS = new Set(['open', 'reply'])
+export const ISSUE_WRITE_SUBS = new Set(['open', 'reply', 'assign'])
 

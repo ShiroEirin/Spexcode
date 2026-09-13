@@ -46,3 +46,9 @@ The argv helpers travel WITH the surface rather than being exported to it. `fl`,
 byte-identical copies of `fl` existed while the surface was split across two modules, and one copy is what
 remains. A helper that both this module and a store module need is a signal to re-examine which of them is
 really asking, not a reason to widen a store module's exports.
+
+**`assign` binds an existing session to an issue.** `spex issue assign <issue-id> <SEL>` is the CLI leg of the one
+assign verb ([[issue-binding]]'s `assignIssueSession`, the same function `POST /api/issues/:id/assign` runs): the
+issue is read through the same merged read `show` uses (a forge id pulls the live slice), the session through the
+ordinary selector, and the receipt names the binding, any previous issue it replaces, and whether the session was
+told — exit 1 when the pointer was written but the message did not land, so a half-done assignment is never silent.

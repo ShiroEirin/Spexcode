@@ -4141,3 +4141,17 @@ body.is-session-dragging .si-pill.archive:hover {
 .fv-close-issue.fv-life-merge:hover, .fv-close-issue.fv-life-new:hover { background: var(--green); color: var(--paper); border-color: var(--green); }
 .fv-close-issue.fv-life-relaunch { color: var(--blue); border-color: color-mix(in srgb, var(--blue) 35%, var(--line)); }
 .fv-close-issue.fv-life-relaunch:hover { background: var(--blue); color: var(--paper); border-color: var(--blue); }
+/* the fleet row's expanded CARD ([[issue-binding]]): the session's own facts under its row, real anchors into its
+   console surfaces; and the composer's explicit send doors. */
+.fv-fleet-card { display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: 8px; row-gap: 3px; margin: 2px 0 6px 18px; padding: 6px 8px; border: 1px solid var(--line); border-radius: var(--radius); background: color-mix(in srgb, var(--panel2) 60%, transparent); font-size: var(--type-meta); color: var(--ink2); }
+.fv-fleet-card .k { color: var(--muted); }
+.fv-fleet-card .v { min-width: 0; overflow-wrap: anywhere; }
+.fv-fleet-card a { color: var(--blue); text-decoration: none; }
+.fv-fleet-card a:hover { text-decoration: underline; }
+.fv-fleet-card .fv-fleet-links { display: flex; flex-direction: column; gap: 2px; }
+.fv-fleet-card .fv-fleet-open { grid-column: 1 / -1; justify-self: start; margin-top: 2px; }
+.fv-fleet-row .si-item[aria-expanded="true"] { background: var(--wash-selected); }
+.fv-close-issue.fv-send-to { display: inline-flex; align-items: center; gap: 4px; color: var(--blue); border-color: color-mix(in srgb, var(--blue) 35%, var(--line)); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fv-close-issue.fv-send-to:hover { background: var(--blue); color: var(--paper); border-color: var(--blue); }
+.fv-assign-modal .legend-body { min-width: 320px; }
+.fv-assign-none { color: var(--muted); font-size: var(--type-meta); }
