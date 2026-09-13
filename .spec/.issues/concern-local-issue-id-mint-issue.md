@@ -1,7 +1,7 @@
 ---
 concern: 纯中文 concern 开 local issue 时 id 被 mint 成 issue
 by: 2499a20b-ae58-4074-87de-3753e02fe63b
-status: open
+status: landed
 nodes: local-issues, spec-lint, mentions
 created: 2026-09-13T04:36:59.051Z
 ---
