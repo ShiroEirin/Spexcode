@@ -446,6 +446,7 @@ export default {
     originatorIssue: '打开发起此 issue 的会话：{by}',
     sendTo: ({ to }) => `发给 @${to}`,
     sendToTitle: '发布这条回复，并把它作为消息交给会话 {to}',
+    declared: '声明',
   },
 
 

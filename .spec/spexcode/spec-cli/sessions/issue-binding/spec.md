@@ -95,6 +95,13 @@ with one visible fleet per issue, and close/retire/children/acceptance reachable
   shape on the issue with the same picture it draws in its conversation, and a name it never put stays the
   unresolved chip. `spex issue mine` is the worker's first read — the issue its record points at, with its thread.
   The behaviour a worker owes the page is the [[issue-driven-development]] skill: say it where it is read.
+- **The thread is the ledger.** The declarations of every fleet session — `awaiting` (shown as the board's
+  review / done / close-pending word), `asking`, `parked`, `error` — are read from each session's own timeline
+  ([[session-timeline]]) and merged into the reply thread at read time, oldest first, a reply before a declaration
+  made at the same instant. A ledger row names the session, the status word in the board's colour, and the note;
+  `active`, `idle` and `queued` stay off it. Nothing is written to the issue: the worker's `done --propose merge`
+  IS its report of readiness, which is why the skill forbids typing a status into a reply. A timeline that cannot
+  be read contributes nothing, never a broken thread; the ledger re-reads when a fleet row's status or note moves.
 - **The composer's explicit send door.** The shared reply composer ([[issues-view]]) reads the draft's `@<id>`
   tokens that name a retained board session EXACTLY (`mentionedSessions`; the autocomplete writes full ids, so a
   prefix, a label, or the `@new`/`@parent:` doors are never deliveries) and shows one **Send to @x** button per

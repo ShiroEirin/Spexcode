@@ -82,6 +82,10 @@ test('dashboard source does not mint a second multi-status literal', () => {
     ['sessionCommands.js', new Set(['UI_COMMANDS'])],
     ['reviewFilters.test.mjs', new Set(['sessions'])],
     ['session.test.mjs', new Set(['cases', 'sessions'])],
+    // the thread ledger's row filter is a projection over lifecycle words — WHICH transitions a human reads on an
+    // issue thread — declared once ([[issue-binding]]); its fixture exercises that one consumer.
+    ['issueLedger.js', new Set(['LEDGER_STATUSES'])],
+    ['issueLedger.test.mjs', new Set(['events'])],
   ])
   const violations = []
   for (const path of walk(here)) {

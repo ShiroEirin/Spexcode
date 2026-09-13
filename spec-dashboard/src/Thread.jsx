@@ -3,7 +3,8 @@ import Prose from './Prose.js'
 import { BlobMedia } from './Evidence.jsx'
 import { useMentionAutocomplete, TriggerButton, typeTrigger } from './mentions.jsx'
 import { ComposerSurface, ComposerTextarea, composingKey } from './Composer.jsx'
-import { STATUS_COLOR, liveSession, mentionedSessions, sessionHeadline } from './session.js'
+import { STATUS_COLOR, STATUS_GLYPH, liveSession, mentionedSessions, sessionHeadline } from './session.js'
+import { mergeThread } from './issueLedger.js'
 import { SideValue } from './ReviewShell.jsx'
 import { useT } from './i18n/index.jsx'
 import { Icon, IconButton } from './icons.jsx'
@@ -66,9 +67,26 @@ export function OriginatorLiveness({ originator, sessions = [], onOpenSession = 
 // reply written by a board session draws THAT session's widget here ([[widgets]] / [[issue-binding]]): the
 // scope is the author's own widget list, so an agent reports progress on the issue with the same picture it
 // draws in its conversation, and a name the author never put stays the honest unresolved chip.
-export function Replies({ replies, sessions = [] }) {
-  return replies.map((r, i) => {
+// The fleet's DECLARATIONS ride the same thread ([[issue-binding]]'s ledger, read from each session's timeline,
+// written nowhere): a row names the session, the board's status word in its colour, and the note — so
+// "waiting for review" is read where the human is already reading, and the agent never types a status.
+export function Replies({ replies, sessions = [], ledger = [] }) {
+  const t = useT()
+  return mergeThread(replies, ledger).map((r, i) => {
     const author = (sessions || []).find((s) => s.id === r.by)
+    if (r.kind === 'declaration') {
+      const color = STATUS_COLOR[r.status] || STATUS_COLOR.idle
+      return (
+        <div className="fv-reply fv-declaration" key={`d-${i}`} style={{ '--decl': color }}>
+          <div className="fv-reply-meta">
+            <span className="fv-reply-by" data-tip={r.by}>{author ? sessionHeadline(author) : r.by}</span>
+            {r.at && <span className="fv-reply-at">{r.at}</span>}
+            <span className="fv-declaration-word" aria-label={t('thread.declared')}><span aria-hidden="true">{STATUS_GLYPH[r.status] || '·'}</span> {t(`status.${r.status}`)}</span>
+          </div>
+          {r.note && <div className="fv-declaration-note">{r.note}</div>}
+        </div>
+      )
+    }
     const widgetScope = { sessionId: author?.id || null, widgets: author?.widgets || [] }
     return (
       <div className="fv-reply" key={i}>
