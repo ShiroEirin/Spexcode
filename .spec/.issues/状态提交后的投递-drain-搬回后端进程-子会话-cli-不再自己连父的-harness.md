@@ -1,7 +1,7 @@
 ---
 concern: 状态提交后的投递 drain 搬回后端进程：子会话 CLI 不再自己连父的 harness
 by: 2499a20b-ae58-4074-87de-3753e02fe63b
-status: open
+status: landed
 nodes: session-follow, delivery-queue
 created: 2026-09-13T10:31:46.968Z
 ---
