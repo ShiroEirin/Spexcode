@@ -68,18 +68,19 @@ writes leaves a message that is visible but undelivered, never one delivered but
 merge intent, the receipt carries the already-composed transport bytes, so the same request reconstructs that
 one missing debt rather than mistaking the durable receipt for completed delivery.
 
-**Draining is claim-insert-remove, under the queue's own lock.** A delivery pass takes the queue lock, and for
-each entry in order composes the prompt through the one seam ([[session-timeline]]) and hands it to the
-resolved adapter. A confirmed insert removes that entry; an insert the adapter refuses, cannot reach, or that
-throws ENDS the pass with the entry still queued, and everything behind it stays behind it — order is a
-property of a conversation, so a message is never skipped to deliver a later one. A pass that ends on a held
-head logs the adapter's reason once per message and reason, so owed debt is never silent and a retried refusal
-does not repeat.
+**Draining is claim-insert-remove, one head per hold of the queue's own lock.** A delivery loop takes the queue
+lock, composes the head's prompt through the one seam ([[session-timeline]]), hands it to the resolved adapter,
+removes it on a confirmed insert, and releases the lock before it reads the next head. An insert the adapter
+refuses, cannot reach, or that throws ENDS the loop with the entry still queued, and everything behind it stays
+behind it — order is a property of a conversation, so a message is never skipped to deliver a later one. A loop
+that ends on a held head logs the adapter's reason once per message and reason, so owed debt is never silent and
+a retried refusal does not repeat.
 
-The lock spans the insert deliberately, and it is NOT the record lock: the record lock cannot span an adapter
-call (a native turn runs lifecycle hooks that re-enter the record writer, which is a deadlock), while nothing
-in the delivery path takes this one. Holding it across the insert is what makes "claim" real, so two processes
-draining the same session at the same moment cannot both hand over the same message. A keyed entry that the
+The lock spans one insert deliberately, never a whole queue, and it is NOT the record lock: the record lock cannot
+span an adapter call (a native turn runs lifecycle hooks that re-enter the record writer, which is a deadlock),
+while nothing in the delivery path takes this one. Holding it across the insert is what makes "claim" real, so two
+processes draining the same session at the same moment cannot both hand over the same message; releasing it
+between heads bounds how long anyone can find it held to one adapter call, however much is owed. A keyed entry that the
 adapter accepts appends its private timeline settlement before this lock removes the debt. That settlement is
 what distinguishes "receipt exists because it was accepted" from "receipt exists and the agent already saw
 it" after a restart. Before any adapter call, drain reconciles a keyed head against its exact receipt. A matching
@@ -87,6 +88,16 @@ settled receipt consumes the leftover debt without handing it over again; missin
 or different frozen transport bytes refuses and leaves the head in place. Thus process death between settlement
 and removal cannot duplicate an agent prompt, while corrupt authority can never silently discard one. A later
 replay of the response therefore never needs to reopen the session.
+
+**Nobody waits behind a handover.** A drain that finds the lock held does not wait for it. The holder is handing
+over this same queue and reads it once more after it releases, before it may stop, so a message enqueued during
+its hold is the holder's to deliver: no wake is lost and no second drain lines up behind the first. Within one
+process each recipient has at most one delivery loop; a wake that finds it running — a send's own pass, a commit
+wake, `/push`, a sweep tick — returns at once, because the queued row already marks what is owed and the loop reads
+the queue before it stops. The sweep and the commit wake start one loop per owed recipient and never await one
+recipient before the next, so a harness that keeps an insert on its rendezvous wall delays only its own queue. The
+one caller that does wait for the lock is [[session-reparent]], which must see a moved child's queue between
+inserts: it waits for one head, and a drain that found it busy is taken up by the retry sweep.
 
 **Close revokes a sender, not history.** A successful close writes a durable sender-revocation marker outside
 the closing session's store (which is about to disappear). Agent-to-agent dispatch takes the claimed sender's
@@ -115,7 +126,10 @@ peer message after reparent, but a command it had already queued cannot cross th
 
 **Any process may drain; one process is expected to.** A pass costs nothing when the queue is empty, so
 `sendText` runs one immediately in whatever process accepted the message — that is what puts the text in a
-live agent's current turn instead of at the next sweep tick. The retry belongs to the `spex serve` that owns the project root:
+live agent's current turn instead of at the next sweep tick. When a handover to that recipient is already in
+flight, the send does not wait behind it and answers `delivery: queued`; a pass that fails after the commit is
+logged and still answered `queued`, because the message is accepted and a sender told otherwise would send it
+twice. The retry belongs to the `spex serve` that owns the project root:
 it watches the queues of its bound sessions, which is every running session whatever its adapter
 ([[sessions-core]]), and drains what an earlier pass could not. So a message owed to an agent whose harness was
 busy or restarting, or whose handover a concurrent connection displaced ([[claude-rendezvous]]), is delivered when

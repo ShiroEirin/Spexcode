@@ -20,7 +20,7 @@ import { acquireFreshSessionApplicationForCreate, configuredSessionApplication, 
 import { type ProductionSessionApplication } from '@spexcode/session-application'
 import { MESSAGE_KINDS } from '@spexcode/session-protocol'
 import { decodeEventJson } from '@spexcode/session-events'
-import { withDeliveryLocks } from './delivery-lock.js'
+import { claimDeliveryLock, withDeliveryLocks } from './delivery-lock.js'
 import { withRecordLock, withRecordLockSync, readRecord, readLiveRecord, writeRecord, fromRaw, hasValidColdProof, coldProofFor, launchReadinessPending, restoreLaunchReadinessOriginal, retirementReason, corruptReason, assertLegacyJsonWritesAllowed, type SessRec, SessionRecordUnusable, setRecordTransitionWrapper, backendLaunchAuthority, canDrainQueued } from './session-record.js'
 import { unbindSpexGovernedRuntime } from './session-runtime-adapter.js'
 import { shQuote } from './sh.js'
@@ -1297,13 +1297,13 @@ setSessionApplicationCommitWake((recipients) => {
       // Transition commits already carry the durable subject event. Reconcile that event into the watcher's
       // ordinary conversation queue now, so a managed watch does not wait for the patrol tick to become a prompt.
       await reconcileWatchDeliveries(configuredSessionApplication(), wakeRecipients)
-      for (const recipient of wakeRecipients) {
+      await Promise.all(wakeRecipients.map(async (recipient) => {
         try {
           if (sessionHasPendingDelivery(recipient)) await handOverDelivery(recipient)
         } catch (error) {
           console.error(`spex: canonical delivery wake failed for ${recipient}: ${error instanceof Error ? error.message : String(error)}`)
         }
-      }
+      }))
     }).catch((error) => {
       console.error(`spex: canonical delivery wake failed: ${error instanceof Error ? error.message : String(error)}`)
     })
@@ -1386,11 +1386,12 @@ export function superviseDelivery(intervalMs = 1000): void {
     try {
       const application = configuredSessionApplication()
       await reconcileWatchDeliveries(application)
+      // Each owed queue gets its own loop; a harness holding one insert on its wall must not hold the others' retries.
       for (const id of listSessionIds()) {
         if (!sessionHasPendingDelivery(id, application)) continue
-        try { await drainSession(id) } catch (error) {
+        void drainSession(id).catch((error) => {
           console.error(`spex: delivery retry failed for ${id}: ${error instanceof Error ? error.message : String(error)}`)
-        }
+        })
       }
     } catch (error) {
       console.error(`spex: delivery retry sweep failed: ${error instanceof Error ? error.message : String(error)}`)
@@ -3713,10 +3714,13 @@ export async function sendText(id: string, text: string, from?: string, opts: Se
     // Acceptance and handover are separate boundaries. A committed SQLite message remains a successful
     // command even when the runtime is currently unbound; binding/resume is the explicit event that makes
     // the durable debt drainable. Reporting the post-commit refusal as an append failure made command-box
-    // callers show a false error despite the prompt already being safely queued.
+    // callers show a false error despite the prompt already being safely queued. Any other post-commit failure is
+    // logged and leaves the message owed the same way: a sender told its accepted message failed sends it again.
     if (!opts.deferDrain) {
       try { await drainSession(id) } catch (error) {
-        if (!(error instanceof ResourceConflict) || !/no bound spex-governed runtime/u.test(error.message)) throw error
+        if (!(error instanceof ResourceConflict) || !/no bound spex-governed runtime/u.test(error.message)) {
+          console.error(`spex: delivery to ${id} left queued after acceptance: ${error instanceof Error ? error.message : String(error)}`)
+        }
       }
     }
     const pending = application.readPendingMessages(id).some(candidate => candidate.messageId === accepted.messageId)
@@ -3750,9 +3754,11 @@ function noteHeldDelivery(id: string, messageId: string, reason: string): void {
 }
 
 // @@@ drainSession - hand over what this session is owed, as ordinary prompts. Safe to call from anywhere and
-// at any time: the queue's own lock serializes concurrent passes, and an empty queue costs one existsSync.
-// The retry sweep in `serve` calls this for the sessions whose queues an earlier pass could not empty.
+// at any time, and it never waits behind a handover already in flight: this process runs at most one loop per
+// recipient, and a loop that finds another process holding the queue's lock leaves the queue to that holder.
+// An empty queue costs one read. The retry sweep in `serve` calls this for the queues an earlier pass left owed.
 // Every adapter hands over through its runtime binding, so owed debt with no binding has no runtime to go to yet.
+const deliveryLoops = new Set<string>()
 export async function drainSession(id: string): Promise<void> {
   const application = configuredSessionApplication()
   const rec = readRecord(id)
@@ -3762,31 +3768,54 @@ export async function drainSession(id: string): Promise<void> {
   if (application.readPendingMessages(id).length === 0) return
   const binding = application.resolveRuntime(id, 'spex-governed')
   if (!binding || binding.status !== 'bound') throw new ResourceConflict(`canonical delivery for ${id} remains pending: no bound spex-governed runtime`)
-  const h = harnessById(rec.harness || defaultHarness.id)
-  await withDeliveryLocks([id], async () => {
+  // The queued row is the "still owed" mark: the running loop reads the queue again before it stops.
+  if (deliveryLoops.has(id)) return
+  deliveryLoops.add(id)
+  try {
     for (;;) {
-      const msg = application.readPendingMessages(id)[0]
-      if (!msg) return
-      if (msg.senderSessionId && senderDeliveryRevoked(msg.senderSessionId) && !managedWatchMessage(msg)) {
-        const removed = application.dequeuePendingMessage(id, msg.messageId)
-        if (!removed || removed.messageId !== msg.messageId) throw new ResourceConflict(`canonical queue head changed while revoking sender debt for ${id}`)
-        continue
-      }
-      const text = canonicalMessageText(msg, rec)
-      if (h.deliveryBlockedBy) {
-        try {
-          const blocked = h.deliveryBlockedBy(await sessionHost().command(['capture-pane', '-p', '-t', rec.session], TMUX_PROBE_TIMEOUT_MS))
-          if (blocked) { noteHeldDelivery(id, msg.messageId, blocked); return }
-        } catch { /* no pane to consult — let the adapter decide */ }
-      }
-      const delivered = await h.deliver({ ...rec, runtimeDir: runtimeRoot(), mid: msg.messageId }, text)
-      if (!delivered.ok) { noteHeldDelivery(id, msg.messageId, delivered.error || 'the adapter refused the handover'); return }
-      const removed = application.dequeueForRuntime(id, 'spex-governed', binding.bindingGeneration, msg.messageId)
-      if (!removed || removed.messageId !== msg.messageId) throw new ResourceConflict(`canonical queue head changed while delivering ${id}`)
-      heldDelivery.delete(id)
-      if (!msg.senderSessionId) markHumanPromptActive(id)
+      const pass = await deliverQueueHead(id)
+      if (pass === 'advanced') continue
+      // @@@ release, then look again - a wake that arrived while the lock was held found it busy and left this
+      // queue to its holder, so the holder must read the queue once more after releasing before it may stop.
+      if (pass === 'empty' && application.readPendingMessages(id).length) continue
+      return
     }
-  })
+  } finally { deliveryLoops.delete(id) }
+}
+
+// One claim-insert-remove of the queue head under one hold of the queue's lock. `busy` is another holder,
+// `held` a head the adapter refused or a runtime that is no longer bound: both end the loop with order intact.
+async function deliverQueueHead(id: string): Promise<'advanced' | 'empty' | 'held' | 'busy'> {
+  const release = claimDeliveryLock(id)
+  if (!release) return 'busy'
+  try {
+    const application = configuredSessionApplication()
+    const msg = application.readPendingMessages(id)[0]
+    if (!msg) return 'empty'
+    if (msg.senderSessionId && senderDeliveryRevoked(msg.senderSessionId) && !managedWatchMessage(msg)) {
+      const removed = application.dequeuePendingMessage(id, msg.messageId)
+      if (!removed || removed.messageId !== msg.messageId) throw new ResourceConflict(`canonical queue head changed while revoking sender debt for ${id}`)
+      return 'advanced'
+    }
+    const rec = readRecord(id)
+    const binding = application.resolveRuntime(id, 'spex-governed')
+    if (!rec || !binding || binding.status !== 'bound') return 'held'
+    const h = harnessById(rec.harness || defaultHarness.id)
+    const text = canonicalMessageText(msg, rec)
+    if (h.deliveryBlockedBy) {
+      try {
+        const blocked = h.deliveryBlockedBy(await sessionHost().command(['capture-pane', '-p', '-t', rec.session], TMUX_PROBE_TIMEOUT_MS))
+        if (blocked) { noteHeldDelivery(id, msg.messageId, blocked); return 'held' }
+      } catch { /* no pane to consult — let the adapter decide */ }
+    }
+    const delivered = await h.deliver({ ...rec, runtimeDir: runtimeRoot(), mid: msg.messageId }, text)
+    if (!delivered.ok) { noteHeldDelivery(id, msg.messageId, delivered.error || 'the adapter refused the handover'); return 'held' }
+    const removed = application.dequeueForRuntime(id, 'spex-governed', binding.bindingGeneration, msg.messageId)
+    if (!removed || removed.messageId !== msg.messageId) throw new ResourceConflict(`canonical queue head changed while delivering ${id}`)
+    heldDelivery.delete(id)
+    if (!msg.senderSessionId) markHumanPromptActive(id)
+    return 'advanced'
+  } finally { release() }
 }
 
 // `recipient` is the session this text is delivered TO; a state message speaks about its `sessionId`, the

@@ -74,7 +74,8 @@ teardown that stops or closes a session releases it, as does a launch that fails
 stopped. There is no unbound delivery path beside it, so the retry sweep reaches every running session and no
 stopped or closed one: their debt waits in the queue for the resume that binds them again, and the post-commit wake
 likewise leaves an unbound recipient alone. Acceptance there is still success: the caller is told `delivery: queued`
-after the message commits, never a false append failure because the post-commit drain refused an unbound runtime.
+after the message commits, never a false append failure because the post-commit drain refused an unbound runtime,
+found a handover already in flight, or failed ([[delivery-queue]]).
 Managed watch messages carry a `watch-*` idempotency key and remain deliverable when their watched child closes;
 sender revocation applies to ordinary outbound debt, not supervision facts.
 
