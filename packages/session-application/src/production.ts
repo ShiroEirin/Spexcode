@@ -437,13 +437,17 @@ export function openProjectSessionApplication(options: ProjectSessionApplication
           payload: encodeEventJson(change),
           occurredAtMs: updatedAtMs,
         })
-        const recipients = input.recipientSessionIds === undefined
-          ? []
-          : [...new Set(input.recipientSessionIds.map(recipient => {
+        const explicitRecipients = input.recipientSessionIds !== undefined
+        const recipients = explicitRecipients
+          ? [...new Set(input.recipientSessionIds!.map(recipient => {
             requireId(recipient, 'recipientSessionId')
             return recipient
           }))]
-        const messages = recipients.map(recipient => tx.enqueue(recipient, messageForEvent(change, id)))
+          : topology.recipients(sessionId, tx)
+        // Explicit callers own the legacy state-message queue shape. Normal lifecycle transitions publish
+        // watcher recipients as a post-commit wake list; the CLI adopter translates their cursor events into
+        // conversation messages, so no raw duplicate queue row is created here.
+        const messages = explicitRecipients ? recipients.map(recipient => tx.enqueue(recipient, messageForEvent(change, id))) : []
         return {
           state: { sessionId, status, proposal, note, parentSessionId, updatedAtMs },
           event,

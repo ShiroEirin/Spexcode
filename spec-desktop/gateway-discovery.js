@@ -17,8 +17,9 @@ async function findRunningGateway() {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS)
   try {
-    // `/host` stays outside the admin gate and identifies the gateway instance that wrote the record.
-    const response = await fetch(`${record.url}/host`, {
+    // The full `/host` facts route is admin-scoped. The identity-only probe stays public so the shell can
+    // attach before a user has logged into a password-protected gateway.
+    const response = await fetch(`${record.url}/host/identity`, {
       cache: 'no-store',
       headers: { Accept: 'application/json' },
       signal: controller.signal,

@@ -520,12 +520,12 @@ if (cmd === 'serve') {
   if (!Number.isInteger(port)) { console.error('spex dashboard: --port must be an integer'); process.exit(2) }
   startHostDashboard({ port, host })
 } else if (cmd === 'open') {
-  rejectFlags('spex open', 3, ['print-only'])
+  rejectFlags('spex open', 3, ['print-only', 'password'])
   const targets = positionals(3)
   if (targets.length !== 1) { console.error('usage: spex open <node-id|session-SEL|path> [--print-only]'); process.exit(2) }
   const { invokePlatformOpener, resolveOpenDashboardUrl } = await import('./open-dashboard.js')
   try {
-    const url = await resolveOpenDashboardUrl(targets[0])
+    const url = await resolveOpenDashboardUrl(targets[0], { password: flag('password') })
     console.log(url)
     if (!has('print-only')) await invokePlatformOpener(url)
   } catch (error) {

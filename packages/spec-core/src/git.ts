@@ -1358,7 +1358,7 @@ export function historyIndex(root: string, tip = 'HEAD'): Promise<HistoryIndex> 
   if (tip !== 'HEAD') {
     const resolved = git(['-C', root, 'rev-parse', `${tip}^{commit}`]).trim()
     // An issue-only candidate changes no governed content, but its lint result still includes the
-    // parent's existing drift/related-drift warnings. Reuse that immutable parent index instead of
+    // parent's existing drift warnings. Reuse that immutable parent index instead of
     // manufacturing an empty one (which silently dropped warnings at golden depths).
     if (pendingOnlyIssues(root, resolved)) {
       const parent = pendingParent(root, resolved)

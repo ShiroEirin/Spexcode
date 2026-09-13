@@ -63,8 +63,23 @@ omitted it would be describing eight hooks without saying which of them a launch
 It is resolved through the CLI's own `resolveCliProfile`, never re-parsed here, and reported as the active
 name plus which core hooks it retains and which it drops.
 
+## the inventory is one answer; the TEXT is fetched a node at a time
+
+What a plugin IS, a list can say. What it DOES is its text — the contract a system node folds into every
+launched agent, the steps a skill sends, the shell a hook runs — and that is what a reader opens one to
+find. The loaders already carry it, so the text costs nothing to produce and everything to ship: twenty-five
+bodies and their co-located scripts are most of a megabyte, sent on every board load to answer a question
+about one row. So the inventory stays cheap and whole, and a second read takes one node's name and returns
+that node's body, its declared tool allowlist, and the contents of the files the loader found beside it.
+
+The name selects a NODE, never a path. Which bytes come back is decided by the node's own `files` list —
+the same one the materializer copies — so a request cannot name a file, and a plugin can only ever hand
+over its own subtree. A file past a fixed size arrives truncated and says so, because a reader who has
+been shown a silent prefix of a script has been told something false about what runs.
+
 ## what it does not do
 
-It reads. It does not materialize, repair, enable, or disable anything, and it takes no argument that could
-select a subset. The profile especially: it belongs to the process an agent launches under, not to a project
-setting this surface could own, so reporting it is the whole of what reporting it means.
+It reads. It does not materialize, repair, enable, or disable anything, and no argument of it can narrow
+the inventory: the list is always every plugin, and the one name the text read takes selects which node to
+quote, not which nodes exist. The profile especially: it belongs to the process an agent launches under,
+not to a project setting this surface could own, so reporting it is the whole of what reporting it means.

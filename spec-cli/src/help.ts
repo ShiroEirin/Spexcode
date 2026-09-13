@@ -378,8 +378,8 @@ an admin password exists, and ungated projects serve open.`,
     see: 'spex serve (each project\'s backend) · spex serve ui (explicit one-backend pairing)',
   },
   open: {
-    line: 'open <target>         open a node, session, or project file in the running host dashboard  [--print-only]',
-    body: `Usage: spex open <node-id|session-SEL|path> [--print-only]
+    line: 'open <target>         open a node, session, or project file in the running host dashboard  [--print-only] [--password <pw>]',
+    body: `Usage: spex open <node-id|session-SEL|path> [--print-only] [--password <pw>]
 
 Resolves the target in the current project, prints its canonical HTTP(S) dashboard URL to stdout, and
 opens that URL in the platform browser. Node ids resolve before session selectors, then existing project
@@ -472,7 +472,7 @@ edit the spec instead — same commit as the code.`,
        spex issue reply <id> --body -|<text> [--evidence <hash>…]
        spex issue close <id>
        spex issue promote <id>
-       spex issue links [--pending] [--store <host>] [--node <id>] [--json]
+       spex issue links [--store <host>] [--node <id>] [--json]
 
 ls — the drain view a supervisor reads: ONE store-tagged list, local + forge interleaved by
 creation time.
@@ -544,7 +544,10 @@ guide is the SKILL layer — workflows and formats. Command usage lives here in 
     body: `Usage: spex internal <sub>
 
 Machine plumbing — called by generated hooks and launch scripts, never typed by a human or agent:
+  peer-accept|peer-drop <base64url-json>  gateway-owned machine peer RPCs
+  session-register <native-session-id>    register a self-launched protocol address
   trunk             print the resolved source-of-truth branch (the pre-commit main-guard captures it)
+  spec-governors <path> stable code: governor projection for hook gates
   commit-surgery    pre-commit footprint anchor: unconditional materialize + staged-index repair
   refresh-footprint quiet materialize — the post-checkout/post-merge freshness anchor
   session-state <st> --session <id>   a lifecycle hook authors the session's state
@@ -556,10 +559,16 @@ Machine plumbing — called by generated hooks and launch scripts, never typed b
   nudge <node>      the post-merge hook prints the issue nudge for a merged node
   hook-merge        fold NUL-separated handler stdouts (stdin) into one payload when two speak JSON
   shared-runtime-spawn <cwd> <log> <pid> <scope> <cmd> [args…]  detached adapter control plane (launch script)
+  codex-generation-current <runtime-root> <cmd>  ensure the current shared Codex generation
+  codex-generation-session <runtime-root> <session-id> <thread-id> <cmd>  resolve a session's Codex generation
   codex-launch <sock> <cwd> [prompt…]   backend-owned codex thread/start + first turn (launch script)
   codex-turn   <sock> <threadId> <text…>  fire a follow-up turn on an owned thread (tests/scripts)
+  codex-resume <sock> <threadId>           reload an evicted headless Codex thread
+  opencode-capture <native-session-id>     record an opencode native session id
   claude-headless-run <id> <runtime> <cmd> -- <tail…>  resident stream-json controller (launch script)
   pi-headless-run <id> <runtime> <cmd> -- <tail…>      resident pi text-mode controller (launch script)
+  commit-context <message-file>            prepare-commit-msg context plumbing
+  session-turn-fail <id> <harness> <exit>  record a headless turn failure
 
 If you reached for one of these by hand, the porcelain you want is probably elsewhere: the trunk
 name also lives at GET /api/settings (.layout); sessions are driven with spex session new / session send;

@@ -26,9 +26,9 @@ would become noise.
 
 A `PreToolUse` hook (`spec-first.sh`) runs behind the same manifest and dispatcher on every harness. Native
 hook shims deliver `PreToolUse` broadly; they do not own product filtering. The shell face of the
-[[harness-adapter]] supplies one semantic `read` matcher: Claude's Read payload and Codex's read-shaped Bash
-payload reduce to the same file path, while mutations, unrelated tools, and unresolvable commands reduce to
-nothing. `spec-first.sh` contains no harness branch.
+[[harness-adapter]] supplies one semantic `access` matcher: Claude's Read/Edit payloads and Codex's read- or
+mutation-shaped Bash/apply-patch payloads reduce to the same file path, while unrelated tools and unresolvable
+commands reduce to nothing. `spec-first.sh` contains no harness branch.
 
 The path is then resolved through the authoritative spec graph (`spex internal spec-governors`, a stable
 machine projection of the same ownership resolver as `spex spec owner`). Only a real `code:` governor is

@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { codexHarness } from './codex-harness.js'
 import { processStartToken } from '@spexcode/spec-core'
-import { closeSession } from './sessions.js'
+import { closeSession, sendText } from './sessions.js'
 import { repoRoot, runtimeRoot, sessionArtifactPath, sessionRecordPath, sessionStoreDir } from '@spexcode/spec-core'
 import { initializeFreshSessionApplication } from './session-application.js'
 
@@ -88,6 +88,8 @@ esac
     codexHarness.coldPreflight = async () => ({ ok: true, receipt: Object.freeze({ fixture: 'target-probe' }) })
     codexHarness.coldRuntime = async () => ({ ok: true })
     codexHarness.cleanupRuntime = async () => {}
+    const selfSend = await sendText(id, 'self-send lock probe', id, { deferDrain: true })
+    assert.equal(selfSend.ok, true, 'a session can send to its own address without re-entering its record lock')
     assert.equal(await closeSession(id), true)
     assert.equal(existsSync(sessionRecordPath(id)), true, 'the target close retains the record after the cold proof')
     const retained = JSON.parse(readFileSync(sessionRecordPath(id), 'utf8'))
@@ -99,6 +101,9 @@ esac
     assert.equal(existsSync(worktree), false, 'the target close removes only the worktree')
     assert.notEqual(execFileSync('git', ['-C', project, 'branch', '--list', branch], { encoding: 'utf8' }).trim(), '', 'the target close retains the branch')
     assert.notEqual(execFileSync('git', ['-C', project, 'rev-parse', '--verify', `refs/spex-archive/${id}^{commit}`], { encoding: 'utf8' }).trim(), '', 'the target close publishes the archive ref')
+    const postCloseSend = await sendText(id, 'must not leave closed-sender debt', id)
+    assert.equal(postCloseSend.ok, false, 'a closed sender cannot append new outbound debt')
+    assert.match(postCloseSend.error ?? '', /sender session .* is closed/)
     assert.equal(runtimeRoot(), join(home, 'projects', project.replace(/[/.]/g, '-')))
   } finally {
     codexHarness.sharedRuntimes = originalShared

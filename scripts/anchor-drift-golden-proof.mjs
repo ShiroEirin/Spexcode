@@ -12,7 +12,7 @@ if (!candidateSha) {
 
 const repo = realpathSync(repoArg)
 const golden = JSON.parse(readFileSync(goldenArg, 'utf8'))
-const driftRules = new Set(['anchor-drift', 'drift', 'related-drift'])
+const driftRules = new Set(['anchor-drift', 'drift'])
 const git = (root, args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', maxBuffer: 1 << 30 }).trim()
 
 function immutableCli(pathArg, expectedSha, label) {

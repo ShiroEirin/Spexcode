@@ -217,7 +217,6 @@ if (process.env.SPEX_FOLD_FAST === '1') {
     scopedCodeMiss = settings?.lint?.scopedCodeMiss ?? 'warn'
   } catch { /* absent settings use the product default */ }
   const findings = new Set()
-  let relatedDrift = 0
   for (const spec of specs) {
     const version = rowsFor(hidx, spec.path)[0]?.hash ?? ''
     if (!version) continue
@@ -227,13 +226,7 @@ if (process.env.SPEX_FOLD_FAST === '1') {
       if (debt && !(scopedCodeMiss === 'ignore' && scopedCode.has(path)))
         findings.add(`drift|${spec.id}|${path}`)
     }
-    const scopedRelated = new Set(spec.relatedScoped.map((entry) => entry.path))
-    for (const path of spec.related) {
-      if (scopedRelated.has(path)) continue
-      if (commitsFor(path).some((commit) => !clearedFor(commit, version, spec.id))) relatedDrift++
-    }
   }
-  if (relatedDrift) findings.add(`related-drift||${relatedDrift}`)
   console.log(JSON.stringify({
     tip,
     versionMatches,

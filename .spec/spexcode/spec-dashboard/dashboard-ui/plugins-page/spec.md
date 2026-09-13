@@ -2,7 +2,7 @@
 title: plugins-page
 status: active
 hue: 40
-desc: The rail's automation board — every plugin read by the surface it plugs into, the hooks drawn on the lifecycle they fire on, and how many worktrees actually carry them.
+desc: The rail's automation board — a bounded master/detail frame reading every plugin by the surface it plugs into, hooks grouped under the lifecycle event they fire on, and the selected plugin's own contract text and script beside it.
 code:
   - spec-dashboard/src/PluginsView.jsx
 related:
@@ -10,6 +10,10 @@ related:
   - spec-dashboard/src/route.js
   - spec-dashboard/src/SideBar.jsx
   - spec-dashboard/src/styles.css
+  - spec-dashboard/src/Segmented.jsx
+  - spec-dashboard/src/useResizable.js
+  - spec-dashboard/src/i18n/en.js
+  - spec-dashboard/src/i18n/zh.js
   - spec-cli/src/plugins-view.ts
 ---
 
@@ -28,19 +32,31 @@ that event, and whether it may refuse have nowhere in a tree to live.
 
 ## the spine is the hook surface and only the hook surface
 
-The events run down the page in the order an agent meets them over one session, and each hook sits on the
-event it fires on, in its order, marked when it may refuse. That is drawable because it is a pipeline; an
-event carrying two hooks is where the order stops being decoration, and an event carrying none says so in
-words. The other surfaces have no timeline and are not forced onto it — always-on prose and invocable
-verbs get a strip each, under the spine, which is also the honest shape: they are not lined up in time.
+The events are the master list's group headings, in the order an agent meets them over one session, and
+each hook sits under the event it fires on, in its order, marked when it may refuse. Making the spine the
+list's headings rather than a drawn rail is what lets it survive being a board: the heading pins while its
+own hooks scroll under it, so the event you are reading is always overhead instead of a label you scrolled
+past. An event carrying two hooks is where the order stops being decoration. An event carrying none is
+simply absent from a filtered list — a group with no rows is a heading about nothing.
 
-## every row says what it is for, and opens
+The other surfaces have no timeline and are not forced onto one: always-on prose and invocable verbs are
+two more groups under the same headings, which is the honest shape, because they are not lined up in time.
+The bar's filter is the one control that narrows this, and it narrows the READING only — [[plugins-view]]
+always answers with the whole inventory, and the count says how much of it is showing.
 
-A name and a number is a fact nobody asked for. The question a person brings to this board is what a thing
-does and why it is allowed to refuse, and both answers are already written: a node's `desc` is its one line
-and its body is the rest. So each plugin is one row carrying that line, and the row IS the link to the node —
-the ordinary `#/spec/<id>` address, read by the same reader the rest of the dashboard uses. Nothing here
-restates a body or keeps a second description of anything.
+## the question is what a thing DOES, and the answer is its own text
+
+A name and a number is a fact nobody asked for. The question a person brings here is what a plugin does and
+why it is allowed to refuse, and both answers are already written — a node's `desc` is its one line, its
+body is the contract, and a hook's script is the rest. None of that is restated or summarized anywhere on
+this board: the detail pane shows the node's own body and the bytes of the files beside it, read live
+through [[plugins-view]].
+
+That is also the difference the split buys. When each row was a link out, reading one plugin cost the whole
+window and reading three meant three round trips; the text was in the product but never on this page. Now
+the row selects and the text arrives beside it. The one link that still leaves is explicit, named, and in
+the detail's header, because opening the node for real — history, issues, editing — is a different act from
+reading what it says.
 
 The seven hooks had no `desc` at all when this board first drew them, which is how it shipped as a grid of
 names and numbers explaining nothing. They have one each now: a plugin that cannot say what it is for in one
@@ -69,14 +85,19 @@ A hook the profile turned off is drawn quieter than the metadata beside it, not 
 its text is mixed toward the page's own ground, below `--muted`, because a reader should skim past it. Its
 refusal mark keeps full strength — what it would do if it ran has not changed.
 
-## two typographic tiers, and the rail is a border
+## the list row is a name, because the sentence has somewhere better to be
 
-The name carries the weight at body size; its sentence is one step down and muted. There is no third rank,
-because this frame already spends the proportional/mono contrast channel globally — `--ui-font` IS the mono —
-so size and colour carry a ranking that a product with two typefaces would split three ways.
+One tier in the list: the name, in the sidebars' row grammar, with the marks that change a reading pushed to
+its edges. The sentence that used to sit under every name is the detail pane's first paragraph now, where it
+is read once and in full instead of twenty-five times in truncated parallel — and a list of names is what
+makes the list scannable at all, which is the job a master list has.
+
+There is no third rank anywhere here, because this frame already spends the proportional/mono contrast
+channel globally — `--ui-font` IS the mono — so size and colour carry a ranking a product with two typefaces
+would split three ways.
 
 Rows are borderless and tight, like every other list this frame draws: a box around a card is a border spent
-on a rectangle rather than on the thing inside it. The lifecycle rail is a `border-left` and a dot, never a
+on a rectangle rather than on the thing inside it. The group heading is a hairline and a count pod, never a
 drawn graphic — which is also how every workflow console worth copying draws one, because a border survives
 reflow and virtualisation and an SVG does not.
 
@@ -99,13 +120,32 @@ be counted correctly. That is the general rule, not an anecdote about one bar: a
 derive from the plugin definitions it reads is a figure this page must not draw, and the reader who wants
 the fleet's state has [[sessions-view]] for it.
 
-## one document, no dock
+## a board is a frame, not a document
 
-The board names no object, projects no navigator, and holds one full-width document. It is `resident`, so
-the bare address is its one tab identity, and it is absent from the published-tree page set because a static
-publication has no live plugin surface to read. Its body sits in the shared [[page-scroll]] scrollport like
-every other document of this shape — it shipped without one, and a board taller than the viewport that
-cannot be scrolled shows only its first screen.
+THE SHAPE IS THE ARGUMENT. This page was a single column in the shared scrollport: three stacked sections,
+one scrollbar, and every row a link out. That is the shape of a settings page — read once, top to bottom,
+left behind — and it is the wrong shape for a project's automation, which is a thing you come back to and
+work. A surface you manage holds still while you work it. So the root is a bounded pane, the bar and the
+split never move, and the list and the detail own their own overflow: reading one plugin does not scroll
+the controls off the top, and a long script does not push the inventory out of reach.
+
+That bounded root is why this page takes no [[page-scroll]]. It is not an oversight repeating the one this
+page already made once: that primitive is for documents that scroll as a whole, and it exempts bounded
+panes deliberately, exactly as the graph canvas and the session console are exempt.
+
+**The split is not a second navigator.** The frame's one navigator belongs to the window and is drawn once
+([[workspace-shell]]); a page that draws another has forked the product's sense of where you are. This
+list is the parts of THIS document — the plugins the board is about — the way [[diff-document]]'s file
+panel is the parts of one diff. The test is what a click does: selecting a row answers in the detail pane
+and changes no address, and the one link that leaves is explicit and lives in the detail's own header.
+
+Its rows are therefore the sidebars' one row grammar and its group headings the zone grammar, pinned so the
+lifecycle event a hook runs on stays overhead while its siblings scroll under it. The divider is the shared
+resizable pane, clamped so the detail keeps at least half the width, and it stacks to a band above the
+detail on a phone.
+
+The board is still `resident`, so the bare address is its one tab identity, and it is still absent from the
+published-tree page set because a static publication has no live plugin surface to read.
 
 ## colour is spent against the surface, never between two inks
 

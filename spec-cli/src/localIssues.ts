@@ -106,7 +106,9 @@ function parse(id: string, text: string): Issue {
     store: 'local',
     concern: fm.concern || id,
     by: fm.by || 'unknown',
-    status: fm.status === 'landed' ? 'landed' : 'open',
+    // Current writes have one terminal state, but preserve the old rejected decision as a distinct closed
+    // reading so "we decided not to" is never rendered as "it shipped".
+    status: fm.status === 'landed' || fm.status === 'rejected' ? fm.status : 'open',
     nodes: list(fm.nodes),
     created: fm.created || '',
     body: body.join('\n').trim(),

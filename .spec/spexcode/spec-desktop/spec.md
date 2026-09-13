@@ -8,6 +8,7 @@ code:
 related:
   - spec-desktop/desktop-integration.js
   - spec-desktop/gateway-discovery.js
+  - spec-desktop/gateway-discovery.test.js
   - spec-desktop/node-entry.mjs
   - spec-desktop/deep-link.test.js
   - spec-desktop/package.json
@@ -48,7 +49,8 @@ process the shell owns is a `utilityProcess` and dies with it.
 **Attach before start.** If a host gateway is already listening for this user, the shell loads it rather than
 starting a second; otherwise it starts one on a free loopback port and waits for its ready line. The shell reads
 [[host-facts]]'s one `host.json` record through the CLI's shared `readHostRecord`, then probes that recorded
-origin before attaching. There is no configured-port fallback and no second shell-owned record name: an absent,
+origin through the public `/host/identity` instance probe before attaching; full `/host` facts remain admin-scoped.
+There is no configured-port fallback and no second shell-owned record name: an absent,
 stale, or mismatched record means start a new gateway and let its bind publish the new truth.
 
 **One instance, one main window, real secondary windows.** The shell holds the single-instance lock so a second
