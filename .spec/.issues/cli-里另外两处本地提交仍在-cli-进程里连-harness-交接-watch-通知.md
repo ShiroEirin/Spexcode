@@ -41,3 +41,12 @@ created: 2026-09-13T11:00:10.663Z
 报告里写明了两处测量上的问题：第 1 次运行没等 watcher 空闲，A 的 turn-fail 因投递锁被前一条通知占着也很快，所以重跑了；第 2 次运行 A 的第一次尝试是我在它运行时往 A 源码树拷测试文件，触发 supervisor 重建，已撤回重跑。
 
 另外发现 `sessions.test.ts` 的 resume 就绪栅栏测试在"源码刚比 dist 新"的检出上必定超时（启动器自动构建吃掉它的 5 s）。基点全新检出同样失败，与本改动无关，已另开 issue `sessions-test-ts-的-resume-就绪栅栏测试-检出源码比-dist-新时必定`。
+
+<!-- reply: fa26102d-ccf8-444d-817d-e1b01403aa00 @ 2026-09-13T13:05:07.456Z -->
+已合入 main 并推送：7c428de3f（--no-ff，父提交 9a1c2879e 与同步后的分支 ae284ebd7），origin/main 已是 7c428de3f。
+
+落地前把最新 main（9a1c2879e，只多了本线程的回复和新开的那个 issue 文件）再合进分支，在 ae284ebd7 上重跑：spex spec lint 0 error、typecheck 通过、`npm run build` 通过、follow-cli.api 10/10。它和已验证的 2781049db 只差两个 `.spec/.issues` 文件；main 的树与 ae284ebd7 的树逐字节相同，合并提交自己的 pre-commit lint 也是 0 error。
+
+合并在源检出旁边的临时 detached worktree 里做，再对源检出 `merge --ff-only`，临时 worktree 已删。源检出落地前后都是干净的，状态指纹与检查时一致，没有 MERGE_HEAD。快进后有一次源检出 dist 的自动重建（`spec-cli/.dist-next-*` 临时目录短暂出现，构建结束后改名为 gitignore 的 dist），不是用户改动，也没有碰。测试进程、A/B 用的端口、tmux、检出都已清理，证据留在报告里：[[file:local-commit-owner-report.html]]。
+
+推送时 GitHub 提示仓库地址已改为 https://github.com/shuxueshuxue/Spexcode.git（大小写），这次经重定向推送成功，origin 的 URL 没改。关闭本 issue 留给你。另一个 concern 在 `sessions-test-ts-的-resume-就绪栅栏测试-检出源码比-dist-新时必定`。
