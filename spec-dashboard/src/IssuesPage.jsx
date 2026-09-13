@@ -252,10 +252,9 @@ function SubIssues({ issue, kids, sessions }) {
   const [hideDone, setHideDone] = useState(false)
   const closed = issue.childCounts?.closed ?? 0
   const total = (issue.childCounts?.open ?? 0) + closed
-  const door = issue.store === 'local' && issue.status === 'open'
-    ? <a className="ds-action" href={routeHash('issues', NEW_PARAM, { parent: issue.id })}><Icon name="plus" size={12} />{t('session.issuesSubNew')}</a>
-    : null
-  if (!total && !door) return null
+  // With no children there is NO block: a header-only section sitting above the thread made the replies below read
+  // as "the sub-issues". The door to compose one lives in the rail (SubIssueDoor), where the page keeps its doors.
+  if (!total) return null
   const shown = hideDone ? kids.filter((kid) => kid.status === 'open') : kids
   const progress = t('session.issuesSubCount', { closed, total })
   return (
@@ -276,7 +275,6 @@ function SubIssues({ issue, kids, sessions }) {
               {t('session.issuesSubHideDone')}
             </button>
           )}
-          {door}
         </span>
       </header>
       {shown.length > 0 && (
@@ -285,6 +283,24 @@ function SubIssues({ issue, kids, sessions }) {
         </div>
       )}
     </section>
+  )
+}
+
+// the rail's SUB-ISSUES row ([[issues-view]]): the count as a value and the `+ Sub-issue` door — a real anchor to the
+// compose page with the parent filled in — offered only where the store takes a sub-issue (an open local issue).
+// The door prepares; the compose page writes. It lives here, not in the main column, so a childless issue shows no
+// empty block above its thread.
+function SubIssueDoor({ issue }) {
+  const t = useT()
+  const closed = issue.childCounts?.closed ?? 0
+  const total = (issue.childCounts?.open ?? 0) + closed
+  const canAdd = issue.store === 'local' && issue.status === 'open'
+  if (!total && !canAdd) return null
+  return (
+    <SideSection label={t('detail.sideSubIssues')}>
+      {total > 0 && <SideValue text={t('session.issuesSubProgress', { closed, total })} dim />}
+      {canAdd && <a className="ds-action" href={routeHash('issues', NEW_PARAM, { parent: issue.id })}><Icon name="plus" size={12} />{t('session.issuesSubNew')}</a>}
+    </SideSection>
   )
 }
 
@@ -313,6 +329,9 @@ export function IssueDetailPage({ issue: th, specs, sessions, onOpenSession, onW
   // the thread is a home of the one widget host ([[widgets]]): its replies draft into, and send from, this composer
   const widgetHost = useWidgetHost()
   const [composeSeed, setComposeSeed] = useState(null)   // a rail door's trigger for the composer to type, consumed once
+  // what the thread shows — replies, fleet declarations and sub-issue events on one time line — counted once for its heading
+  const threadLedger = [...ledger, ...ledgerFromChildren(kids)]
+  const threadRows = [...replies, ...threadLedger]
   const run = (name, fn) => async () => {
     if (acting) return
     setActing(name)
@@ -366,6 +385,7 @@ export function IssueDetailPage({ issue: th, specs, sessions, onOpenSession, onW
               <IssueLink issue={parent} />
             </SideSection>
           )}
+          <SubIssueDoor issue={th} />
           {relations.length > 0 && (
             <SideSection label={t('detail.sideRelations')}>
               {relations.map(({ kind, id }) => (
@@ -430,7 +450,8 @@ export function IssueDetailPage({ issue: th, specs, sessions, onOpenSession, onW
       )}
       {th.body && <div className="fvd-body"><SpecBody body={th.body} /></div>}
       <SubIssues issue={th} kids={kids} sessions={sessions} />
-      <Replies replies={replies} sessions={sessions} ledger={[...ledger, ...ledgerFromChildren(kids)]} widgetHost={widgetHost} />
+      {threadRows.length > 0 && <h2 className="fv-thread-head">{t('session.issuesThread', { n: threadRows.length })}</h2>}
+      <Replies replies={replies} sessions={sessions} ledger={threadLedger} widgetHost={widgetHost} />
     </DetailShell>
   )
 }
@@ -501,7 +522,9 @@ export default function IssuesPage({ param = null, query = EMPTY_QUERY, onOpenSe
     return <NewIssuePage specs={specs} sessions={sessions} stores={writeStores} parent={query.parent || null} issuesStamp={issuesStamp}
       // the created issue is where the writer belongs; the spent compose address REPLACES ([[side-nav]]:
       // automatic state-naming replaces, so Back returns to the list, not to an emptied form).
-      onCreated={(id, outcomes) => { flash(outcomes); scope.open({ page: 'issues', param: id, query: null }, { replace: true }) }} />
+      // a sub-issue composed from a parent returns to that parent (its Sub-issues section now lists the new one);
+      // a top-level issue lands on itself.
+      onCreated={(id, outcomes) => { flash(outcomes); scope.open({ page: 'issues', param: query.parent || id, query: null }, { replace: true }) }} />
   }
 
   if (param) {
@@ -536,6 +559,11 @@ const storeDisplayName = (id) => STORE_DISPLAY_NAMES[id] || id
 // renders it with, so what the writer proofreads is what the issue will look like.
 function NewIssuePage({ specs, sessions, stores: allStores, parent = null, issuesStamp = null, onCreated }) {
   const t = useT()
+  // A sub-issue is composed FROM its parent, so the way out of the form is the parent's page — back anchor and
+  // Cancel alike — never the list; without a parent the compose page returns to the list as before. Both are
+  // REAL anchors derived from the address ([[address-routing]]), never history.back.
+  const returnHref = parent ? routeHash('issues', parent) : detailBackHash('issues')
+  const returnLabel = parent ? t('detail.backToParent') : t('detail.backToIssues')
   // `?parent=<id>` composes a sub-issue: only the local store holds a tree, so the picker narrows to it, and the rail
   // names the parent from its own addressed read.
   const stores = useMemo(() => (parent ? allStores.filter((s) => s.kind === 'local') : allStores), [parent, allStores])
@@ -575,8 +603,8 @@ function NewIssuePage({ specs, sessions, stores: allStores, parent = null, issue
   return (
     <DetailShell
       title={t('session.issuesNewTitle')}
-      backHref={detailBackHash('issues')}
-      backLabel={t('detail.backToIssues')}
+      backHref={returnHref}
+      backLabel={returnLabel}
       side={
         <>
           {parent && (
@@ -645,7 +673,7 @@ function NewIssuePage({ specs, sessions, stores: allStores, parent = null, issue
         <div className="fv-new-actions">
           {err && <span className="fv-error">{err}</span>}
           {/* Cancel is the same return the back anchor is — a REAL list anchor, never history.back. */}
-          <a className="fv-cancel" href={detailBackHash('issues')}>{t('session.issuesCancel')}</a>
+          <a className="fv-cancel" href={returnHref}>{t('session.issuesCancel')}</a>
           <button type="button" className="fv-post" disabled={busy || !concern.trim()} onClick={submit}>
             {busy ? t('session.issuesSending') : t('session.issuesPost')}
           </button>

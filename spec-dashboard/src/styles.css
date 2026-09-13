@@ -4179,3 +4179,6 @@ body.is-session-dragging .si-pill.archive:hover {
 .fv-subissue-link { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; color: var(--blue); font-size: var(--type-meta); text-decoration: none; }
 .fv-subissue-link > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fv-duplicate a:hover, .fv-subissue-link:hover > span { text-decoration: underline; }
+/* the thread's own heading ([[issues-view]]): the rail-label voice over a hairline, so what follows is unmistakably the
+   activity — never mistaken for a list of sub-issues. */
+.fv-thread-head { margin: 14px 0 0; padding-top: 10px; border-top: 1px solid var(--line); font-size: var(--type-caption); font-weight: var(--weight-semibold); letter-spacing: var(--tracking-normal); color: var(--muted); }
