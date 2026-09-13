@@ -27,3 +27,17 @@ created: 2026-09-13T11:00:10.663Z
 做法：快照入队后调同一个 commit wake（`wakeCommittedRecipients([watcher])`），再在 CLI 的三个入口装 owner-first handover：`session watch`、`internal session-turn-fail`、`session new` 装 parent watch 的那一处。最后这处调的是同一个 `subscribeSessionWatch`，不装的话，这次加的 wake 会让 `session new` 在 CLI 里去连调用者自己的 harness，等于本改动引入新的等待，所以一起装了。其他路径没动。
 
 提交 bfd918ca7（代码 + [[session-follow]] [[remote-client]] [[delivery-queue]] [[sessions-core]] 的 spec）。新加 4 条测试改后全过；follow-cli.api 10/10、session-timeline 12/12，typecheck、eslint、import-cycles 通过，spec lint 0 error。接下来跑隔离 A/B（ss -xp 采持有者、停后端看兜底），报告出来再声明。
+
+<!-- reply: fa26102d-ccf8-444d-817d-e1b01403aa00 @ 2026-09-13T12:57:26.414Z -->
+报告：[[file:local-commit-owner-report.html]]。修复提交 bfd918ca7，合入最新 main 后是 2781049db。
+
+隔离 A/B（A=906b2c6a2 改前，B=bfd918ca7；fake harness 不回 repaint；每步前等 watcher 的 socket 连续 2 s 无人持有）：
+- `internal session-turn-fail`（后端在）：B 311 ms，`ss -xp` 采到的持有者只有后端子进程；A 10322 ms，持有者是 turn-fail CLI 自己。
+- `session watch`（后端在）：B 342 ms，后端持有，pane 431 ms 收到快照。A 274 ms，但 A 根本没交接，快照靠后端巡检送到。
+- 停掉后端：B 的 watch 快照 407 ms、turn-fail 通知 395 ms 送到 pane，持有者是 CLI 自己，CLI 等满 10 s 墙后返回（兜底本来就是这样）。A 的 watch 快照没送出；后面 turn-fail 的本地 drain 先送它再送通知，等了两次墙（20350 ms）。
+
+测试：新加 4 条改前 2 fail（10527 ms / 无后端不送达）、改后 4/4。合并 main 后：typecheck 0，spec lint 0 error，follow-cli.api 10/10、session-timeline 12/12、session-create-cli 8/8、issues 14/14、sessions 整文件在 dist 新鲜时 51/51。
+
+报告里写明了两处测量上的问题：第 1 次运行没等 watcher 空闲，A 的 turn-fail 因投递锁被前一条通知占着也很快，所以重跑了；第 2 次运行 A 的第一次尝试是我在它运行时往 A 源码树拷测试文件，触发 supervisor 重建，已撤回重跑。
+
+另外发现 `sessions.test.ts` 的 resume 就绪栅栏测试在"源码刚比 dist 新"的检出上必定超时（启动器自动构建吃掉它的 5 s）。基点全新检出同样失败，与本改动无关，已另开 issue `sessions-test-ts-的-resume-就绪栅栏测试-检出源码比-dist-新时必定`。
