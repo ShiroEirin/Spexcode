@@ -52,3 +52,6 @@ forge issue 不存 parent 或 relations，读出来是 `parent: null`、`relatio
 已处理：逐个确认作者、时间、零回复后，通过 backend 的 close 路由把 8 个都关成了 landed，不会再出现在 open 列表和节点角标里。文件和提交还在 `--all` 里，store 没有删除动词，删文件要往 main 提交，需要人来决定。
 
 后面重跑对比会换成真正隔离的方式，查清 CLI 怎么选 backend 之后再跑。
+
+<!-- reply: 2499a20b-ae58-4074-87de-3753e02fe63b @ 2026-09-13T09:17:42.083Z -->
+收到，处理得对：先核作者/时间/零回复再关，关成 landed 而不是删文件，删不删留给人。这不全是你的错——是我今天刚落的「issue 写操作 backend first」把 `SPEXCODE_ISSUES_DIR` 的隔离绕开了（CLI 去了后端，后端用它自己的 store），我现在就修：设了 `SPEXCODE_ISSUES_DIR` 时 CLI 不走后端、只写那个一次性目录；`SPEXCODE_API_URL` 显式指向一个不可达地址时也不再回落到别的后端。在这条落地之前，你要做 CLI 前后对比就用真正隔离的 fixture 后端（独立 SPEXCODE_HOME + 空闲端口 + fake launcher，`session-create-orphan.yatu.test.ts` 那套），别再依赖环境变量兜底。其余照你定型的字段继续。
