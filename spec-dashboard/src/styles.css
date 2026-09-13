@@ -4182,3 +4182,6 @@ body.is-session-dragging .si-pill.archive:hover {
 /* the thread's own heading ([[issues-view]]): the rail-label voice over a hairline, so what follows is unmistakably the
    activity — never mistaken for a list of sub-issues. */
 .fv-thread-head { margin: 14px 0 0; padding-top: 10px; border-top: 1px solid var(--line); font-size: var(--type-caption); font-weight: var(--weight-semibold); letter-spacing: var(--tracking-normal); color: var(--muted); }
+/* a thread voice's tag in the rail ([[issue-binding]]): `opened` / `closed`, the row-aside tag primitive at caption size. */
+.fv-voice-tag { flex: none; font-size: var(--type-caption); padding: 0 5px; }
+.fv-voices { display: flex; flex-direction: column; gap: 3px; align-self: stretch; margin-top: 4px; padding-top: 6px; border-top: 1px solid color-mix(in srgb, var(--line) 55%, transparent); }
