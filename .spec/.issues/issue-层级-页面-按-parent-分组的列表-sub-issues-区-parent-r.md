@@ -25,3 +25,18 @@ Linear 页面逻辑（官方 display-options / parent-and-sub-issues / issue-rel
 
 <!-- reply: 2499a20b-ae58-4074-87de-3753e02fe63b @ 2026-09-13T09:33:12.661Z -->
 @new:reclaude 接这个页面 issue。后端字段已在 main（6b1902f1c）：parent / children / childCounts / relations / blockedBy / relatedBy / duplicatedBy / duplicateOf，POST /api/issues 接受 parent；详情见 issue「issue-层级-后端-parent-relations-存储-读时树-cli-verbs」的线程。按正文做，风格只用 review-chrome 词汇，组件复用；另外把 issueFleet 改成父 issue 的 fleet 包含所有子 issue 的 fleet（读时，树给的）。
+
+<!-- reply: 147de45c-6b5b-42ee-a2d6-bcdbea9917c5 @ 2026-09-13T09:41:27.061Z -->
+接手了。先报一个发现，再说做法。
+
+**发现：后端线程里定的「父 issue 关闭不算不在」没有落到 main。** `issueHierarchy` 仍要求父是 open（`spec-cli/src/issues.ts` 的 pointer 判断），单测断言 "a closed parent promotes the child"，[[issues]] 正文也是旧说法。结果是 Closed 视图里的树是平的，已关子 issue 没有 Parent。本页验收依赖它，我在本分支一起改：去掉 status 判断、翻转那条单测、改 [[issues]] 那句。写入时「parent 必须 open」的校验不动。
+
+**做法**
+1. 列表：`sub:all|top` 和 `group:parent` 两个 token，进 Filters 菜单。语义放进 [[review-filters]] 引擎，在服务端分页之前生效，Open/Closed 计数和行数因此一致。`sub:top`（默认）只让没有父的 issue 做顶层行；`group:parent` 让父也在结果里的子 issue 紧跟父行缩进（行上带 depth）。所以 `group:parent` 默认是整棵树，加 `sub:all` 再补上父不在结果里的子 issue。父行带 `N/M`（childCounts）。
+2. 详情：正文和线程之间加 Sub-issues 段（进度条、子 issue 行复用列表的行组件、「隐藏已完成」、`+ Sub-issue` 是指向 `#/issues/new?parent=<id>` 的真链接）。侧栏加 Parent 和 Relations（Blocked by 橙点 / Blocks 红点 / Related / Duplicate of / Duplicated by）。`duplicateOf` 非空时主列顶部出 banner。
+3. 标题和状态从哪来：wire 上 parent/children/relations 只有 id。给 `GET /api/issues/:id` 加 `refs`，即这些 id 各自的 `{id, concern, status, store, by, created, childCounts, descendants}`，一次读够，页面不逐个请求。
+4. fleet：父 issue 的 fleet 要所有后代 issue 的 id，分页行上只有直接 children，而列表条和服务端 `fleet:` facet 必须是同一个函数。所以读时树再加一个 `descendants: string[]`，`issueFleet` 改为接收 issue（id + descendants）。fleet 卡片里，挂在子 issue 上的 session 多一行指向那个子 issue。
+5. 线程台账：子 issue「打开」按 `created` 进 ledger，行上带子 issue 当前的状态标记。「关闭」放不进时间线：wire 上没有关闭时间，local close 只改 status。要做得在存储里记关闭时间，是后端存储格式的变更，这次不做；需要的话我另开 issue。
+6. New 页接受 `?parent=`，侧栏显示 Parent，store 只留 local（forge 不存层级）。
+
+验收照正文：隔离 fixture + 真实浏览器截图，review-report 后 `done --propose merge`。
