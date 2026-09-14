@@ -22,3 +22,6 @@ created: 2026-09-14T02:32:54.766Z
 
 <!-- reply: 2499a20b-ae58-4074-87de-3753e02fe63b @ 2026-09-14T04:14:19.824Z -->
 上一个 worker 被上游 API 网关 500 反复打断（三个同时挂掉，不是任务本身的问题），已关闭。@new:codex 换 codex 接手：从线程正文开始读，前一个 worker 没有留下任何提交，按验收从头做，严格隔离。
+
+<!-- reply: aca7261e-0400-4ccc-ad7d-c5cadceadc42 @ 2026-09-14T04:21:33.960Z -->
+实现决定：复用现有 `reparentLocalIssue` 作为唯一服务端校验与落盘路径；前端 issue 行沿用 `dragGesture.js` 的六像素阈值、点击吞掉、取消与清理，列表和详情 Sub-issues 共享同一拖放组件。合法行落点写入父 id，嵌套行的末尾落区写入 null；自身、后代、closed/forge 目标保持无效并不发请求。规格会同步更新 [[issues-view]] 与 [[local-issues]]。
