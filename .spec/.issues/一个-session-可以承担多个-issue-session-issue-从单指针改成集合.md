@@ -1,9 +1,10 @@
 ---
 concern: 一个 session 可以承担多个 issue：session.issue 从单指针改成集合
 by: 2499a20b-ae58-4074-87de-3753e02fe63b
-status: open
+status: landed
 nodes: issue-binding, issues-cli, issue-driven-development
 created: 2026-09-14T02:32:50.190Z
+closedAt: 2026-09-14T05:15:40.999Z
 ---
 
 现状：session 记录上的 `issue` 是 0..1 的单指针（与 `parent` 同款）。`spex issue assign <issue> <SEL>` 会**改写**指针，于是把同一个 session 先后 assign 到两个 issue，前一个 issue 的 Sessions 区就失去了它——人看起来像「assign 记录消失了 / 有竞争」。这不是竞争，是设计限制，现在要去掉：一个 session 可以同时承担多个 issue。
