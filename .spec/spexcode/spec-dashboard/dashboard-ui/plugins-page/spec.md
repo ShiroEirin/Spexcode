@@ -2,7 +2,7 @@
 title: plugins-page
 status: active
 hue: 40
-desc: The rail's automation board — a bounded master/detail frame reading every plugin by the surface it plugs into, hooks grouped under the lifecycle event they fire on, and the selected plugin's own contract text and script beside it.
+desc: The rail's automation board — a bounded master/detail frame reading every plugin by the surface it plugs into, hooks grouped under the lifecycle event they fire on, and the selected plugin read beside it as a spec document — title, description, property row, rendered body, its script as a code block.
 code:
   - spec-dashboard/src/PluginsView.jsx
 related:
@@ -12,6 +12,7 @@ related:
   - spec-dashboard/src/styles.css
   - spec-dashboard/src/Segmented.jsx
   - spec-dashboard/src/useResizable.js
+  - spec-dashboard/src/NodeView.jsx
   - spec-dashboard/src/i18n/en.js
   - spec-dashboard/src/i18n/zh.js
   - spec-cli/src/plugins-view.ts
@@ -54,9 +55,31 @@ through [[plugins-view]].
 
 That is also the difference the split buys. When each row was a link out, reading one plugin cost the whole
 window and reading three meant three round trips; the text was in the product but never on this page. Now
-the row selects and the text arrives beside it. The one link that still leaves is explicit, named, and in
-the detail's header, because opening the node for real — history, issues, editing — is a different act from
-reading what it says.
+the row selects and the text arrives beside it. The one link that still leaves is explicit, named, and at
+the end of the detail's property row, because opening the node for real — history, issues, editing — is a
+different act from reading what it says.
+
+## the detail is a spec reading, in the spec page's own grammar
+
+The selected plugin IS a spec node, so its detail is drawn the way [[spec-view]] draws one: the name as the
+document title, the `desc` as its subtitle, one property row under a hairline, then the body rendered as
+prose through the same markdown path every other body on the dashboard takes — bold is bold, a code span is a
+code span, a heading is a heading, a `[[node]]` is a link. Under the prose, each co-located file is a section
+of the same document: the file's name as a heading, its path beside it, and the bytes in the dashboard's own
+code block. A hook's script is part of what the hook says, so it reads as the document's last chapter, not
+as an attachment.
+
+The property row obeys the marks rule: a chip exists only for a fact that is TRUE of this plugin. Each
+surface the node plugs into is a status word with the neutral tick; a hook adds the event it binds and its
+order; a hook that may refuse adds one tinted chip, in the refusal colour the list's rail already spends; a
+hook the active profile turns off says so. Nothing is drawn for "does not refuse" or "is not disabled".
+
+NOTHING IN THE DETAIL IS PINNED. The first build fixed the description and a facts grid above a scrolling
+region, so every plugin opened under a block of overview that never moved, and the body under it was the raw
+markdown in a `<pre>` — source line breaks, literal asterisks, backticks. That read as a dump with a sticky
+summary on top, and it was the reason the board looked unlike the rest of the product. The frame is what
+holds still — the bar, the list, the split — and the document inside it scrolls whole, exactly as a node's
+page does. Selecting another row replaces the document; it never leaves a header behind.
 
 The seven hooks had no `desc` at all when this board first drew them, which is how it shipped as a grid of
 names and numbers explaining nothing. They have one each now: a plugin that cannot say what it is for in one
@@ -140,9 +163,10 @@ panel is the parts of one diff. The test is what a click does: selecting a row a
 and changes no address, and the one link that leaves is explicit and lives in the detail's own header.
 
 Its rows are therefore the sidebars' one row grammar and its group headings the zone grammar, pinned so the
-lifecycle event a hook runs on stays overhead while its siblings scroll under it. The divider is the shared
-resizable pane, clamped so the detail keeps at least half the width, and it stacks to a band above the
-detail on a phone.
+lifecycle event a hook runs on stays overhead while its siblings scroll under it — the list is the one place
+on the board a heading pins, because a group heading is what makes a long list navigable; a detail's own
+overview is not. The divider is the shared resizable pane, clamped so the detail keeps at least half the
+width, and it stacks to a band above the detail on a phone.
 
 The board is still `resident`, so the bare address is its one tab identity, and it is still absent from the
 published-tree page set because a static publication has no live plugin surface to read.
