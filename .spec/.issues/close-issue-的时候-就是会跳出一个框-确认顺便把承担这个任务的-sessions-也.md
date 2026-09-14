@@ -1,8 +1,9 @@
 ---
 concern: Close issue 的时候，就是会跳出一个框，确认顺便把承担这个任务的 sessions 也给 close 掉
 by: human
-status: open
+status: landed
 created: 2026-09-14T02:25:58.791Z
+closedAt: 2026-09-14T13:00:22.174Z
 ---
 
 它是这样的：可以加一个硬限制，就是必须所有承担这个任务的 session 都处于 close pending 或者已经被 Close 了的状态下，才可以去 Close 掉这个 issue。如果说不满足这个条件的话，可以在跳出的那个确认框里面，选一个叫做“nudge all sessions to enter close pending state”的选项
