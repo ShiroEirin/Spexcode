@@ -42,7 +42,7 @@ const take = (opts: Partial<Parameters<typeof followSessions>[1]> = {}): Promise
 const titled = (): Session => ({
   id: T, branch: 'node/legacy-node-handle', path: '/wt/title',
   label: 'legacy-node-handle', title: 'current work summary', raw: { name: null, title: 'stored title' },
-  parent: null, issue: null, harness: 'claude', capabilities: { headless: false }, launcher: null,
+  parent: null, issues: [], issue: null, harness: 'claude', capabilities: { headless: false }, launcher: null,
   lifecycle: 'active', proposal: null, merges: 0, status: 'working', liveness: 'online', note: null,
   archived: false, closedAt: null, archiveHazard: null, prompt: null, promptPreview: null, created: 0, activity: 'current work summary', sortKey: null, files: [],
 })

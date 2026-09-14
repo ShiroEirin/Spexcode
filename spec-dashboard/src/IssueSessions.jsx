@@ -7,7 +7,7 @@ import SessionContextMenu from './SessionContextMenu.jsx'
 import SessionPicker from './SessionPicker.jsx'
 import Modal from './Modal.jsx'
 import { SideSection, SideValue } from './ReviewShell.jsx'
-import { STATUS_COLOR, fleetWorkState, isArchived, issueFleet, issueParticipants, sessionDisplayState, sessionForest, sessionHeadline } from './session.js'
+import { STATUS_COLOR, fleetWorkState, isArchived, issueFleet, issueParticipants, sessionDisplayState, sessionForest, sessionHeadline, sessionIssues } from './session.js'
 import { fileName, webName } from './resourceCatalog.js'
 import { resourceSurface, resourceTabKey } from './sessionSurface.js'
 import { useT } from './i18n/index.jsx'
@@ -87,8 +87,8 @@ function FleetCard({ s, issueId, onOpenSession }) {
   return (
     <div className="fv-fleet-card" role="region" aria-label={sessionHeadline(s)}>
       <SideValue lead={key(t('fleet.cardStatus'))} text={`${t(`status.${d.status}`)}${s.note ? ` · ${s.note}` : ''}`} />
-      {/* a parent issue's fleet holds its sub-issues' workers: the row names the issue it actually works */}
-      {s.issue && s.issue !== issueId && <SideValue lead={key(t('fleet.cardIssue'))} text={s.issue} mono href={routeHash('issues', s.issue)} />}
+      {/* a parent issue's fleet holds its sub-issues' workers: list every other issue this session handles */}
+      {sessionIssues(s).filter((id) => id !== issueId).map((id) => <SideValue key={id} lead={key(t('fleet.cardIssue'))} text={id} mono href={routeHash('issues', id)} />)}
       {s.branch && <SideValue lead={key(t('fleet.cardBranch'))} text={s.branch} mono />}
       {files.map((p) => <SideValue key={p} lead={key(t('fleet.cardFiles'))} text={fileName(p)} tip={p} href={surfaceHref('file', p)} />)}
       {web.map((w) => <SideValue key={w.key} lead={key(t('fleet.cardWeb'))} text={webName(w.url)} tip={w.url} href={surfaceHref('web', w.key)} />)}

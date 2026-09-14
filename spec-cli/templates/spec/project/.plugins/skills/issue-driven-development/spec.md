@@ -3,14 +3,14 @@ title: issue-driven-development
 surface: skill
 status: active
 hue: 30
-desc: How a session works an issue so the Issues page stays true — find the issue you are bound to, read its thread before code, report on the thread (prose for reasoning, a widget for shape), let your declarations be the status, hand work over with assign, and never write state the board already derives. Use ONLY when your prompt names an issue thread, when `spex issue mine` returns one, or when a human asks you to take an issue — never volunteer issues or this workflow when the human has not mentioned one.
+desc: How a session works its issue set so the Issues page stays true — find the issues you are bound to, read their threads before code, report on the threads (prose for reasoning, a widget for shape), let your declarations be the status, hand work over with assign, and never write state the board already derives. Use ONLY when your prompt names an issue thread, when `spex issue mine` returns one, or when a human asks you to take an issue — never volunteer issues or this workflow when the human has not mentioned one.
 ---
 
 # issue-driven-development
 
 An issue is where the human states the task; you are a session bound to it. The Issues page shows the human
 every session on the issue, what each is doing, and what needs them — **from facts you already produce**: your
-record's `issue` pointer, your declarations, your posted files and widgets, your replies on the thread. This
+record's `issues` set, your declarations, your posted files and widgets, your replies on the thread. This
 skill is about producing those facts in the right place, so the page needs no second channel and you need no
 second vocabulary. One rule underneath everything: **say it where it is read**. Reasoning goes on the thread;
 state goes in a declaration; shape goes in a widget. Nothing goes in a private note the board cannot see.
@@ -22,8 +22,8 @@ this workflow. An issue is the human's way of stating a task, not a form you mak
 
 ## 1. find your issue
 
-- `spex issue mine` prints the issue your session is bound to (the one a thread's `@new` or `--issue`
-  created you for, or that a human assigned you), with its thread. `--json` for the machine-readable form.
+- `spex issue mine` prints every issue your session is bound to (the ones a thread's `@new` or `--issue`
+  created you for, or that a human assigned you), with each thread. `--json` returns an array.
 - No issue bound and your prompt names one? Bind yourself: `spex issue assign <issue-id> .` — the Issues page
   can only show you on the issue if the pointer exists. A worker that silently works an issue is invisible.
 - Read the whole thread before any code: `spex issue show <id>`. The concern is the task; the replies are
@@ -76,7 +76,8 @@ without an `ask` declaration is invisible to the board — the human sees a work
   sub-issue's. Supervise it through `spex session watch`. Closing the sub-issues does not close yours: the parent
   shows how many are closed, and closing it stays the human's act.
 - **Hand over:** an existing session should take the issue instead of you → `spex issue assign <id> <SEL>`;
-  it is told through its own inbox. Then declare your own end honestly.
+  it is told through its own inbox. To stop a session carrying this issue, use `spex issue unassign <id> <SEL>`;
+  the removal is also told through its inbox. Then declare your own end honestly.
 - **Escalate:** something on the thread needs the human → `ask`, with the question in the note and, if there
   are options, a widget the human can click ([[draw]]).
 - **A second concern** you find while working is a **new issue** (`spex issue open "<concern>" --node <id>`),
@@ -95,9 +96,10 @@ without an `ask` declaration is invisible to the board — the human sees a work
 
 | need | verb | read by |
 |---|---|---|
-| my issue | `spex issue mine [--json]` | you |
+| my issue(s) | `spex issue mine [--json]` | you |
 | the thread | `spex issue show <id> [--json]` | you |
 | bind / hand over | `spex issue assign <id> <SEL>` (`.` = me) | the Issues page rail, the target's inbox |
+| unbind | `spex issue unassign <id> <SEL>` | the Issues page rail, the target's inbox |
 | report | `spex issue reply <id> --body -` | the thread, the originator's inbox |
 | shape | `spex session widget put <name> <file>` + `[[widget:<name>]]` in a reply | the thread, in place |
 | evidence | `spex session files add <path>` + `[[file:<name>]]` | the rail's card, the thread |

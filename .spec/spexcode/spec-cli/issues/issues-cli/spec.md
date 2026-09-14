@@ -47,9 +47,10 @@ byte-identical copies of `fl` existed while the surface was split across two mod
 remains. A helper that both this module and a store module need is a signal to re-examine which of them is
 really asking, not a reason to widen a store module's exports.
 
-**`mine` is the worker's first read.** `spex issue mine [--json]` prints the issue the caller's session record points at
-([[issue-binding]]), through the same merged read `show` uses; no session identity, or a session bound to no issue, is
-said plainly with the way to bind one (`spex issue assign <id> .`), never guessed from prompt text.
+**`mine` is the worker's first read.** `spex issue mine [--json]` prints every issue the caller's session record
+points at ([[issue-binding]]), through the same merged read `show` uses; human output renders each thread in order and
+JSON returns an array. No session identity, or a session bound to no issue, is said plainly with the way to bind one
+(`spex issue assign <id> .`), never guessed from prompt text.
 
 **The hierarchy verbs render the store's forward facts.** `spex issue open --parent <id>` passes the parent through
 `open`'s ordinary backend-first path; `spex issue reparent <id> --to <parent-id|none>`, `spex issue relate <id>
@@ -60,8 +61,9 @@ and `mine` print the read-time projection under the header — parent, sub-issue
 blocked by, related (both directions), duplicate of, duplicated by — each line only when it has an id; `ls --json`
 carries the same fields on every row with no rendering of its own.
 
-**`assign` binds an existing session to an issue.** `spex issue assign <issue-id> <SEL>` is the CLI leg of the one
-assign verb ([[issue-binding]]'s `assignIssueSession`, the same function `POST /api/issues/:id/assign` runs): the
-issue is read through the same merged read `show` uses (a forge id pulls the live slice), the session through the
-ordinary selector, and the receipt names the binding, any previous issue it replaces, and whether the session was
-told — exit 1 when the pointer was written but the message did not land, so a half-done assignment is never silent.
+**`assign` and `unassign` manage existing session bindings.** `spex issue assign <issue-id> <SEL>` is the CLI leg of
+the one add verb ([[issue-binding]]'s `assignIssueSession`, the same function `POST /api/issues/:id/assign` runs):
+the issue is read through the same merged read `show` uses (a forge id pulls the live slice), the session through the
+ordinary selector, and the receipt names the added or already-present binding and whether a new assignment was told —
+exit 1 when a new binding was written but its message did not land. `spex issue unassign <issue-id> <SEL>` and
+`POST /api/issues/:id/unassign` remove one member and report delivery; both operations are idempotent.

@@ -138,7 +138,8 @@ export type Session = {
   label: string; title: string   // `label` remains the stable search handle; `title` is the one visible session name
   raw: { name: string | null; title: string | null }   // the bare parts, for explicit consumers only (rename prefill)
   parent: string | null   // the SPAWNING session's id ([[session-nesting]]) — set once at creation when `spex session new` ran inside another session, else null; the frontend folds a child under it at read time
-  issue: string | null    // the issue this session works for ([[issue-binding]]) — provenance like `parent`: written at create (a thread's `@new`, `--issue`) or assign, joined at read by the Issues page, never a lifecycle input
+  issues: string[]        // the issues this session works for ([[issue-binding]]) — provenance like `parent`: written at create (a thread's `@new`, `--issue`) or assign, joined at read by the Issues page, never a lifecycle input
+  issue: string | null    // legacy derived alias for compatibility; always issues[0] ?? null and will retire
   harness: string   // which harness (claude|codex) runs this session — carried so liveness/occupancy route through its adapter
   capabilities: { headless: boolean }   // stable adapter projection; console surfaces consume data, never harness ids
   launcher: string | null   // the launcher profile this session launched under ([[launcher-select]]); null only for old records predating launchers
@@ -456,7 +457,7 @@ function corruptSession(id: string, entry: { path: string; error: string }): Ses
   const label = `${id.slice(0, 8)} (unreadable record)`
   return {
     id, branch: null, path: '', label, title: label, raw: { name: null, title: null },
-    parent: null, issue: null, harness: defaultHarness.id, capabilities: { headless: false }, launcher: null,
+    parent: null, issues: [], issue: null, harness: defaultHarness.id, capabilities: { headless: false }, launcher: null,
     lifecycle: 'active', proposal: null, merges: 0, status: 'corrupt', liveness: 'unknown',
     note: corruptReason(entry), archived: false, closedAt: null, prompt: null, promptPreview: null, created: 0,
     activity: null, sortKey: null, archiveHazard: null, files: [], uploadedFiles: [], web: [], widgets: [],
@@ -473,7 +474,7 @@ export function toSession(rec: SessRec, status: DisplayStatus, lv: Liveness, act
   const parts = { id: rec.session, name: rec.name, title: rec.title, branch: rec.branch, activity: act, note: rec.note, promptPreview: pp }
   const harness = harnessById(rec.harness || defaultHarness.id)
   const files = readSessionFiles(rec.session)
-  return { id: rec.session, branch: rec.branch, label: deriveLabel(parts), title: deriveTitle(parts), raw: { name: rec.name, title: rec.title }, path: rec.worktreePath, parent: rec.parent, issue: rec.issue, harness: harness.id, capabilities: { headless: harness.headless }, launcher: rec.launcher, lifecycle: rec.closedAt ? 'archived' as Lifecycle : rec.status, proposal: rec.closedAt ? null : rec.proposal, merges: rec.merges, note: rec.note, status, liveness: lv, archived: rec.archived || !!rec.closedAt, closedAt: rec.closedAt, archiveHazard: null, prompt, promptPreview: pp, created: rec.createdAt, activity: act, sortKey: rec.sortKey, files, uploadedFiles: sessionUploads(files), web: readSessionWebs(rec.session), widgets: readSessionWidgets(rec.session), ...(rec.zcodeChildSessionIds?.length ? { zcodeChildSessionIds: [...rec.zcodeChildSessionIds] } : {}) }
+  return { id: rec.session, branch: rec.branch, label: deriveLabel(parts), title: deriveTitle(parts), raw: { name: rec.name, title: rec.title }, path: rec.worktreePath, parent: rec.parent, issues: [...rec.issues], issue: rec.issues[0] ?? null, harness: harness.id, capabilities: { headless: harness.headless }, launcher: rec.launcher, lifecycle: rec.closedAt ? 'archived' as Lifecycle : rec.status, proposal: rec.closedAt ? null : rec.proposal, merges: rec.merges, note: rec.note, status, liveness: lv, archived: rec.archived || !!rec.closedAt, closedAt: rec.closedAt, archiveHazard: null, prompt, promptPreview: pp, created: rec.createdAt, activity: act, sortKey: rec.sortKey, files, uploadedFiles: sessionUploads(files), web: readSessionWebs(rec.session), widgets: readSessionWidgets(rec.session), ...(rec.zcodeChildSessionIds?.length ? { zcodeChildSessionIds: [...rec.zcodeChildSessionIds] } : {}) }
 }
 
 export type ZCodeChildSessionLink = { sessionId: string; childSessionId: string; alreadyLinked: boolean }
@@ -2256,7 +2257,7 @@ async function prepareSession(prompt: string, parentage: CreateParentage, launch
           let rec: SessRec = {
             session: id, governed: true, worktreePath: path, branch,
             title, name, parent: parent && parent !== id ? parent : null,
-            issue: issue ?? null,
+            issues: issue ? [issue] : [], issue: issue ?? null,
             status: 'queued', proposal: null, merges: 0, note: null, sortKey: null, createdAt: Date.now(),
             harness: h.id, harnessSessionId: null, runtimeStartToken: randomUUID(), stopped: false, archived: false, closedAt: null, coldProof: null, adapterRecovery: null, launcher: chosen.name,
             launchCmd: pinned, launchConfigDir: chosen.configDir, launchOwner: backendLaunchAuthority(), createRequestId: requestDigest, createPayloadHash: payloadHash,

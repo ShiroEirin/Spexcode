@@ -1,6 +1,6 @@
-import { fleetWorkState, issueFleet, sessionHandle, sessionHeadline, sessionPresent } from '@spexcode/spec-core/review'
+import { fleetWorkState, issueFleet, sessionHandle, sessionHeadline, sessionIssues, sessionPresent } from '@spexcode/spec-core/review'
 
-export { sessionHandle, sessionHeadline, sessionPresent }
+export { sessionHandle, sessionHeadline, sessionIssues, sessionPresent }
 // the ONE issue->session join and its rolled-up work state live in the shared review package ([[issue-binding]]),
 // because the server's `fleet:` facet and this board must answer "who is on this issue" identically.
 export { fleetWorkState, issueFleet }

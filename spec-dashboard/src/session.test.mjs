@@ -108,7 +108,7 @@ test('presentation order keeps dashboard zones and recursive parent-before-child
   )
 })
 
-test('issueFleet joins sessions to an issue by pointer and inherits descendants at read time', () => {
+test('issueFleet joins sessions to every issue in a set and inherits descendants at read time', () => {
   const { issueFleet, fleetWorkState, issueParticipants } = sessionModule
   const sessions = [
     { id: 'a', issue: 'local#x', status: 'review', liveness: 'online', parent: null },
@@ -117,11 +117,11 @@ test('issueFleet joins sessions to an issue by pointer and inherits descendants 
     { id: 'b', issue: 'local#x', status: 'retired', liveness: 'offline', parent: null, archived: true },
     { id: 'c', issue: 'local#other', status: 'working', liveness: 'online', parent: null },
     { id: 'd', issue: null, status: 'working', liveness: 'online', parent: null },
-    { id: 'e', issue: 'local#sub', status: 'asking', liveness: 'online', parent: null },
+    { id: 'e', issues: ['local#sub', 'local#x'], issue: 'local#sub', status: 'working', liveness: 'online', parent: null },
   ]
   const { assigned, fleet } = issueFleet({ id: 'local#x' }, sessions)
-  assert.deepEqual(assigned.map((s) => s.id), ['a'], 'only live rows pointing at the issue are assigned; an archived row is off the board')
-  assert.deepEqual(fleet.map((s) => s.id), ['a', 'a1', 'a1x'], 'every descendant belongs to the fleet without a pointer of its own')
+  assert.deepEqual(assigned.map((s) => s.id), ['a', 'e'], 'all live rows carrying the issue are assigned; an archived row is off the board')
+  assert.deepEqual(fleet.map((s) => s.id), ['a', 'a1', 'a1x', 'e'], 'every assigned session and descendant belongs to the fleet')
   assert.equal(fleetWorkState(fleet), 'need', 'a review row outranks working children')
   assert.equal(fleetWorkState(fleet.slice(1)), 'run')
   assert.equal(fleetWorkState([sessions[2]]), 'stopped')
@@ -130,6 +130,7 @@ test('issueFleet joins sessions to an issue by pointer and inherits descendants 
   // a parent issue's fleet is its own plus every issue below it, as the read-time issue tree names them
   const parent = issueFleet({ id: 'local#x', descendants: ['local#sub'] }, sessions)
   assert.deepEqual(parent.fleet.map((s) => s.id), ['a', 'a1', 'a1x', 'e'], 'a sub-issue worker belongs to its parent issue too')
+  assert.deepEqual(issueFleet({ id: 'local#x' }, sessions).assigned.map((s) => s.id), ['a', 'e'], 'a session can belong to two issues')
   assert.equal(fleetWorkState(parent.fleet), 'need')
   assert.deepEqual(issueFleet({ id: 'local#sub' }, sessions).fleet.map((s) => s.id), ['e'], 'the sub-issue keeps only its own')
   const issue = { by: 'd', replies: [{ by: 'human' }, { by: 'a1' }, { by: 'd' }, { by: 'ghost' }] }

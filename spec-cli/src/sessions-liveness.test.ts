@@ -11,10 +11,10 @@ import type { SessRec } from './session-record.js'
 
 const rec = (over: Partial<SessRec> = {}): SessRec => ({
   session: 'sess-live-1', governed: true, worktreePath: '/wt/x', branch: 'node/x-1',
-  title: null, name: null, parent: null, issue: null, status: 'active', proposal: null, merges: 0, note: null,
+  title: null, name: null, parent: null, status: 'active', proposal: null, merges: 0, note: null,
   sortKey: null, createdAt: 1, harness: 'claude', harnessSessionId: null, runtimeStartToken: null, stopped: false, archived: false, closedAt: null,
   launcher: null, launchCmd: null, launchOwner: null,
-  ...over,
+  ...over, issues: over.issues ?? [], issue: (over.issues ?? [])[0] ?? null,
 })
 const snap = (over: Partial<LiveSnap> = {}): LiveSnap => ({ probeFailed: false, windows: new Map(), titles: new Map(), sockets: new Set(), unproven: new Set(), ...over })
 

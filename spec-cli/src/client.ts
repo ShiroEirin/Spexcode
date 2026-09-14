@@ -135,7 +135,7 @@ function corruptCachedSession(id: string, reason: string): Session {
   const label = `${id.slice(0, 8)} (unreadable record)`
   return {
     id, branch: null, path: '', label, title: label, raw: { name: null, title: null },
-    parent: null, issue: null, harness: 'unknown', capabilities: { headless: false }, launcher: null,
+    parent: null, issues: [], issue: null, harness: 'unknown', capabilities: { headless: false }, launcher: null,
     lifecycle: 'active', proposal: null, merges: 0, status: 'corrupt', liveness: 'unknown',
     note: `session record is unreadable: ${reason}`, archived: false, closedAt: null, archiveHazard: null,
     prompt: null, promptPreview: null, created: 0, activity: null, sortKey: null,
@@ -178,7 +178,7 @@ export function localCachedSessions(includeArchived = false): Session[] {
       label: id,
       title: id,
       raw: { name: null, title: null },
-      parent: state.parentSessionId, issue: null,
+      parent: state.parentSessionId, issues: [], issue: null,
       harness: 'unknown',
       capabilities: { headless: false },
       launcher: null,
