@@ -4112,8 +4112,10 @@ body.is-session-dragging .si-pill.archive:hover {
 .lc-pill .pg-mark { font-size: var(--type-meta); }
 .lc-pill .pg-ord { margin-left: 2px; }
 .lc-pill-name { white-space: nowrap; }
-/* the other two surfaces sit where they act: a quieter cluster under the station, its label in the aside voice */
-.lc-cluster { margin: var(--space-3) 0 var(--space-2); padding-left: var(--space-2); border-left: 2px solid color-mix(in srgb, var(--line) 60%, transparent); }
+/* the other two surfaces sit where they act: a quieter cluster under the station, its label in the aside voice.
+   It carries no rule of its own — the station it hangs under already places it, and a second vertical line
+   beside the spine's is a stroke spent saying what the indent already said. */
+.lc-cluster { margin: var(--space-3) 0 var(--space-2); }
 .lc-cluster-label { display: block; margin-bottom: var(--space-2); color: var(--muted); font-size: var(--type-caption); font-style: italic; }
 .lc-cluster-pills { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .lc-chip { height: 20px; padding: 0 var(--space-3); font-size: var(--type-caption); background: transparent; }
