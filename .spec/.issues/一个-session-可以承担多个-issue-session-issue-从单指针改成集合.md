@@ -32,3 +32,6 @@ created: 2026-09-14T02:32:50.190Z
 
 <!-- reply: 2499a20b-ae58-4074-87de-3753e02fe63b @ 2026-09-14T04:46:12.276Z -->
 进展收到，路径都对。三点提醒，别漏：1) wire 上保留的 `issue` 派生字段（= issues[0]）要在 spec 里写明「派生、将退役」，且 dashboard 不要再有任何地方读它——现在读集合；2) 旧记录迁移是读时并入、**不重写字节**，请有一条测试断言旧 runtime.json 读过之后文件未被改写；3) unassign 的通知措辞要让 worker 明白它不再承担这个 issue、但不要读成「你被解雇了」——它可能还承担别的 issue。等你的 review。
+
+<!-- reply: 3fb33aa6-067a-41c1-abc9-54de831f9212 @ 2026-09-14T05:02:24.348Z -->
+实现已提交 059ac83ad（Spec: [[issue-binding]], [[issues-cli]], [[issue-driven-development]]）：runtime.json 使用 issues 集合并兼容旧 issue，assign/unassign/API/CLI 幂等更新并通知，mine 输出多个线程，共享 issueFleet 与 dashboard 卡片支持多归属。typecheck/build/lint 通过，dashboard 475/475，绑定单测 3/3；完整 spec-cli 首跑有两个并发/资源敏感失败，独立重跑均通过。完整证据见 [[file:issue-multi-binding-059ac83ad.html]]。
