@@ -348,6 +348,7 @@ export default {
     data: 'structured data (JSON)',
     dataInvalid: 'structured data — invalid JSON',
     miss: 'original evidence is unavailable.',
+    unsupported: 'this evidence format has no preview.',
     noImage: 'no evidence capture attached.',
     fullscreen: 'fullscreen',
     exitFullscreen: 'exit fullscreen',
@@ -475,6 +476,7 @@ export default {
     originatorIssue: 'open the session that filed this issue: {by}',
     sendTo: ({ to }) => `Send to @${to}`,
     sendToTitle: 'post this reply AND hand it to session {to} as a message',
+    attachTitle: 'attach a file (or paste / drop) as evidence in this issue',
     declared: 'declared',
   },
 

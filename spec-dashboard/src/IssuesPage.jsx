@@ -4,7 +4,8 @@ import { ledgerFromChildren, ledgerFromTimeline, ledgerSince } from './issueLedg
 import { MENTION_RE, TriggerButton, typeTrigger, useMentionAutocomplete } from './mentions.jsx'
 import { ComposerSurface, ComposerTextarea, composingKey } from './Composer.jsx'
 import { SpecBody } from './NodeView.jsx'
-import { Replies, ReplyComposer, SendToSessionActions } from './Thread.jsx'
+import { bodyEvidence, Replies, ReplyComposer, SendToSessionActions } from './Thread.jsx'
+import { useAttachQueue } from './useAttachQueue.jsx'
 import { useWidgetHost } from './widgetHost.js'
 import { useT } from './i18n/index.jsx'
 import { DetailShell, FacetMenu, ListPage, ReviewListRow, ReviewRows, ReviewState, SecondaryFilters, SideSection, SideValue } from './ReviewShell.jsx'
@@ -14,7 +15,7 @@ import { reviewPageNumber, useReviewPage } from './reviewPage.js'
 import { useTransientNotice } from './TransientNotice.jsx'
 import { routeHash } from './route.js'
 import { addressHash, detailBackHash, specAddress } from './address.js'
-import { Icon } from './icons.jsx'
+import { Icon, IconButton } from './icons.jsx'
 import IssueLabels from './IssueLabels.jsx'
 import IssueSessions, { FleetStrip, FleetWorkState } from './IssueSessions.jsx'
 import { issueFleet, mentionedSessions } from './session.js'
@@ -685,6 +686,7 @@ function NewIssuePage({ specs, sessions, stores: allStores, parent = null, issue
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const taRef = useRef(null)
+  const attach = useAttachQueue({ inputRef: taRef, setValue: setBody, variant: 'new', sink: 'evidence', disabled: busy || preview })
   const { launchers } = useLaunchers()
   // on a PAGE the menu opens downward under the caret line — no pop-out boundary to clear, so no `up`/
   // `fixedAbove` overlay geometry ([[mentions]]).
@@ -704,7 +706,7 @@ function NewIssuePage({ specs, sessions, stores: allStores, parent = null, issue
     setBusy(true)
     setErr('')
     try {
-      const res = await postIssueThread({ concern: c, body: body.trim() || undefined, store, parent: parent || undefined, deliverTo })
+      const res = await postIssueThread({ concern: c, body: body.trim() || undefined, evidence: bodyEvidence(body), store, parent: parent || undefined, deliverTo })
       if (res?.ok && res.id) onCreated?.(res.id, res.outcomes || '')
       else setErr(res?.error || t('session.issuesPostFailed'))
     } finally { setBusy(false) }
@@ -757,7 +759,8 @@ function NewIssuePage({ specs, sessions, stores: allStores, parent = null, issue
             </div>
           </div>
           <ComposerSurface
-            className="fv-new-compose"
+            className={`fv-new-compose${attach.dragging ? ' dragover' : ''}`}
+            {...(preview ? {} : attach.dropProps)}
             editor={preview
               ? (
                 <div className="fv-new-preview" role="tabpanel">
@@ -768,17 +771,21 @@ function NewIssuePage({ specs, sessions, stores: allStores, parent = null, issue
                 <div className="fv-tawrap" role="tabpanel">
                   <ComposerTextarea ref={taRef} className="fv-textarea" rows={1} value={body} placeholder={t('session.issuesBodyPlaceholder')}
                     disabled={busy} onChange={(e) => { setBody(e.target.value); ac.sync(e.target) }}
-                    onSelect={(e) => ac.sync(e.target)} onBlur={ac.close}
+                    onSelect={(e) => ac.sync(e.target)} onBlur={ac.close} onPaste={attach.onPaste}
                     onKeyDown={(e) => { if (composingKey(e)) return; if (ac.onKeyDown(e)) return; if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submit() } }} />
                   {ac.menuEl}
+                  {attach.queue}
                 </div>
               )}
             footer={
               <div className="fv-actions">
+                {attach.fileInput}
                 <TriggerButton label={t('thread.mentionActor')} disabled={busy || preview}
                   onClick={() => typeTrigger(taRef.current, '@', setBody, ac.sync)}>@</TriggerButton>
                 <TriggerButton label={t('thread.mentionNode')} disabled={busy || preview}
                   onClick={() => typeTrigger(taRef.current, '[[', setBody, ac.sync)}>[[</TriggerButton>
+                <IconButton icon={attach.busy ? 'loader' : 'paperclip'} size={14} iconClassName={attach.busy ? 'si-attach-busy' : undefined}
+                  className="si-command-tool" label={t('thread.attachTitle')} disabled={busy || preview || attach.busy} onClick={attach.pick} />
               </div>
             }
           />

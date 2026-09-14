@@ -2278,6 +2278,7 @@ body.is-session-dragging .si-pill.archive:hover {
    (contextual ⏱/lifecycle actions left, the icon-only Send pinned at the right edge). */
 .composer-surface { border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); padding: 8px 10px 6px; }
 .composer-surface:focus-within { border-color: color-mix(in srgb, var(--blue) 45%, var(--line)); }
+.composer-surface.dragover { border-color: var(--green); }
 .composer-editor { min-width: 0; }
 .composer-footer { min-width: 0; }
 .composer-textarea { display: block; width: 100%; box-sizing: border-box; }

@@ -371,7 +371,7 @@ test('New is a routed compose PAGE reusing the shared shells, never a pop-out ov
   // the compose page's way back is the parent it was opened from, else the derived list anchor — never history.back
   assert.match(issues, /function NewIssuePage\([\s\S]*const returnHref = parent \? routeHash\('issues', parent\) : detailBackHash\('issues'\)[\s\S]*<DetailShell[\s\S]*backHref=\{returnHref\}/)
   assert.match(issues, /<a className="fv-cancel" href=\{returnHref\}>/)
-  assert.match(issues, /function NewIssuePage\([\s\S]*<ComposerSurface[\s\S]*className="fv-new-compose"/)
+  assert.match(issues, /function NewIssuePage\([\s\S]*<ComposerSurface[\s\S]*className=\{`fv-new-compose/)
   assert.match(issues, /function NewIssuePage\([\s\S]*<TriggerButton[\s\S]*typeTrigger\(taRef\.current, '@'/)
   // Cancel returns by the SAME derived list address the back anchor uses, never history.back
   assert.match(issues, /<a className="fv-cancel" href=\{returnHref\}>/)
