@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { loadIssue, loadSessionTimeline, postIssueClose, postIssuePromote, postIssueReply, postIssueThread } from './data.js'
-import { ledgerFromChildren, ledgerFromTimeline } from './issueLedger.js'
+import { ledgerFromChildren, ledgerFromTimeline, ledgerSince } from './issueLedger.js'
 import { MENTION_RE, TriggerButton, typeTrigger, useMentionAutocomplete } from './mentions.jsx'
 import { ComposerSurface, ComposerTextarea, composingKey } from './Composer.jsx'
 import { SpecBody } from './NodeView.jsx'
@@ -207,17 +207,17 @@ export function IssuesListPage({ data, loading, error, query, onQueryText, sessi
 // the fleet's declaration ledger ([[issue-binding]]): one timeline read per fleet session, re-read when a fleet
 // row's status or note moves on the board (the same push the rail repaints on). Read-time only — the issue
 // stores nothing — and a failed read is an empty ledger for that session, never a broken thread.
-function useFleetLedger(fleet) {
+function useFleetLedger(fleet, since) {
   const [ledger, setLedger] = useState([])
   const key = fleet.map((s) => `${s.id}:${s.status}:${s.note || ''}`).join('|')
   useEffect(() => {
     let live = true
     if (!fleet.length) { setLedger([]); return undefined }
     Promise.all(fleet.map((s) => loadSessionTimeline(s.id, { limit: 60 }).then((w) => ledgerFromTimeline(s.id, w?.events)).catch(() => [])))
-      .then((all) => { if (live) setLedger(all.flat()) })
+      .then((all) => { if (live) setLedger(ledgerSince(all.flat(), since)) })
     return () => { live = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key])
+  }, [key, since])
   return ledger
 }
 
@@ -320,7 +320,7 @@ export function IssueDetailPage({ issue: th, specs, sessions, onOpenSession, onW
   const replies = Array.isArray(th.replies) ? th.replies : []
   const status = th.status || 'open'
   const { fleet } = issueFleet(th, sessions)
-  const ledger = useFleetLedger(fleet)
+  const ledger = useFleetLedger(fleet, th.created)
   // every issue the hierarchy links is titled from the read's own `refs` ([[issues]]) — one read, no request per link
   const refs = th.refs || {}
   const kids = (th.children || []).map((id) => refs[id]).filter(Boolean)

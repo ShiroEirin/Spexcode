@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { apiFetch, postIssueAssign } from './data.js'
 import { apiUrl } from './project.js'
-import { Icon, IconButton } from './icons.jsx'
+import { Icon } from './icons.jsx'
 import SessionContextMenu from './SessionContextMenu.jsx'
 import SessionPicker from './SessionPicker.jsx'
 import Modal from './Modal.jsx'
@@ -14,7 +14,7 @@ import { useT } from './i18n/index.jsx'
 import { useEscLayer } from './escStack.js'
 import { routeHash } from './route.js'
 import { isNewTabGesture, openNewTab } from './tabs.js'
-import { useFold } from './SessionWindow.jsx'
+import { SessionConsoleTreeRow, useFold } from './SessionWindow.jsx'
 
 // The issue's FLEET on the Issues page ([[issue-binding]]): the sessions bound to this issue, read through the
 // ONE join the review package owns and drawn in [[review-chrome]]'s OWN vocabulary — every row is the rail's
@@ -205,17 +205,18 @@ export default function IssueSessions({ issue, sessions = [], onOpenSession, onW
               const status = t(`status.${sessionDisplayState(s).status}`)
               const open = picked === s.id
               return (
-                <div key={s.id} role="listitem" className="fv-fleet-item" style={{ '--fleet-depth': item.depth }}>
-                  <div className={`fv-fleet-row${open ? ' open' : ''}`} data-sid={s.id}
-                    onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setMenu({ x: e.clientX, y: e.clientY, session: s }) }}>
-                    {/* the fold is the icon-system's chevron, present only where there is a subtree to fold */}
-                    {item.expandable
-                      ? <IconButton icon={item.expanded ? 'chevron-down' : 'chevron-right'} size={12} className="fv-fleet-fold" label={`${item.expanded ? '−' : '+'} ${item.kin}`} onClick={() => toggle(s.id)} />
-                      : <span className="fv-fleet-fold" aria-hidden="true" />}
-                    {/* a plain click opens the row's card in place; ctrl/⌘ still opens the console in a new tab ([[tab-strip]]) */}
-                    <SideValue text={sessionHeadline(s)} lead={<StatusDot s={s} />} tip={s.note ? `${status} · ${s.note}` : status} label={sessionHeadline(s)}
-                      trail={s.id === issue.by ? <span className="rl-tag fv-voice-tag">{t('fleet.opened')}</span> : null}
-                      className="fv-fleet-name" onClick={(e) => { if (isNewTabGesture(e)) openNewTab('sessions', s.id); else setPicked((cur) => (cur === s.id ? null : s.id)) }} />
+                <div key={s.id} role="listitem" className="fv-fleet-item">
+                  {/* the ONE session row every list surface draws ([[session-row]]): its glyph, headline, fold pod and
+                      tree rails, re-fitted to the rail by CSS — never a second row face. This rail adds only the
+                      opener tag and the state-gated action beside it, and the card under it. */}
+                  <div className={`fv-fleet-row${open ? ' open' : ''}`} data-sid={s.id}>
+                    <SessionConsoleTreeRow item={item} activeId={open ? s.id : null} onToggleFold={() => toggle(s.id)} rowProps={{
+                      'data-tip': s.note ? `${status} · ${s.note}` : status,
+                      'aria-expanded': open,
+                      onClick: (e) => { if (isNewTabGesture(e)) openNewTab('sessions', s.id); else setPicked((cur) => (cur === s.id ? null : s.id)) },
+                      onContextMenu: (e) => { e.preventDefault(); e.stopPropagation(); setMenu({ x: e.clientX, y: e.clientY, session: s }) },
+                    }} />
+                    {s.id === issue.by && <span className="rl-tag fv-voice-tag">{t('fleet.opened')}</span>}
                     {action && (
                       <RailAction tone={action === 'close' ? 'danger' : ''} disabled={!!busy} data-tip={t(`fleet.${action}Title`)} onClick={act(action, s)}>
                         {busy === `${action}:${s.id}` ? t('session.issuesActing') : t(`fleet.${action}`)}

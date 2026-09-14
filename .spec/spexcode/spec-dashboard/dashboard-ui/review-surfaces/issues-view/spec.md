@@ -137,7 +137,8 @@ theatre is invented for a model that has none. An actually empty issue store say
   up to four status glyphs in the board's own STATUS_COLOR/STATUS_GLYPH, `+n` past that, toned by the fleet's
   rolled-up work state — joined client-side against the board `sessions` the page already holds (no request, no
   re-sort). The detail's status band carries the work-state word and the same strip beside the issue's own state
-  mark, and the detail rail carries a **Sessions** section: the fleet as the one session forest with the one
+  mark, and the detail rail carries a **Sessions** section: the fleet as the one session forest, its rows the one session row
+  every list surface draws ([[session-row]]), with the one
   session context menu, one state-gated action per row (Merge / Relaunch / Close), the **New worker** door that
   types `@new:` into the composer for the human to send, and the other thread voices as participants. Work state is derived and
   never written onto the issue's open/closed lifecycle.

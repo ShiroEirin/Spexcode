@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { ledgerFromChildren, ledgerFromTimeline, mergeThread } from './issueLedger.js'
+import { ledgerFromChildren, ledgerFromTimeline, ledgerSince, mergeThread } from './issueLedger.js'
 
 test('a session timeline yields only the declarations a human reads, in the board\'s own words', () => {
   const events = [
@@ -39,4 +39,11 @@ test('a sub-issue opening and close join the parent thread at their own instants
   assert.deepEqual(mergeThread(replies, rows).map((r) => `${r.event || r.kind}:${r.at.slice(11, 16)}`),
     ['opened:01:15', 'opened:01:16', 'reply:01:20', 'closed:01:40'])
   assert.deepEqual(ledgerFromChildren(undefined), [])
+})
+
+test('the ledger starts where the issue starts: earlier declarations are cut, unparseable instants are kept', () => {
+  const row = (at, note) => ({ kind: 'declaration', by: 's1', status: 'review', at, note })
+  const rows = [row('2026-09-13T01:00:00Z', 'yesterday'), row('2026-09-14T02:30:00Z', 'today'), row('not-a-date', null)]
+  assert.deepEqual(ledgerSince(rows, '2026-09-14T02:25:58Z').map((r) => r.note), ['today', null])
+  assert.equal(ledgerSince(rows, undefined).length, 3, 'no floor, no cut')
 })
