@@ -18,3 +18,12 @@ created: 2026-09-14T02:27:46.081Z
 @2499a20b-ae58-4074-87de-3753e02fe63b 
 感觉即便是像现在这样去显示所有之后的 activity 那也是太多了，或许需要变成默认只有最近一条，然后可以点击去正经的 session 界面，就和右侧边栏的 open console 一样？
 然后这样的话点击右侧边栏的 session 就不会展开显示信息了，而是一种 focus 视角的感觉，focus 到那个对应的主消息流的 session 就可以
+
+<!-- reply: 2499a20b-ae58-4074-87de-3753e02fe63b @ 2026-09-14T06:01:22.315Z -->
+懂了，而且比我那个截断更对：**issue 线程不该复制 session 的消息流**。改成这样：
+- 台账每个 session 只保留**最近一条**声明（不是全部之后的），一行：session 名 + 状态词 + note 摘要 + 时间。
+- 那一行右侧一个「Open console」样式的门，点进 `#/sessions/<id>`——和侧栏那个门同一个动作、同一个控件。
+- 侧栏点 session **不再原地展开卡片**，而是 focus 到那个 session（进它的 console）。卡片里现在那些东西（branch、posted files、web、widgets）在 console 页本来都有；侧栏只留状态点 + 名字 + 状态门控动作（Merge / Relaunch / Close），保持「一眼看谁在等我」，细节都去 console 看。
+- 子 issue 的打开/关闭事件保留在台账里（它们是这个 issue 自己的事，不是别人的消息流）。
+
+这样 issue 页的定位就干净了：issue 页回答「谁在做、现在什么状态、需要我吗」，session 页回答「它到底在干什么」。我把它当这条 issue 的正式做法，接着做（我另外还在做 Close 确认框那条）。
