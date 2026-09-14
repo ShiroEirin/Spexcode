@@ -73,10 +73,9 @@ with one visible fleet per issue, and close/retire/children/acceptance reachable
   fleet strip: up to four status glyphs in the board's own STATUS_COLOR/STATUS_GLYPH, `+n` past that, the chip
   toned by the work state, every session and status on hover — so the list answers "whose turn is it" without
   re-sorting. The DETAIL status band carries the work-state word and the same strip beside the issue's own
-  state mark. The DETAIL rail carries a **Sessions** section drawn in [[review-chrome]]'s OWN vocabulary — never the console
-  sidebar's row: each fleet row is the rail's SideValue (a status dot in the board's STATUS_COLOR leading a
-  truncating headline), indented by its depth in the forest with the icon-system chevron as its only fold control,
-  and every control on the page is the ONE `ds-action` rail button (the composer's lifecycle actions wear the same
+  state mark. The DETAIL rail carries a **Sessions** section whose rows ARE the one session row every list surface draws
+  ([[session-row]]'s `SessionConsoleTreeRow`: glyph, headline, fold pod, tree rails), re-fitted to the rail by CSS
+  only — never a second row face — and every control on the page is the ONE `ds-action` rail button (the composer's lifecycle actions wear the same
   control in their own tones). A right-click opens the ONE session context menu (rename, attach,
   detach, close — the menu offers its select row only to a host that owns a selectable list), and at most
   ONE state-gated action button per row on the same facts the console toolbar gates on: `review` → Merge
@@ -119,6 +118,9 @@ with one visible fleet per issue, and close/retire/children/acceptance reachable
   `active`, `idle` and `queued` stay off it. Nothing is written to the issue: the worker's `done --propose merge`
   IS its report of readiness, which is why the skill forbids typing a status into a reply. A timeline that cannot
   be read contributes nothing, never a broken thread; the ledger re-reads when a fleet row's status or note moves.
+  **The ledger starts where the issue starts**: declarations dated before the issue's own `created` instant are cut —
+  a session bound to an issue later in its life brings its earlier day with it, and none of it was about this issue
+  (the binding instant is not recorded; `created` is the honest floor). A row without a parseable instant is kept.
 - **Issue writes go backend-first, except into a disposable store.** `spex issue reply` / `open` post to the reachable
   backend (it serves the trunk and owns the store write) signed with the caller's session id, and fall back to the local
   write only when no backend answers. `SPEXCODE_ISSUES_DIR` is the one override that never leaves the process: a

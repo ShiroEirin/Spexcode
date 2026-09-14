@@ -37,3 +37,12 @@ export const mergeThread = (replies = [], ledger = []) => {
   const time = (row) => { const n = Date.parse(row.at); return Number.isFinite(n) ? n : 0 }
   return rows.sort((a, b) => time(a) - time(b) || (a.kind === 'reply' ? -1 : 1) - (b.kind === 'reply' ? -1 : 1))
 }
+
+// the ledger starts where the ISSUE starts: a session bound to an issue later in its life brings a whole day of
+// declarations with it, and none of them were about this issue. Rows before the issue's own creation instant are
+// cut; a row without a parseable instant is kept (never hidden by a bad timestamp), and no floor means no cut.
+export const ledgerSince = (rows = [], since) => {
+  const floor = Date.parse(since)
+  if (!Number.isFinite(floor)) return rows
+  return (rows || []).filter((row) => { const at = Date.parse(row.at); return !Number.isFinite(at) || at >= floor })
+}

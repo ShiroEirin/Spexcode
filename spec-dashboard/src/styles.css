@@ -4132,13 +4132,15 @@ body.is-session-dragging .si-pill.archive:hover {
 .fv-fleet-need, .fv-work-need { color: var(--yellow); background: color-mix(in srgb, var(--yellow) 12%, transparent); }
 .fv-fleet-run, .fv-work-run { color: var(--green); background: color-mix(in srgb, var(--green) 10%, transparent); }
 .fv-fleet-rows { display: flex; flex-direction: column; gap: 2px; align-self: stretch; min-width: 0; }
-.fv-fleet-item { min-width: 0; padding-left: calc(var(--fleet-depth, 0) * 14px); }
-.fv-fleet-row { display: flex; align-items: center; gap: 4px; min-width: 0; padding: 1px 2px; border-radius: var(--radius); }
-.fv-fleet-row:hover { background: var(--wash-hover); }
-.fv-fleet-row.open { background: var(--wash-selected); }
-.fv-fleet-fold { flex: none; width: 16px; height: 16px; padding: 0; color: var(--muted); }
-.fv-fleet-row .fv-fleet-name { flex: 1 1 auto; min-width: 0; }
-.fv-fleet-row .ds-action { margin-left: auto; }
+.fv-fleet-item { min-width: 0; }
+/* the console's own row, re-fitted to the rail: a <button> sizes to its content under width:auto, so it is told to fill;
+   the sidebar's status thread and side margins are the sidebar's, not the rail's; the fold pod sits at the row's edge. */
+.fv-fleet-row { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.fv-fleet-row .sess-tree-row { flex: 1 1 auto; min-width: 0; }
+.fv-fleet-row .si-item { width: 100%; margin: 0; padding: 3px 4px 3px 6px; font-size: var(--type-meta); }
+.fv-fleet-row .si-tree-row { --sess-fold-pad-x: 6px; }
+.fv-fleet-row .si-tree-row::before { display: none; }
+.fv-fleet-row .ds-action, .fv-fleet-row .fv-voice-tag { flex: none; position: relative; z-index: 1; }
 .fv-fleet-card { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; margin: 2px 0 6px 20px; padding: 6px 8px; border-left: 2px solid var(--line); }
 .fv-card-key { flex: none; width: 52px; }
 .fv-fleet-card .ds-action { margin-top: 3px; }
