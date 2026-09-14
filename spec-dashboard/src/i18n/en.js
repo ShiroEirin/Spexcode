@@ -445,6 +445,25 @@ export default {
 
   // the issue's FLEET ([[issue-binding]]): the sessions bound to it, their rolled-up work state, and the
   // rail's one state-gated action per row.
+  issueClose: {
+    title: 'Close this issue',
+    lead: {
+      open: ({ n }) => `${n} session${n === 1 ? '' : 's'} carry this issue. Pick the settled ones to close with it, or pick the ones still working to ask them to wrap up.`,
+      settled: ({ n }) => `${n} session${n === 1 ? '' : 's'} carry this issue and all of them are settled.`,
+    },
+    groupReady: 'settled — closable with the issue',
+    groupOpen: 'still working — can be asked to wrap up',
+    do: {
+      'issue-only': 'Close issue only',
+      'close-with': ({ n }) => `Close issue and ${n} session${n === 1 ? '' : 's'}`,
+      'wrap-up': ({ n }) => `Ask ${n} session${n === 1 ? '' : 's'} to wrap up`,
+    },
+    asked: ({ name }) => `asked ${name} to wrap up`,
+    closed: ({ name }) => `closed ${name}`,
+    issueClosed: 'issue closed',
+    refused: 'the issue refused to close',
+    wrapUpMessage: ({ issue, concern }) => `The human is closing issue "${concern}" (${issue}) and you still carry it. Wrap up now: commit what is worth keeping or discard it, reply on the thread with what you leave behind, then declare \`spex session done --propose close\`. If something genuinely must not be dropped, declare \`ask\` with the reason instead.`,
+  },
   fleet: {
     none: 'no session',
     need: ({ n }) => `needs you · ${n}`,

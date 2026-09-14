@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
-import { loadIssue, loadSessionTimeline, postIssueClose, postIssuePromote, postIssueReply, postIssueReparent, postIssueThread } from './data.js'
+import { loadIssue, loadSessionTimeline, postIssueClose, postIssuePromote, postIssueReply, postIssueReparent, postIssueThread, postSessionClose, postSessionText } from './data.js'
 import { latestPerSession, ledgerFromChildren, ledgerFromTimeline, ledgerSince } from './issueLedger.js'
 import { MENTION_RE, TriggerButton, typeTrigger, useMentionAutocomplete } from './mentions.jsx'
 import { ComposerSurface, ComposerTextarea, composingKey } from './Composer.jsx'
@@ -18,6 +18,7 @@ import { addressHash, detailBackHash, specAddress } from './address.js'
 import { Icon, IconButton } from './icons.jsx'
 import IssueLabels from './IssueLabels.jsx'
 import IssueSessions, { FleetStrip, FleetWorkState } from './IssueSessions.jsx'
+import IssueCloseDialog from './IssueCloseDialog.jsx'
 import { issueFleet, mentionedSessions } from './session.js'
 import { useLaunchers } from './launch.js'
 import { useReportDocumentName } from './documentActions.jsx'
@@ -449,6 +450,7 @@ export function IssueDetailPage({ issue: th, specs, sessions, onOpenSession, onW
   // the thread is a home of the one widget host ([[widgets]]): its replies draft into, and send from, this composer
   const widgetHost = useWidgetHost()
   const [composeSeed, setComposeSeed] = useState(null)   // a rail door's trigger for the composer to type, consumed once
+  const [closing, setClosing] = useState(false)          // the Close issue confirmation, open while the fleet has rows
   // what the thread shows — replies, fleet declarations and sub-issue events on one time line — counted once for its heading
   const threadLedger = [...ledger, ...ledgerFromChildren(kids)]
   const threadRows = [...replies, ...threadLedger]
@@ -545,12 +547,27 @@ export function IssueDetailPage({ issue: th, specs, sessions, onOpenSession, onW
             <>
               {actErr && <span className="fv-error">{actErr}</span>}
               {local && lifecycleBtn('promote', t('session.issuesPromote'), () => postIssuePromote(th.id), t('session.issuesPromoteTitle'))}
-              {lifecycleBtn('close', t('session.issuesCloseIssue'), () => postIssueClose(th.id), t('session.issuesCloseIssueTitle'))}
+              {fleet.length > 0
+                ? (
+                  <button type="button" className="fv-close-issue fv-life-close" disabled={!!acting} data-tip={t('session.issuesCloseIssueTitle')}
+                    onMouseDown={(e) => e.preventDefault()} onClick={() => setClosing(true)}>{t('session.issuesCloseIssue')}</button>
+                )
+                : lifecycleBtn('close', t('session.issuesCloseIssue'), () => postIssueClose(th.id), t('session.issuesCloseIssueTitle'))}
             </>
           )}
         />
       }
     >
+      {closing && (
+        <IssueCloseDialog issue={th} fleet={fleet} onClose={() => setClosing(false)} onError={(message) => setActErr(message)}
+          onDone={{
+            closeSession: (id) => postSessionClose(id),
+            closeIssue: () => postIssueClose(th.id),
+            // the wrap-up ask is an ordinary message on the one send path — the session ends itself ([[state]]).
+            wrapUp: (id) => postSessionText(id, t('issueClose.wrapUpMessage', { issue: th.id, concern: th.concern })),
+            finish: (outcomes) => onWrite?.(outcomes),
+          }} />
+      )}
       {th.duplicateOf && (
         <div className="fv-duplicate" role="note">
           <Icon name="circle-minus" size={14} />
