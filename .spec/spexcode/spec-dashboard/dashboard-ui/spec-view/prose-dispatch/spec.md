@@ -79,7 +79,9 @@ ordinary prompt and travels the one input route every other surface uses ([[disp
 already rules that "no API route, session field, or alternate dispatch path belongs here", and none is
 added: an existing target receives the prompt through the session input route. Choosing a new session uses
 the existing `createSession(prompt)` API in the same click, marks the returned session as a fresh workspace tab
-and opens it — [[tab-routing]] treats creation as a gesture, so the new session appends beside the document the
+  and opens it — the create request carries `replyVia:"note"` when the resulting bare address resolves to
+  Conversation, so the first turn has the same note-flow guidance as the footer. [[tab-routing]] treats creation
+  as a gesture, so the new session appends beside the document the
 passage came from and never replaces its tab — and there is no second launch-face send. The target list uses the shared `sessionFooterState(session) === 'live'` predicate;
 idle sessions remain dispatch targets while offline, archived, and other non-live records do not.
 

@@ -7,20 +7,23 @@ export const pendingSessionFor = (id) => pendingSessions.get(id) || null
 
 // The dashboard's ONE session-launch CLIENT path, shared by every face that can start a worker — the desktop
 // console's New Session tab (SessionInterface.jsx) and the phone's composer (MobileApp.jsx). Launcher state,
-// preset discovery, and the raw create POST live here. The backend prompt boundary owns command expansion for
-// launch and send, shared with CLI/API callers; browser clients never expand plugin bodies.
+// preset discovery, and the raw create POST live here. The backend prompt boundary owns command expansion and
+// the optional initial reply channel for launch and send, shared with CLI/API callers; browser clients never
+// expand plugin bodies.
 
 // launch a session: the one POST /api/sessions. A launcher SUBSUMES the harness ([[launcher-select]]):
-// send only the chosen launcher name; the backend derives harness from that profile. No launcher yet
+// send the chosen launcher name plus an optional initial reply channel; the backend derives harness from that
+// profile. No launcher yet
 // (picker not loaded) means the backend uses its default. The per-attempt idempotency key makes a lost response
 // recoverable without changing the prompt body contract. Returns the created session projection when the
 // backend publishes one, so the caller can open the document as soon as creation is acknowledged.
-export async function createSession(prompt, launcher) {
+export async function createSession(prompt, launcher, options = {}) {
   try {
     const requestKey = globalThis.crypto?.randomUUID?.() || `session-create-${Date.now()}-${Math.random().toString(16).slice(2)}`
+    const replyVia = options && typeof options === 'object' && options.replyVia === 'note' ? 'note' : undefined
     const res = await fetch(apiUrl('/api/sessions'), {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': requestKey },
-      body: JSON.stringify({ prompt, ...(launcher ? { launcher } : {}) }),
+      body: JSON.stringify({ prompt, ...(launcher ? { launcher } : {}), ...(replyVia ? { replyVia } : {}) }),
     })
     const body = await res.json().catch(() => null)
     const result = { ok: res.ok, error: body?.error }

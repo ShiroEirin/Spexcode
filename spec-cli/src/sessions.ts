@@ -1574,7 +1574,15 @@ export class SessionCreateError extends Error {
     this.name = 'SessionCreateError'
   }
 }
-type SessionCreateContext = { id: string; requestDigest: string; payloadHash: string; signal: AbortSignal; base?: string | null; issue?: string | null }
+type SessionCreateContext = {
+  id: string
+  requestDigest: string
+  payloadHash: string
+  signal: AbortSignal
+  base?: string | null
+  issue?: string | null
+  replyVia?: 'note'
+}
 
 // @@@ create parentage - the ONE answer to "whose subtree does this create belong to". Two sources can
 // propose it — PROVENANCE (the caller ran the create) and ADDRESS (the prompt named a supervisor with
@@ -1659,7 +1667,7 @@ function throwIfCreateAborted(signal: AbortSignal, phase: SessionCreatePhase): v
 export async function sessionCreateRequest(body: unknown, options: SessionCreateRequestOptions = {}): Promise<SessionCreateRequestResult> {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return { status: 400, error: 'body must be a JSON object' }
   const input = body as Record<string, unknown>
-  const unknown = Object.keys(input).filter((key) => !['prompt', 'parent', 'launcher', 'name', 'base', 'issue'].includes(key)).sort()
+  const unknown = Object.keys(input).filter((key) => !['prompt', 'parent', 'launcher', 'name', 'base', 'issue', 'replyVia'].includes(key)).sort()
   if (unknown.length) return { status: 400, error: `unknown session-create field${unknown.length === 1 ? '' : 's'}: ${unknown.join(', ')}` }
   // The prompt is the only field a human authors freely, so it is also where the grammar's `@parent:<sel>`
   // directive arrives ([[mentions]]). Read it off the raw text FIRST: the stripped prompt is what titles,
@@ -1677,11 +1685,13 @@ export async function sessionCreateRequest(body: unknown, options: SessionCreate
   // recorded as provenance beside `parent`; nothing here resolves it, so a forge id and a local id are equally legal.
   if (input.issue !== undefined && typeof input.issue !== 'string') return { status: 400, error: 'session-create issue must be a string' }
   const issue = typeof input.issue === 'string' && input.issue.trim() ? input.issue.trim() : null
+  if (input.replyVia !== undefined && input.replyVia !== 'note') return { status: 400, error: 'session-create replyVia must be "note"' }
+  const replyVia = input.replyVia === 'note' ? 'note' as const : undefined
   const cutoverState = sessionApplicationCutoverState()
   if (cutoverState === 'fenced') return { status: 409, error: 'legacy JSON session store is fenced for one-time migration', code: 'session_create_failed', phase: 'request' }
   if (cutoverState === 'migration-required') return { status: 409, error: 'legacy JSON session store must be migrated before creating sessions', code: 'session_create_failed', phase: 'request' }
   if (cutoverState === 'ambiguous') return { status: 409, error: 'session database exists without a migration marker', code: 'session_create_failed', phase: 'request' }
-  // The last two inputs the idempotency payload binds, settled together because both must be final before it
+  // The optional creation inputs the idempotency payload binds, settled together because all must be final before it
   // is hashed and both refuse the same way. Parentage is the one that can still change here: an addressed
   // `@parent:` outranks the caller-supplied one, because a caller records who RAN the create while a prompt
   // naming a supervisor states where the work belongs ([[session-nesting]]).
@@ -1696,7 +1706,7 @@ export async function sessionCreateRequest(body: unknown, options: SessionCreate
   // Keep no-name retries byte-compatible with pre-name receipts; an explicit non-empty name is one more
   // immutable creation input because it publishes the record's existing display override. `base` joins them
   // for the same reason and with the same shape: absent, it must not perturb an existing receipt's bytes.
-  const payloadHash = digest(JSON.stringify({ prompt, parent: parentage.id, launcher: launcher ?? null, ...(name ? { name } : {}), ...(base ? { base } : {}), ...(issue ? { issue } : {}) }))
+  const payloadHash = digest(JSON.stringify({ prompt, parent: parentage.id, launcher: launcher ?? null, ...(name ? { name } : {}), ...(base ? { base } : {}), ...(issue ? { issue } : {}), ...(replyVia ? { replyVia } : {}) }))
   let freshStoreOwned = false
   let freshStoreCommitted = false
   try {
@@ -1720,7 +1730,7 @@ export async function sessionCreateRequest(body: unknown, options: SessionCreate
   traceSessionCreate(id, requestDigest, 'request', 'start')
   try {
     try {
-      const session = await prepareSession(prompt, parentage, launcher, name, { id, requestDigest, payloadHash, base, issue, signal: controller.signal })
+      const session = await prepareSession(prompt, parentage, launcher, name, { id, requestDigest, payloadHash, base, issue, replyVia, signal: controller.signal })
       await options.onPublished?.(session)
       freshStoreCommitted = true
       traceSessionCreate(id, requestDigest, 'request', 'finish')
@@ -2185,6 +2195,7 @@ async function prepareSession(prompt: string, parentage: CreateParentage, launch
         launchPrompt = (await composeSessionPrompt(rawPrompt, { session: id, harness: h.id }, {
           loadedSpecs: launchSpecs ?? undefined,
           suffix: suffix || undefined,
+          replyVia: context.replyVia,
         })).text
       } catch (error) {
         throw new SessionCreateError('session_create_failed', phase, error instanceof Error ? error.message : String(error), 400)

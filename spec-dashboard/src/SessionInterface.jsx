@@ -19,6 +19,7 @@ import {
   SESSION_SURFACE_CONVERSATION,
   SESSION_SURFACE_TERMINAL,
   SESSION_SURFACE_DIFF,
+  getDefaultSessionSurface,
   getSessionBaseSurface,
   isSessionSurface,
   isResourceSurface,
@@ -843,7 +844,9 @@ export default function SessionInterface({ sessions, specs = [], focusNode, open
     if (!raw) return
     setPrompt('')
     setCodeSelections([])
-    createSession(raw, launcher).then((result) => {
+    createSession(raw, launcher, {
+      replyVia: getDefaultSessionSurface() === SESSION_SURFACE_CONVERSATION ? 'note' : undefined,
+    }).then((result) => {
       if (result.ok && result.id) {
         setPendingSession({
           id: result.id,

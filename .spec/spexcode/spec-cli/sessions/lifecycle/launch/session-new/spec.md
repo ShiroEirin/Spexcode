@@ -74,8 +74,10 @@ what the payload hash, title, slug, stored prompt, and the launched agent all se
 the `parent` this transaction publishes.
 
 The public request accepts the standard `Idempotency-Key` header. The backend deterministically maps a valid
-key to one candidate session id and binds it to the normalized `{prompt,parent,launcher,name?}` payload. Creation for
-that id is serialized at the existing per-session lock. A same-key retry, including a concurrent retry or a
+key to one candidate session id and binds it to the normalized `{prompt,parent,launcher,name?,base?,issue?,replyVia?}`
+payload. `replyVia` is optional and currently accepts only `"note"`; a Conversation-facing creator uses it to make
+the first launch turn readable in the timeline even when the selected launcher is pane-backed. Creation for that
+id is serialized at the existing per-session lock. A same-key retry, including a concurrent retry or a
 retry after the response connection was lost, either joins the in-flight transaction and receives its one
 published receipt, or starts after a fully rolled-back failure. Reusing the key with another payload fails
 with `session_create_key_reused` and creates nothing. Callers that omit the header receive ordinary one-shot

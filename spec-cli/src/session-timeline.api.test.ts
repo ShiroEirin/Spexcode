@@ -233,10 +233,12 @@ test('YATU: five real backends observe 24 CLI lifecycle writes without duplicate
   }
 })
 
-test('YATU: a dispatched probe worker keeps terminal sends as ordinary prompt text', { timeout: 90_000 }, async () => {
+test('YATU: a Conversation-launched probe worker gets note guidance, then terminal sends stay ordinary', { timeout: 90_000 }, async () => {
   const fixture = mkdtempSync(join(tmpdir(), 'spex-timeline-delivery-'))
   const project = join(fixture, 'project')
   const home = join(fixture, 'home')
+  const launchArgs = join(fixture, 'launch-args')
+  const loggingLauncher = join(fixture, 'logging-fake-claude')
   const port = await freePort()
   const tmux = `timeline-delivery-${process.pid}-${Date.now()}`
   let backend: ChildProcess | null = null
@@ -245,13 +247,19 @@ test('YATU: a dispatched probe worker keeps terminal sends as ordinary prompt te
   try {
     mkdirSync(join(project, '.spec', 'project'), { recursive: true })
     writeFileSync(join(project, '.spec', 'project', 'spec.md'), '---\ntitle: project\nstatus: active\n---\n# project\n')
+    writeFileSync(loggingLauncher, `#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$@" > "$SPEX_LAUNCH_ARGS"
+exec ${JSON.stringify(fakeLauncher)} "$@"
+`)
+    chmodSync(loggingLauncher, 0o755)
     writeFileSync(join(project, '.spec/spexcode.json'), JSON.stringify({
-      harnesses: ['claude'], sessions: { launchers: { fake: { harness: 'claude', cmd: fakeLauncher } }, defaultLauncher: 'fake' },
+      harnesses: ['claude'], sessions: { launchers: { fake: { harness: 'claude', cmd: loggingLauncher } }, defaultLauncher: 'fake' },
     }) + '\n')
     git(project, 'init', '-q', '-b', 'main'); git(project, 'config', 'user.email', 'timeline@example.test'); git(project, 'config', 'user.name', 'Timeline Fixture')
     git(project, 'add', '.'); git(project, 'commit', '-qm', 'fixture')
     const env: NodeJS.ProcessEnv = {
-      ...process.env, SPEXCODE_HOME: home, SPEXCODE_TMUX: tmux, CLAUDE_CONFIG_DIR: join(home, 'claude'), FAKE_HARNESS_INTERVAL_MS: '1000',
+      ...process.env, SPEXCODE_HOME: home, SPEXCODE_TMUX: tmux, SPEX_LAUNCH_ARGS: launchArgs, CLAUDE_CONFIG_DIR: join(home, 'claude'), FAKE_HARNESS_INTERVAL_MS: '1000',
     }
     mkdirSync(join(home, 'claude'), { recursive: true })
     delete env.SPEXCODE_API_URL
@@ -263,13 +271,14 @@ test('YATU: a dispatched probe worker keeps terminal sends as ordinary prompt te
 
     await waitFor(() => fetch(`${base}/health`).then((r) => r.ok).catch(() => false), 'backend health', 30_000)
     const created = await fetch(`${base}/api/sessions`, {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ prompt: 'delivery probe', launcher: 'fake' }),
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ prompt: 'delivery probe', launcher: 'fake', replyVia: 'note' }),
     })
     const createdText = await created.text()
     assert.equal(created.status, 201, createdText)
     id = (JSON.parse(createdText) as { id: string }).id
     assert.ok(id)
     await waitFor(() => fetch(`${base}/api/sessions/${id}`).then(async (r) => r.ok && (await r.json() as { liveness?: string }).liveness === 'online').catch(() => false), 'probe worker online', 30_000)
+    assert.match(readFileSync(launchArgs, 'utf8'), /SEND FROM NOTE FLOW: Normal output is not visible to the sender/)
 
     const input = async (text: string, replyVia?: 'note') => {
       const response = await fetch(`${base}/api/sessions/${id}/input`, {

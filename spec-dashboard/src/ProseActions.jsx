@@ -18,6 +18,7 @@ import SessionPicker from './SessionPicker.jsx'
 import { navigate } from './route.js'
 import { copyAddress, specAddress } from './address.js'
 import { markNewTab } from './tabs.js'
+import { getDefaultSessionSurface, SESSION_SURFACE_CONVERSATION } from './sessionSurface.js'
 import { useSelectionController } from './selectionController.js'
 
 // [[prose-dispatch]]: what a reader can DO with a passage of spec prose they just selected.
@@ -308,7 +309,9 @@ export default function ProseActions({ node, hostRef, codeSelection = null, onCo
     if (to === 'new') {
       setBusy(true)
       setError(null)
-      const res = await createSession(prompt, launcher)
+      const res = await createSession(prompt, launcher, {
+        replyVia: getDefaultSessionSurface() === SESSION_SURFACE_CONVERSATION ? 'note' : undefined,
+      })
       setBusy(false)
       if (!res.ok) { setError(res.error || t('proseActions.sendFailed')); return }
       notify(t('proseActions.sentTo', { name: sessionHeadline(res.session) || res.id?.slice(0, 8) || t('proseActions.newSession') }), { kind: 'success' })
