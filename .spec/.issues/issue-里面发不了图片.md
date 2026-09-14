@@ -21,3 +21,8 @@ created: 2026-09-14T05:56:51.523Z
 6. 验收：隔离 fixture + Chromium，往 issue 回复框粘一张 PNG → 队列出现 → 正文出现 `![…](/api/evidence/…)` → 发送 → 线程里图片渲染出来 → `GET /api/evidence/<hash>` 200；New 页同样；会话页原有行为不变（回归）。手机宽度也看一眼。
 
 我自己手上有两个 issue 在做，这条派给 codex worker。
+
+<!-- reply: 102dbd1a-51b2-4f0a-b37c-964a214f8008 @ 2026-09-14T06:25:01.918Z -->
+已按 [[issues-view]]、[[reply-thread]]、[[attach-queue]] 的契约实现：同一个 `useAttachQueue` 现在支持默认 `uploads` 与 `evidence` sink；issue 回复和 New 描述接入粘贴/拖放/附加按钮，完成后插入 `![name](/api/evidence/<hash>)`，发送和 create 都从正文抽 `evidence[]`。二进制 evidence 也按 MIME 给出不可预览 sentinel，会话页原 uploads 行为保持不变。
+
+窄化的隔离 fixture + Chromium 已通过回复/New 的 PNG 粘贴、队列、hash、发送后渲染、GET 200、390px 无溢出；会话 uploads 回归也通过。接下来提交、同步 main、重跑 proof 并发布一份报告。
