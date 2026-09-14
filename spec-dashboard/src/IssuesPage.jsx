@@ -4,7 +4,7 @@ import { ledgerFromChildren, ledgerFromTimeline, ledgerSince } from './issueLedg
 import { MENTION_RE, TriggerButton, typeTrigger, useMentionAutocomplete } from './mentions.jsx'
 import { ComposerSurface, ComposerTextarea, composingKey } from './Composer.jsx'
 import { SpecBody } from './NodeView.jsx'
-import { Replies, ReplyComposer } from './Thread.jsx'
+import { Replies, ReplyComposer, SendToSessionActions } from './Thread.jsx'
 import { useWidgetHost } from './widgetHost.js'
 import { useT } from './i18n/index.jsx'
 import { DetailShell, FacetMenu, ListPage, ReviewListRow, ReviewRows, ReviewState, SecondaryFilters, SideSection, SideValue } from './ReviewShell.jsx'
@@ -17,7 +17,7 @@ import { addressHash, detailBackHash, specAddress } from './address.js'
 import { Icon } from './icons.jsx'
 import IssueLabels from './IssueLabels.jsx'
 import IssueSessions, { FleetStrip, FleetWorkState } from './IssueSessions.jsx'
-import { issueFleet } from './session.js'
+import { issueFleet, mentionedSessions } from './session.js'
 import { useLaunchers } from './launch.js'
 import { useReportDocumentName } from './documentActions.jsx'
 import { usePaneActive } from './workspace.jsx'
@@ -575,13 +575,16 @@ function NewIssuePage({ specs, sessions, stores: allStores, parent = null, issue
   // the node links the prose ALREADY carries — the same `[[id]]` grammar the store derives `nodes:` from,
   // shown while writing instead of stated as a rule nobody can verify.
   const nodes = [...new Set([...body.matchAll(MENTION_RE)].map((m) => m[1]))]
-  const submit = async () => {
+  // The shared delivery doors are explicit actions: the exact @ reference stays in the issue body, while the
+  // selected id is sent separately so the backend can create first and then hand over the new issue.
+  const mentioned = mentionedSessions(body, sessions)
+  const submit = async (deliverTo = []) => {
     const c = concern.trim()
     if (!c || busy) return
     setBusy(true)
     setErr('')
     try {
-      const res = await postIssueThread({ concern: c, body: body.trim() || undefined, store, parent: parent || undefined })
+      const res = await postIssueThread({ concern: c, body: body.trim() || undefined, store, parent: parent || undefined, deliverTo })
       if (res?.ok && res.id) onCreated?.(res.id, res.outcomes || '')
       else setErr(res?.error || t('session.issuesPostFailed'))
     } finally { setBusy(false) }
@@ -662,6 +665,7 @@ function NewIssuePage({ specs, sessions, stores: allStores, parent = null, issue
         </div>
         <div className="fv-new-actions">
           {err && <span className="fv-error">{err}</span>}
+          <SendToSessionActions sessions={mentioned} disabled={busy || preview} sendable={!!concern.trim()} onSend={(id) => submit([id])} />
           {/* Cancel is the same return the back anchor is — a REAL list anchor, never history.back. */}
           <a className="fv-cancel" href={returnHref}>{t('session.issuesCancel')}</a>
           <button type="button" className="fv-post" disabled={busy || !concern.trim()} onClick={submit}>

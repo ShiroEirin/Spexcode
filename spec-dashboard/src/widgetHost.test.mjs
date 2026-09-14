@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {
   bumpWidgetReload, composeWidgetMessage, draftsOfSession, dropWidgetDraft, putWidgetDraft, widgetCommits, widgetOwners,
 } from './widgetHost.js'
-import { postIssueReply } from './data.js'
+import { postIssueReply, postIssueThread } from './data.js'
 
 // [[widgets]]: one host contract for every home. The queue is keyed by OWNER and name, because an issue thread
 // draws the widgets of several sessions at once and two of them may share a name.
@@ -69,4 +69,21 @@ test('the issue reply write carries widget states beside the deliveries, and omi
   }
   assert.deepEqual(bodies[0], { body: 'I choose A', deliverTo: ['a'], widgets: [{ session: 'a', name: 'plan', state: { choice: 'A' } }] })
   assert.deepEqual(bodies[1], { body: 'plain' })
+})
+
+test('the New issue write carries explicit deliveries and ordinary Create omits them', async () => {
+  const originalFetch = globalThis.fetch
+  const bodies = []
+  globalThis.fetch = async (_url, init) => {
+    bodies.push(JSON.parse(init.body))
+    return { ok: true, status: 201, json: async () => ({ ok: true, id: 'local#new' }) }
+  }
+  try {
+    await postIssueThread({ concern: 'new concern', body: 'details', store: 'local', deliverTo: ['session-a'] })
+    await postIssueThread({ concern: 'plain concern', body: 'plain body', store: 'local' })
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+  assert.deepEqual(bodies[0], { concern: 'new concern', body: 'details', store: 'local', deliverTo: ['session-a'] })
+  assert.deepEqual(bodies[1], { concern: 'plain concern', body: 'plain body', store: 'local' })
 })
