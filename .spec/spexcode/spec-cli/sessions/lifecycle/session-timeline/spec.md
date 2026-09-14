@@ -159,7 +159,9 @@ composition seam receives the raw prompt, the target session, and an optional ex
 decides the effective reply channel and the actual delivered text. An explicit value wins. With no value, a
 target whose resolved harness adapter declares `headless:true` defaults to `replyVia:"note"`, while a
 pane-backed target keeps the ordinary terminal reply. The launch prompt, the one input route (and therefore
-`spex session send`), and merge dispatch all pass through this seam. No caller appends a reply insert itself.
+`spex session send`), and merge dispatch all pass through this seam. A creation caller that will open the new
+session on Conversation may pass `initialReplyVia:"note"` with the create request; that explicit channel is carried into
+the launch payload before the record is published. No caller appends a reply insert itself.
 
 For an effective note reply, that seam appends the full `withNoteReplyHint` on the first note-flow delivery and
 the one-line `— SEND FROM NOTE FLOW.` suffix on a consecutive note-flow delivery. The suffix is a marker for the

@@ -139,7 +139,7 @@ function MobileNewSession({ draft, setDraft, onBack, onLaunched }) {
     const raw = draft.trim()
     if (!raw || busy) return
     setBusy(true); setErr(null)
-    const r = await createSession(raw, launcher)
+    const r = await createSession(raw, launcher, { initialReplyVia: 'note' })
     setBusy(false)
     if (r.ok) { setDraft(''); onLaunched() }
     else setErr(r.error || t('mobile.launchFailed'))   // fail loud, keep the draft — same rule as the send composer

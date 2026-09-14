@@ -1,9 +1,10 @@
 ---
 concern: 让 agent 在 note 里点名 issue：把台账从推断改成署名，一套语法同时服务 timeline 与 issue 详情
 by: 2499a20b-ae58-4074-87de-3753e02fe63b
-status: open
+status: landed
 nodes: issue-binding, mentions, issues-view, issue-driven-development
 created: 2026-09-14T09:37:44.045Z
+closedAt: 2026-09-14T13:00:19.787Z
 ---
 
 **问题（现在的机制是推断，所以一直在打补丁）**

@@ -29,8 +29,9 @@ test('`@parent:` completes over the ordinary board and writes the stable full id
 
 test('the browser sends the directive as ordinary prompt text — the create boundary owns it', () => {
   // launch.js posts the raw draft: the dashboard never resolves a selector or sets `parent` itself, so the
-  // phone composer, the CLI and a direct API call all get the same grammar from the one backend owner.
-  assert.match(launch, /body: JSON\.stringify\(\{ prompt, \.\.\.\(launcher \? \{ launcher \} : \{\}\) \}\)/)
+  // phone composer, the CLI and a direct API call all get the same grammar from the one backend owner. The
+  // only extra field is the explicit initial reply channel when the new document opens on Conversation.
+  assert.match(launch, /body: JSON\.stringify\(\{ prompt, \.\.\.\(launcher \? \{ launcher \} : \{\}\), \.\.\.\(initialReplyVia \? \{ initialReplyVia \} : \{\}\) \}\)/)
   assert.doesNotMatch(launch, /@parent/)
 })
 
