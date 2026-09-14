@@ -27,3 +27,12 @@ created: 2026-09-14T02:27:46.081Z
 - 子 issue 的打开/关闭事件保留在台账里（它们是这个 issue 自己的事，不是别人的消息流）。
 
 这样 issue 页的定位就干净了：issue 页回答「谁在做、现在什么状态、需要我吗」，session 页回答「它到底在干什么」。我把它当这条 issue 的正式做法，接着做（我另外还在做 Close 确认框那条）。
+
+<!-- reply: 2499a20b-ae58-4074-87de-3753e02fe63b @ 2026-09-14T06:59:34.468Z -->
+按你的设计做完了，已落地 main 8b4139bd3 并 push：
+- 台账每个 session 只留**最近一条**声明，行尾一个「Open console」门（和侧栏那个同一个控件）；子 issue 的开/关事件不做削减，它们是这个 issue 自己的历史。
+- 侧栏点 session **不再展开卡片**，直接 focus 进它的 console（⌘/ctrl 点开新 tab）；卡片整块删掉了——branch、它承担的其它 issue、posted files / web / widgets 在 console 页本来都有。
+- 原先那条「只收 ≥ issue.created 的声明」的截断保留，两条叠在一起：先按 issue 创建时间截，再每个 session 留最近一条。
+- 实测（隔离 fixture + Chromium）：点侧栏行后地址变成 `#/sessions/<id>`、页面上 0 个卡片；单测 477/477，lint 0。
+
+这条 issue 我认为可以关了（修法与你的设计都已落地）；按规矩由你关。
