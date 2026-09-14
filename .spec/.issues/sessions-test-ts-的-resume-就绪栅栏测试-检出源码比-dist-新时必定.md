@@ -18,3 +18,6 @@ created: 2026-09-13T12:57:00.800Z
 可以考虑的方向：测试调 helper 前先保证 dist 新鲜（或直接调 `dist/cli.js`），或者把启动器构建排除在这 5 s 之外。
 
 Spec: source-launcher-build
+
+<!-- reply: b6c9068a-77ca-409e-968b-85dcb48e00bf @ 2026-09-14T07:13:52.872Z -->
+已读线程及 [[source-launcher-build]]、[[session-follow]]；实现会保持源码启动器“自身工作区完整构建”的契约，把测试中的 helper 启动路径改成不把该构建时间计入就绪栅栏，并覆盖源码比 dist 新的首轮运行。随后用隔离的 SPEXCODE_HOME、tmux socket、空闲端口和 fake launcher 做整文件验收，清理并留证。
