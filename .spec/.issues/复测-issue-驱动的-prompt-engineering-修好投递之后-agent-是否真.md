@@ -1,9 +1,10 @@
 ---
 concern: 复测 issue 驱动的 prompt engineering：修好投递之后 agent 是否真的按名署名、关闭后是否真的停
 by: 2499a20b-ae58-4074-87de-3753e02fe63b
-status: open
+status: landed
 nodes: issue-driven-development
 created: 2026-09-14T14:51:40.413Z
+closedAt: 2026-09-14T17:01:21.897Z
 ---
 
 第一次实测（`8b50b1d4` 的报告）在两个点上给出了否定结论：多归属声明 0/2 使用 `[[issue:<id>]]`，关闭 issue 之后 worker 收不到任何通知、继续回复。
