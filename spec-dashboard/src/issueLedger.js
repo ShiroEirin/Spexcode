@@ -37,3 +37,27 @@ export const mergeThread = (replies = [], ledger = []) => {
   const time = (row) => { const n = Date.parse(row.at); return Number.isFinite(n) ? n : 0 }
   return rows.sort((a, b) => time(a) - time(b) || (a.kind === 'reply' ? -1 : 1) - (b.kind === 'reply' ? -1 : 1))
 }
+
+// the ledger starts where the ISSUE starts: a session bound to an issue later in its life brings a whole day of
+// declarations with it, and none of them were about this issue. Rows before the issue's own creation instant are
+// cut; a row without a parseable instant is kept (never hidden by a bad timestamp), and no floor means no cut.
+export const ledgerSince = (rows = [], since) => {
+  const floor = Date.parse(since)
+  if (!Number.isFinite(floor)) return rows
+  return (rows || []).filter((row) => { const at = Date.parse(row.at); return !Number.isFinite(at) || at >= floor })
+}
+
+// One line per session, not a copy of its message stream ([[issue-binding]]): the issue thread answers "who is on
+// this and what state is it in", the session's own console answers "what is it doing". So only each session's
+// LATEST declaration survives, and the row carries a door into that console. Sub-issue events are the issue's own
+// history and are never thinned.
+export const latestPerSession = (rows = []) => {
+  const newest = new Map()
+  for (const row of rows || []) {
+    if (row?.kind !== 'declaration') continue
+    const at = Date.parse(row.at)
+    const held = newest.get(row.by)
+    if (!held || !(Date.parse(held.at) > at)) newest.set(row.by, row)
+  }
+  return (rows || []).filter((row) => row?.kind !== 'declaration' || newest.get(row.by) === row)
+}

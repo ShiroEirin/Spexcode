@@ -529,7 +529,7 @@ test('Command Box floats lower-middle and grows above a fixed footer', () => {
   assert.doesNotMatch(css, /\.si-bottom|--si-dock-h/)
   assert.match(sessionInterface, /<ComposerSurface[\s\S]*className=\{`si-command-box/)
   assert.match(composer, /fitTextarea\(textarea, parseFloat\(styles\.maxHeight\)/)
-  assert.match(thread, /<ComposerSurface className="fv-compose"/)
+  assert.match(thread, /<ComposerSurface className=\{`fv-compose\$\{attach\.dragging \? ' dragover' : ''\}`\}/)
   assert.match(thread, /<ComposerTextarea ref=\{taRef\}/)
   assert.match(issues, /<ComposerTextarea ref=\{taRef\}/)
   assert.match(sessionInterface, /<ComposerTextarea ref=\{msgRef\} className="si-command-input"/)
@@ -546,6 +546,8 @@ test('completed attachment rows fade and remove themselves while failures stay a
   assert.match(attachQueue, /item\.phase === 'failed' && <IconButton[\s\S]*attachRetry/)
   assert.match(attachQueue, /item\.phase === 'complete' \|\| item\.phase === 'cancelled'/)
   for (const host of [sessionInterface, timelineChat]) assert.match(host, /useAttachQueue\(\{ inputRef/)
+  assert.match(thread, /useAttachQueue\(\{ inputRef: taRef, setValue: setBody, variant: 'command', sink: 'evidence'/)
+  assert.match(issues, /useAttachQueue\(\{ inputRef: taRef, setValue: setBody, variant: 'new', sink: 'evidence'/)
   assert.doesNotMatch(sessionInterface, /si-attach-row/)
 })
 

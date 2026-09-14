@@ -101,6 +101,10 @@ it to `.spec/.issues` on its first store touch after a toolchain update — the 
   <canonical>` marks the thread `landed` and replaces any earlier `duplicate:` edge with the canonical in that same
   commit, whose message names it. Only local issues hold these facts — a forge issue has no frontmatter — so every
   parent and target a write accepts is a local id.
+  The CLI `reparent` verb and the dashboard's `POST /api/issues/:id/reparent` call the same `reparentLocalIssue` write
+  path. It accepts a local source and either an open local parent or `null`, refuses a missing/closed/forge parent and
+  any ancestor cycle with the original validation message, and serializes only the source thread's existing `parent:`
+  pointer. Reparenting never changes the on-disk shape or writes a reciprocal child list.
 - **The local issue store lives on the trunk, not per-branch.** A write reads and commits **straight to the main
   checkout's `.spec/.issues/`** — a local-issue file is data, not contract, and the write below commits it with
   `--no-verify` (provably a single `.spec/.issues/` path), so it lands on the trunk without needing any

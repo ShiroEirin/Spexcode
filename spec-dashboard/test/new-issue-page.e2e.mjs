@@ -51,6 +51,18 @@ const overflow = (p) => p.evaluate(() => ({
   doc: document.documentElement.scrollWidth, body: document.body.scrollWidth, vw: window.innerWidth,
 }))
 const errs = (p) => { const bag = []; p.on('pageerror', (e) => bag.push(String(e))); return bag }
+const PNG_1X1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
+const pasteFile = (p, selector, { name, type, base64 = PNG_1X1 }) => p.evaluate(({ selector, name, type, base64 }) => {
+  const input = document.querySelector(selector)
+  if (!input) return false
+  const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0))
+  const file = new File([bytes], name, { type })
+  const clipboard = new DataTransfer()
+  clipboard.items.add(file)
+  const event = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: clipboard })
+  input.dispatchEvent(event)
+  return event.defaultPrevented
+}, { selector, name, type, base64 })
 
 // the local issue the composer scenarios write on
 const listing = await (await fetch(`${API}/api/issues?q=is:issue%20state:open&page=1`)).json()
@@ -427,6 +439,58 @@ await v.keyboard.press('Enter')
 await settle(v, 400)
 const pageNodePick = await liveLocator(v, '.fv-new-compose .fv-textarea').inputValue()
 check('the compose page runs the SAME node completion', /\[\[[a-z0-9-]+\]\] $/.test(pageNodePick), `"${pageNodePick}"`)
+
+// — issue-evidence-attachment: the reply and New composers use the same queue, but an evidence sink —
+// paste a real PNG through the browser, inspect the inserted content-addressed link, send it, and read
+// the rendered image plus the backend bytes. The fixture store is disposable, so these writes are isolated.
+await v.goto(`${BASE}/#/issues/${encodeURIComponent(LOCAL)}`)
+await v.waitForSelector('.fv-compose .fv-textarea')
+await settle(v, 600)
+const replyInput = '.fv-compose .fv-textarea'
+const replyPasted = await pasteFile(v, replyInput, { name: 'reply-proof.png', type: 'image/png' })
+check('reply paste claims the file event', replyPasted)
+await v.waitForSelector('.fv-compose .si-attach-row.complete', { timeout: 20000 })
+const replyAttachment = await v.evaluate((selector) => {
+  const value = document.querySelector(selector)?.value || ''
+  const match = value.match(/\/api\/evidence\/([a-f0-9]{64})/)
+  return { value, hash: match?.[1] || null }
+}, replyInput)
+check('reply evidence queue inserts a markdown link with a content hash', !!replyAttachment.hash && /!\[reply-proof\.png\]\(\/api\/evidence\/[a-f0-9]{64}\)/.test(replyAttachment.value), JSON.stringify(replyAttachment))
+const replyBlob = replyAttachment.hash ? await fetch(`${API}/api/evidence/${replyAttachment.hash}`) : null
+check('reply evidence bytes are readable at GET /api/evidence/<hash>', replyBlob?.status === 200 && /^image\/png/.test(replyBlob.headers.get('content-type') || ''), `${replyBlob?.status} ${replyBlob?.headers.get('content-type')}`)
+await v.click('.fv-compose .fv-send')
+await v.waitForFunction((hash) => [...document.querySelectorAll('.fv-reply-media')].some((el) => el.dataset.evidenceHash === hash && el.querySelector('img')), replyAttachment.hash, { timeout: 20000 })
+check('sent reply renders the evidence image in the thread', await v.locator(`.fv-reply-media[data-evidence-hash="${replyAttachment.hash}"] img`).count() === 1)
+
+await v.goto(`${BASE}/#/issues/new`)
+await v.waitForSelector('.fv-new-compose .fv-textarea')
+await settle(v, 500)
+await v.fill('.fv-new-title', `new evidence proof ${Date.now()}`)
+const newPasted = await pasteFile(v, '.fv-new-compose .fv-textarea', { name: 'new-proof.png', type: 'image/png' })
+check('New paste claims the file event', newPasted)
+await v.waitForSelector('.fv-new-compose .si-attach-row.complete', { timeout: 20000 })
+const newAttachment = await v.evaluate(() => {
+  const value = document.querySelector('.fv-new-compose .fv-textarea')?.value || ''
+  return { value, hash: value.match(/\/api\/evidence\/([a-f0-9]{64})/)?.[1] || null }
+})
+check('New evidence queue inserts a markdown link with a content hash', !!newAttachment.hash && /!\[new-proof\.png\]\(\/api\/evidence\/[a-f0-9]{64}\)/.test(newAttachment.value), JSON.stringify(newAttachment))
+const newConcern = await v.inputValue('.fv-new-title')
+await v.click('.fv-post')
+await v.waitForFunction(() => /^#\/issues\/.+/.test(location.hash) && location.hash !== '#/issues/new', null, { timeout: 20000 })
+const newId = await v.evaluate(() => decodeURIComponent(location.hash.slice('#/issues/'.length)))
+const createdWithEvidence = await (await fetch(`${API}/api/issues/${encodeURIComponent(newId)}`)).json()
+check('New create accepts body evidence and stores its hash', createdWithEvidence.body.includes(`/api/evidence/${newAttachment.hash}`) && (createdWithEvidence.evidence || []).includes(newAttachment.hash), `${newConcern} → ${newId}`)
+await v.waitForFunction((hash) => [...document.querySelectorAll('.rich-evidence')].some((el) => el.dataset.evidenceHash === hash && el.querySelector('img')), newAttachment.hash, { timeout: 20000 })
+check('created issue renders its evidence image in the detail body', await v.locator(`.rich-evidence[data-evidence-hash="${newAttachment.hash}"] img`).count() === 1)
+await v.setViewportSize({ width: 390, height: 844 })
+await settle(v, 300)
+const evidencePhone = await v.evaluate(() => ({
+  doc: document.documentElement.scrollWidth,
+  body: document.body.scrollWidth,
+  composer: document.querySelector('.fv-compose')?.getBoundingClientRect().width || 0,
+}))
+check('evidence composer has no horizontal overflow at phone width', evidencePhone.doc <= 390 && evidencePhone.body <= 390 && evidencePhone.composer > 0, JSON.stringify(evidencePhone))
+await v.setViewportSize({ width: 1440, height: 900 })
 
 // the console's authored composer still opens its own menus (the shared-module regression)
 await v.goto(`${BASE}/#/sessions`)

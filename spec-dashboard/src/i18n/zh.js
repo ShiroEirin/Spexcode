@@ -350,6 +350,7 @@ export default {
     data: '结构化数据（JSON）',
     dataInvalid: '结构化数据 —— 无效 JSON',
     miss: '原始证据不可用。',
+    unsupported: '此证据格式没有可用预览。',
     noImage: '没有附加证据截图。',
     fullscreen: '全屏',
     exitFullscreen: '退出全屏',
@@ -474,6 +475,7 @@ export default {
     originatorIssue: '打开发起此 issue 的会话：{by}',
     sendTo: ({ to }) => `发给 @${to}`,
     sendToTitle: '发布这条回复，并把它作为消息交给会话 {to}',
+    attachTitle: '附加文件（或粘贴 / 拖入）作为此 issue 的证据',
     declared: '声明',
   },
 
@@ -787,6 +789,7 @@ export default {
     issuesSubCount: ({ closed, total }) => `子 issue 已关闭 ${closed}/${total}`,
     issuesSubHideDone: '隐藏已完成',
     issuesSubNew: '子 issue',
+    issuesRootDrop: '移出父 issue',
     issuesDuplicateOf: '重复于',
     inputPlaceholder: '描述工作 · @ 会话 · [[ 规格 · / 命令 · ⏎ 启动 · ⇧⏎ 换行',
     menuCommands: '命令',

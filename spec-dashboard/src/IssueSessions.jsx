@@ -2,19 +2,16 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { apiFetch, postIssueAssign } from './data.js'
 import { apiUrl } from './project.js'
-import { Icon, IconButton } from './icons.jsx'
+import { Icon } from './icons.jsx'
 import SessionContextMenu from './SessionContextMenu.jsx'
 import SessionPicker from './SessionPicker.jsx'
 import Modal from './Modal.jsx'
 import { SideSection, SideValue } from './ReviewShell.jsx'
 import { STATUS_COLOR, fleetWorkState, isArchived, issueFleet, issueParticipants, sessionDisplayState, sessionForest, sessionHeadline } from './session.js'
-import { fileName, webName } from './resourceCatalog.js'
-import { resourceSurface, resourceTabKey } from './sessionSurface.js'
 import { useT } from './i18n/index.jsx'
 import { useEscLayer } from './escStack.js'
-import { routeHash } from './route.js'
 import { isNewTabGesture, openNewTab } from './tabs.js'
-import { useFold } from './SessionWindow.jsx'
+import { SessionConsoleTreeRow, useFold } from './SessionWindow.jsx'
 
 // The issue's FLEET on the Issues page ([[issue-binding]]): the sessions bound to this issue, read through the
 // ONE join the review package owns and drawn in [[review-chrome]]'s OWN vocabulary — every row is the rail's
@@ -73,33 +70,6 @@ function RailAction({ children, tone = '', ...props }) {
   return <button type="button" className={`ds-action${tone ? ` ${tone}` : ''}`} onMouseDown={(e) => e.preventDefault()} {...props}>{children}</button>
 }
 
-// the picked row's CARD: the session's own facts as rail rows — status and note, branch, posted files / web
-// services / widgets as REAL anchors into the console surface that shows each ([[resource-tabs]]' address
-// grammar) — every fact already on the wire, no second viewer; then the console door.
-function FleetCard({ s, issueId, onOpenSession }) {
-  const t = useT()
-  const d = sessionDisplayState(s)
-  const files = s.files || []
-  const web = s.web || []
-  const widgets = s.widgets || []
-  const key = (label) => <span className="ds-side-label fv-card-key">{label}</span>
-  const surfaceHref = (kind, value) => routeHash('sessions', s.id, { surface: resourceSurface(resourceTabKey(s.id, kind, value)) })
-  return (
-    <div className="fv-fleet-card" role="region" aria-label={sessionHeadline(s)}>
-      <SideValue lead={key(t('fleet.cardStatus'))} text={`${t(`status.${d.status}`)}${s.note ? ` · ${s.note}` : ''}`} />
-      {/* a parent issue's fleet holds its sub-issues' workers: the row names the issue it actually works */}
-      {s.issue && s.issue !== issueId && <SideValue lead={key(t('fleet.cardIssue'))} text={s.issue} mono href={routeHash('issues', s.issue)} />}
-      {s.branch && <SideValue lead={key(t('fleet.cardBranch'))} text={s.branch} mono />}
-      {files.map((p) => <SideValue key={p} lead={key(t('fleet.cardFiles'))} text={fileName(p)} tip={p} href={surfaceHref('file', p)} />)}
-      {web.map((w) => <SideValue key={w.key} lead={key(t('fleet.cardWeb'))} text={webName(w.url)} tip={w.url} href={surfaceHref('web', w.key)} />)}
-      {widgets.length > 0 && <SideValue lead={key(t('fleet.cardWidgets'))} text={widgets.map((w) => w.name).join(', ')} />}
-      {!files.length && !web.length && !widgets.length && <SideValue lead={key('')} text={t('fleet.cardNothing')} dim />}
-      <a className="ds-action" href={routeHash('sessions', s.id)} onClick={(e) => { if (isNewTabGesture(e)) return; e.preventDefault(); onOpenSession?.(s.id) }}>
-        <Icon name="terminal" size={12} />{t('fleet.openConsole')}
-      </a>
-    </div>
-  )
-}
 
 
 // a session that already CLOSED is off the board, so its name comes from the archive index — the same read the
@@ -154,7 +124,6 @@ export default function IssueSessions({ issue, sessions = [], onOpenSession, onW
   const { expanded, toggle } = useFold()
   const [menu, setMenu] = useState(null)
   const [closeRequest, setCloseRequest] = useState(null)
-  const [picked, setPicked] = useState(null)   // the row whose card is open
   const [assigning, setAssigning] = useState(false)
   const [busy, setBusy] = useState('')         // `<action>:<id>` in flight — one at a time
   const rows = sessionForest(fleet, (id) => expanded.has(id)).filter((item) => item.type === 'row')
@@ -203,26 +172,26 @@ export default function IssueSessions({ issue, sessions = [], onOpenSession, onW
               const s = item.s
               const action = railAction(s)
               const status = t(`status.${sessionDisplayState(s).status}`)
-              const open = picked === s.id
               return (
-                <div key={s.id} role="listitem" className="fv-fleet-item" style={{ '--fleet-depth': item.depth }}>
-                  <div className={`fv-fleet-row${open ? ' open' : ''}`} data-sid={s.id}
-                    onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setMenu({ x: e.clientX, y: e.clientY, session: s }) }}>
-                    {/* the fold is the icon-system's chevron, present only where there is a subtree to fold */}
-                    {item.expandable
-                      ? <IconButton icon={item.expanded ? 'chevron-down' : 'chevron-right'} size={12} className="fv-fleet-fold" label={`${item.expanded ? '−' : '+'} ${item.kin}`} onClick={() => toggle(s.id)} />
-                      : <span className="fv-fleet-fold" aria-hidden="true" />}
-                    {/* a plain click opens the row's card in place; ctrl/⌘ still opens the console in a new tab ([[tab-strip]]) */}
-                    <SideValue text={sessionHeadline(s)} lead={<StatusDot s={s} />} tip={s.note ? `${status} · ${s.note}` : status} label={sessionHeadline(s)}
-                      trail={s.id === issue.by ? <span className="rl-tag fv-voice-tag">{t('fleet.opened')}</span> : null}
-                      className="fv-fleet-name" onClick={(e) => { if (isNewTabGesture(e)) openNewTab('sessions', s.id); else setPicked((cur) => (cur === s.id ? null : s.id)) }} />
+                <div key={s.id} role="listitem" className="fv-fleet-item">
+                  {/* the ONE session row every list surface draws ([[session-row]]): its glyph, headline, fold pod and
+                      tree rails, re-fitted to the rail by CSS — never a second row face. This rail adds only the
+                      opener tag and the state-gated action beside it, and the card under it. */}
+                  <div className="fv-fleet-row" data-sid={s.id}>
+                    <SessionConsoleTreeRow item={item} activeId={null} onToggleFold={() => toggle(s.id)} rowProps={{
+                      'data-tip': s.note ? `${status} · ${s.note}` : status,
+                      // a click FOCUSES the session — its console answers "what is it doing", while the rail answers
+                      // "who is on this, does it need me". ctrl/⌘ opens that console in a new tab ([[tab-strip]]).
+                      onClick: (e) => { if (isNewTabGesture(e)) openNewTab('sessions', s.id); else onOpenSession?.(s.id) },
+                      onContextMenu: (e) => { e.preventDefault(); e.stopPropagation(); setMenu({ x: e.clientX, y: e.clientY, session: s }) },
+                    }} />
+                    {s.id === issue.by && <span className="rl-tag fv-voice-tag">{t('fleet.opened')}</span>}
                     {action && (
                       <RailAction tone={action === 'close' ? 'danger' : ''} disabled={!!busy} data-tip={t(`fleet.${action}Title`)} onClick={act(action, s)}>
                         {busy === `${action}:${s.id}` ? t('session.issuesActing') : t(`fleet.${action}`)}
                       </RailAction>
                     )}
                   </div>
-                  {open && <FleetCard s={s} issueId={issue.id} onOpenSession={onOpenSession} />}
                 </div>
               )
             })}

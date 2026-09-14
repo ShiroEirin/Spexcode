@@ -111,13 +111,17 @@ async function issueVerbs(args: string[]): Promise<number> {
     if (!own) { console.error('spex issue mine: no session identity in this shell (SPEXCODE_SESSION_ID) — run it inside a session, or read a thread with `spex issue show <id>`'); return 2 }
     const { readRecord } = await import('./session-record.js')
     const rec = readRecord(own)
-    if (!rec?.issue) {
-      console.log(hasFlag(args, 'json') ? 'null' : `session ${own.slice(0, 8)} is bound to no issue — bind one with \`spex issue assign <issue-id> .\``)
+    const bound = rec?.issues ?? (rec?.issue ? [rec.issue] : [])
+    if (!bound.length) {
+      console.log(hasFlag(args, 'json') ? '[]' : `session ${own.slice(0, 8)} is bound to no issue — bind one with \`spex issue assign <issue-id> .\``)
       return hasFlag(args, 'json') ? 0 : 1
     }
-    const t = findIssue(rec.issue, rec.issue.includes('#') ? await liveForgeSlice('mine') : null, loadSpecsLite().map((s) => s.id))
-    if (!t) { console.error(`spex issue mine: bound to '${rec.issue}' but no such issue is readable (see \`spex issue ls --all\`)`); return 1 }
-    console.log(hasFlag(args, 'json') ? JSON.stringify(t, null, 2) : renderIssue(t))
+    const forge = bound.some((id) => id.includes('#')) ? await liveForgeSlice('mine') : null
+    const nodeIds = loadSpecsLite().map((s) => s.id)
+    const issues = bound.map((id) => findIssue(id, id.includes('#') ? forge : null, nodeIds))
+    const missing = bound.filter((_, index) => !issues[index])
+    if (missing.length) { console.error(`spex issue mine: bound to '${missing[0]}' but no such issue is readable (see \`spex issue ls --all\`)`); return 1 }
+    console.log(hasFlag(args, 'json') ? JSON.stringify(issues, null, 2) : issues.map((t) => renderIssue(t!)).join('\n\n'))
     return 0
   }
   if (args[0] === 'links') {
@@ -186,7 +190,7 @@ async function issueVerbs(args: string[]): Promise<number> {
     }
   }
   if (args[0] !== 'ls') {
-    console.error(`spex issue: unknown verb '${args[0]}' — ls | show | mine | open | reply | assign | close | reparent | relate | promote | links  (spex help issue)`)
+    console.error(`spex issue: unknown verb '${args[0]}' — ls | show | mine | open | reply | assign | unassign | close | reparent | relate | promote | links  (spex help issue)`)
     return 2
   }
   args = args.slice(1)
@@ -294,13 +298,23 @@ export async function runIssueWrite(args: string[]): Promise<number> {
       console.log(summarizeAssign(outcome))
       return outcome.delivered ? 0 : 1
     }
+    if (sub === 'unassign') {
+      const [id, selector] = bare(args.slice(1))
+      if (!id || !selector) { console.error('usage: spex issue unassign <issue-id> <SEL>   (SEL = session id | id-prefix | branch)'); return 2 }
+      const issue = findIssue(id, id.includes('#') ? await liveForgeSlice('unassign') : null, loadSpecsLite().map((s) => s.id))
+      if (!issue) { console.error(`spex issue unassign: no issue '${id}'`); return 2 }
+      const { unassignIssueSession, summarizeUnassign } = await import('./issue-assign.js')
+      const outcome = await unassignIssueSession(issue, selector, envSessionId() || 'human')
+      console.log(summarizeUnassign(outcome))
+      return outcome.delivered ? 0 : 1
+    }
     // `open`: start a new issue — STORE-ROUTED through the one creation port ([[issues]] createIssue, the
     // same routine POST /api/issues runs): default local commits to the trunk store; `--store <host>`
     // creates the real forge issue through that store's driver (no promote round-trip when the concern is
     // born forge-visible). The concern is the bare positional(s) after the sub.
     const concern = sub === 'open' ? bare(args.slice(1)).join(' ').trim() : ''
     if (!concern) {
-      console.error('usage: spex issue open "<concern>" [--store local|<host>] [--parent <id>] [--node <id>…] [--evidence <hash>…] [--body -|<text>]\n       spex issue reply|assign|close|reparent|relate|promote <issue-id> …')
+      console.error('usage: spex issue open "<concern>" [--store local|<host>] [--parent <id>] [--node <id>…] [--evidence <hash>…] [--body -|<text>]\n       spex issue reply|assign|unassign|close|reparent|relate|promote <issue-id> …')
       return 2
     }
     const input = { concern, store: fl(args, 'store'), nodes: repeated(args, 'node'), body: readBody(args), evidence: repeated(args, 'evidence'), parent: fl(args, 'parent') }
@@ -338,5 +352,4 @@ export async function runIssueWrite(args: string[]): Promise<number> {
 // router and the runner can never drift. (`nudge` is not here: it is machine plumbing, called only by the
 // post-merge hook as `spex internal nudge`; the on|off|status toggle verbs died in v0.3.0 — the switch is
 // the `issues.enabled` settings key.)
-export const ISSUE_WRITE_SUBS = new Set(['open', 'reply', 'assign'])
-
+export const ISSUE_WRITE_SUBS = new Set(['open', 'reply', 'assign', 'unassign'])

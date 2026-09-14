@@ -18,7 +18,8 @@ export type SessRec = {
   session: string; governed: boolean; worktreePath: string; branch: string | null
   title: string | null; name: string | null
   parent: string | null   // the spawning session's id ([[session-nesting]]); null for a top-level launch
-  issue: string | null    // the issue this session works for ([[issue-binding]]) — provenance like `parent`: written at create or assign, joined at read, never a lifecycle input
+  issues: string[]        // the issues this session works for ([[issue-binding]]) — provenance like `parent`, written at create or assign, joined at read, never a lifecycle input
+  issue: string | null     // legacy derived alias for compatibility; always issues[0] ?? null and will retire
   status: Lifecycle; proposal: Proposal | null; merges: number; note: string | null
   sortKey: number | null; createdAt: number; harness: string; harnessSessionId: string | null; runtimeStartToken: string | null
   stopped: boolean       // explicit human stop; liveness metadata, never an agent-authored lifecycle value
@@ -82,7 +83,7 @@ export function readRecord(id: string): SessRec | null {
     return {
       session: id,
       governed: true,
-      worktreePath: '', branch: null, title: null, name: null, parent: state.parentSessionId, issue: null,
+      worktreePath: '', branch: null, title: null, name: null, parent: state.parentSessionId, issues: [], issue: null,
       status: state.status as SessionLifecycle,
       proposal: isSessionProposal(state.proposal) ? state.proposal : null,
       merges: 0, note: state.note, sortKey: null, createdAt: state.updatedAtMs,
@@ -188,10 +189,15 @@ export function fromRaw(raw: RawRecord & { launch_owner?: string }): SessRec {
       || !(c.sent_at === null || typeof c.sent_at === 'string')) throw new Error(`session '${raw.session_id}' has invalid diff comment`)
     return { id: c.id, filePath: c.file_path, lineStart: c.line_start, lineEnd: c.line_end, body: c.body, diffIdentity: c.diff_identity, sentAt: c.sent_at }
   })
+  const rawIssues = raw.issues
+  if (rawIssues !== undefined && (!Array.isArray(rawIssues)
+    || rawIssues.some((id) => typeof id !== 'string' || !id || id.trim() !== id)))
+    throw new Error(`session '${raw.session_id}' has invalid issues`)
+  const issues = [...new Set([...(rawIssues ?? []), ...(typeof raw.issue === 'string' && raw.issue.trim() ? [raw.issue.trim()] : [])])]
   return {
     session: raw.session_id, governed: !!raw.governed, worktreePath: raw.worktree_path || '', branch: raw.branch || null,
     title: raw.title || null, name: raw.name || null, parent: raw.parent || null,
-    issue: raw.issue || null,        // records written before issue binding → null → no issue
+    issues, issue: issues[0] ?? null,
     status, proposal, merges: Number(raw.merges) || 0,
     note: raw.note || null, sortKey, createdAt: Number(raw.createdAt) || 0,
     harness: raw.harness || 'claude',   // records written before the harness field default to claude
@@ -281,7 +287,7 @@ export function writeRecord(rec: SessRec): void {
     'governed', 'worktreePath', 'branch', 'title', 'name', 'merges', 'sortKey', 'createdAt',
     'harness', 'harnessSessionId', 'runtimeStartToken', 'stopped', 'archived', 'closedAt', 'coldProof',
     'adapterRecovery', 'launcher', 'launchCmd', 'launchConfigDir', 'launchOwner', 'launchReadinessStartedAt', 'createRequestId',
-    'createPayloadHash', 'zcodeChildSessionIds', 'base', 'forkCommit', 'diffComments', 'launchReadinessPending', 'issue',
+    'createPayloadHash', 'zcodeChildSessionIds', 'base', 'forkCommit', 'diffComments', 'launchReadinessPending', 'issues',
   ].some((key) => JSON.stringify((previous as unknown as Record<string, unknown>)[key]) !== JSON.stringify((rec as unknown as Record<string, unknown>)[key]))
   // Once a canonical row exists, a lifecycle-only write is already complete when the application transition
   // commits. Rewriting runtime.json here would recreate a second, stale status/proposal/note authority.
@@ -320,8 +326,8 @@ export function writeRecord(rec: SessRec): void {
     // Written only when the creator pinned one: an unpinned record keeps its exact legacy bytes, so a
     // restore-the-frozen-record path stays byte-identical instead of silently gaining a key.
     ...(rec.base ? { base: rec.base } : {}),
-    // The issue the session is bound to ([[issue-binding]]): conditional like `base`, so an unbound record keeps its exact bytes.
-    ...(rec.issue ? { issue: rec.issue } : {}),
+    // The issues the session is bound to ([[issue-binding]]): conditional like `base`, so an unbound record keeps its exact bytes.
+    ...(rec.issues.length ? { issues: rec.issues } : {}),
     // The commit `git worktree add` actually started from, written on every create since it was introduced.
     // Conditional like `base` above, so a record written before it keeps its exact legacy bytes.
     ...(rec.forkCommit ? { fork_commit: rec.forkCommit } : {}),

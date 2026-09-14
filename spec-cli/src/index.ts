@@ -5,13 +5,13 @@ import { Readable } from 'node:stream'
 import { installConnectionReaper } from './reaper.js'
 import { daemonRuntime } from './daemon-runtime.js'
 import { loadSpecs, loadSpecsLite, specContent, specHistory, specDiffAt, specAt, loadConfig, runtimeRoot } from '@spexcode/spec-core'
-import { issuesEnabled } from './localIssues.js'
+import { issuesEnabled, reparentLocalIssue } from './localIssues.js'
 import { closeIssue, createIssue, findIssue, issueRefs, mergedIssues, promote } from './issues.js'
 import { replyIssueWithLoopIn } from './loop-in.js'
 import { residentForgeState, refreshForgeNow } from '@spexcode/spec-forge/resident'
 import { resolveForgeHost } from '@spexcode/spec-forge/drivers'
-import { dispatchNewMentions, mentionDeliveryPrompt, summarizeDispatch, summarizeLoopIn } from './mentions.js'
-import { AssignError, assignIssueSession, summarizeAssign } from './issue-assign.js'
+import { dispatchNewMentions, mentionDeliveryPrompt, newIssueDeliveryPrompt, summarizeDispatch, summarizeLoopIn } from './mentions.js'
+import { AssignError, assignIssueSession, summarizeAssign, summarizeUnassign, unassignIssueSession } from './issue-assign.js'
 import { resolveLayout, mainBranch } from '@spexcode/spec-core'
 import { getBoardJson } from './graphCache.js'
 import { boardStream, closeBoardFileWatchers, ensureBoardFileWatchers, notifyBoardChanged, flushDeferredWorktreeRegistryChange } from './graphStream.js'
@@ -406,8 +406,8 @@ app.post('/api/issues/:id/reply', async (c) => {
   }
 })
 // bind an EXISTING session to this issue ([[issue-binding]]): the ordinary session selector picks the session, its
-// record gains the `issue` pointer, and the session is told through the one send path. Re-pointing is allowed and
-// reported; a closed session or an unknown/ambiguous selector fails with the resolver's own words.
+// record gains this issue in the `issues` set, and the session is told through the one send path. Repeated binds
+// are idempotent; a closed session or an unknown/ambiguous selector fails with the resolver's own words.
 app.post('/api/issues/:id/assign', async (c) => {
   if (!issuesEnabled()) return c.json({ error: 'issues workflow is off' }, 403)
   const id = c.req.param('id')
@@ -418,6 +418,43 @@ app.post('/api/issues/:id/assign', async (c) => {
     const outcome = await assignIssueSession(issue, typeof body?.session === 'string' ? body.session : '', 'human')
     notifyBoardChanged('sessions')
     return c.json({ ...outcome, outcomes: summarizeAssign(outcome) })
+  } catch (e) {
+    if (e instanceof AssignError) return c.json({ ok: false, error: e.message }, e.status as 400)
+    return c.json({ ok: false, error: String((e as Error).message || e) }, 500)
+  }
+})
+// move a local issue in the hierarchy ([[issues-view]] / [[local-issues]]): the dashboard's drag gesture is
+// only a thin caller. Validation, cycle refusal and the stored pointer all live in the CLI's one reparent verb,
+// so a browser drop and `spex issue reparent` cannot disagree. Forge issues never own hierarchy facts.
+app.post('/api/issues/:id/reparent', async (c) => {
+  if (!issuesEnabled()) return c.json({ error: 'issues workflow is off' }, 403)
+  const id = c.req.param('id')
+  if (id.includes('#')) return c.json({ ok: false, error: 'only a local issue can be reparented' }, 400)
+  const body = await c.req.json().catch(() => ({}))
+  const parent = body && Object.prototype.hasOwnProperty.call(body, 'parent')
+    ? body.parent === null ? null : typeof body.parent === 'string' && body.parent.trim() ? body.parent.trim() : undefined
+    : undefined
+  if (parent === undefined) return c.json({ ok: false, error: 'reparent parent must be a local issue id or null' }, 400)
+  try {
+    const issue = reparentLocalIssue(id, parent)
+    notifyBoardChanged('full')
+    return c.json({ ok: true, id: issue.id, parent: issue.parent })
+  } catch (e) {
+    const msg = String((e as Error).message || e)
+    return c.json({ ok: false, error: msg }, /^no local issue/.test(msg) ? 404 : 400)
+  }
+})
+// remove an existing issue binding. The same selector and notification contract applies; repeated removals are no-ops.
+app.post('/api/issues/:id/unassign', async (c) => {
+  if (!issuesEnabled()) return c.json({ error: 'issues workflow is off' }, 403)
+  const id = c.req.param('id')
+  const issue = findIssue(id, { host: resolveForgeHost(), state: residentForgeState() }, loadSpecsLite().map((s) => s.id))
+  if (!issue) return c.json({ error: `no issue '${id}'` }, 404)
+  const body = await c.req.json().catch(() => ({}))
+  try {
+    const outcome = await unassignIssueSession(issue, typeof body?.session === 'string' ? body.session : '', 'human')
+    notifyBoardChanged('sessions')
+    return c.json({ ...outcome, outcomes: summarizeUnassign(outcome) })
   } catch (e) {
     if (e instanceof AssignError) return c.json({ ok: false, error: e.message }, e.status as 400)
     return c.json({ ok: false, error: String((e as Error).message || e) }, 500)
@@ -450,11 +487,22 @@ app.post('/api/issues', async (c) => {
   const parent = typeof body?.parent === 'string' && body.parent.trim() ? body.parent.trim() : undefined
   // typed evidence[] — content-addressed evidence hashes (the annotator's clip reference rides here, not prose)
   const evidence = Array.isArray(body?.evidence) ? (body.evidence as unknown[]).filter((h): h is string => typeof h === 'string' && /^[0-9a-f]{64}$/.test(h)) : []
+  // explicit Send to @x deliveries from the New issue composer; a bare @ reference never reaches this list
+  const deliverTo = Array.isArray(body?.deliverTo) ? [...new Set((body.deliverTo as unknown[]).filter((v): v is string => typeof v === 'string' && !!v.trim()))] : []
   try {
-    const r = await createIssue(concern, { store, nodes, body: postBody, evidence, parent, author: await claimedAuthor(body?.by) })
+    const author = await claimedAuthor(body?.by)
+    const r = await createIssue(concern, { store, nodes, body: postBody, evidence, parent, author })
     if (r.store !== 'local') await refreshForgeNow()
+    // The issue is durable before any explicit handoff. Each target gets one ordinary queued message; the harness
+    // drain is deferred so a slow or offline pane cannot hold the create response, and every result is visible.
+    const deliveries: string[] = []
+    for (const target of deliverTo) {
+      const sent = await sendText(target, newIssueDeliveryPrompt(r.id, r.nodes[0] || null, author, concern, postBody || ''), 'issues', { deferDrain: true })
+      if (sent.ok) void drainSession(target).catch((error) => console.error(`spex: new issue handoff deferred for ${target}: ${error instanceof Error ? error.message : String(error)}`))
+      deliveries.push(sent.ok ? `sent to @${target.slice(0, 8)}` : `@${target.slice(0, 8)} NOT sent (${sent.error})`)
+    }
     notifyBoardChanged('full')   // atomic with persistence — see the write-visibility note above the reply route
-    return c.json({ ok: true, id: r.id, store: r.store, nodes: r.nodes, parent: r.parent, url: r.url, outcomes: summarizeDispatch(r.outcomes) }, 201)
+    return c.json({ ok: true, id: r.id, store: r.store, nodes: r.nodes, parent: r.parent, url: r.url, outcomes: [summarizeDispatch(r.outcomes), ...deliveries].filter(Boolean).join('  |  ') }, 201)
   } catch (e) {
     return c.json({ error: String((e as Error).message || e) }, store === 'local' ? 500 : 502)
   }

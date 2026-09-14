@@ -42,7 +42,9 @@ because the classification above this seam is exactly `typeof code === 'number' 
 it and a failure to RUN git is delivered as a git that ran and exited.
 
 The executable is resolved from the child environment's `PATH` before the first spawn and reused only while
-that exact `PATH` still names an executable at the cached location. All sync and async paths consume this one
+that exact `PATH` still names an executable at the cached location. On Windows, resolution follows `PATHEXT`
+(including the normal `git.exe` shipped by Git for Windows), rather than assuming an extensionless file. All
+sync and async paths consume this one
 resolved path, so one materialize with many small Git queries does not repeat the shell's whole PATH search for
 every child. The cache key is the PATH itself, not process-global identity: a caller that supplies a Git wrapper
 through a different child environment receives that wrapper, and removing a cached executable makes the next

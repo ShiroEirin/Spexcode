@@ -476,8 +476,8 @@ export function ReviewRows({ rows, cur = null }) {
   return (
     <>
       {rows.map((row) => (
-        <div key={row.key} className={`lp-row ${row.href ? '' : 'inert'} ${row.cls || ''} ${cur === row.key ? 'cur' : ''}`}>
-          {row.href && <a className="lp-row-link" href={row.href}
+        <div key={row.key} className={`lp-row ${row.href ? '' : 'inert'} ${row.cls || ''} ${cur === row.key ? 'cur' : ''}`} {...(row.rowProps || {})}>
+          {row.href && <a className="lp-row-link" href={row.href} draggable={false} onDragStart={(event) => event.preventDefault()}
             onClick={(event) => newTabAnchor(event, row.href)}
             onContextMenu={(event) => { event.preventDefault(); setRowMenu({ x: event.clientX, y: event.clientY, href: row.href }) }}>
             <span className="sr-only">{row.label || row.key}</span></a>}
@@ -489,7 +489,7 @@ export function ReviewRows({ rows, cur = null }) {
   )
 }
 
-export function ListPage({ leading, error, loading = false, title, action, search, sections = [], sectionMode = 'tabs', facets, secondaryFilters, rows, empty, pagination, children }) {
+export function ListPage({ leading, error, loading = false, title, action, search, sections = [], sectionMode = 'tabs', facets, secondaryFilters, rows, renderRows, empty, pagination, children }) {
   const t = useT()
   const [cur, setCur] = useState(null)
   const tabsId = useId()
@@ -571,7 +571,7 @@ export function ListPage({ leading, error, loading = false, title, action, searc
             aria-labelledby={sectionsAreTabs ? tabId(activeSectionIndex) : undefined}
             aria-label={sectionsAreTabs ? undefined : title}>
             {rows.length === 0 && <div className="lp-empty">{loading ? t('common.loading') : emptyText}</div>}
-            <ReviewRows rows={rows} cur={cur} />
+            {renderRows ? renderRows(rows, cur) : <ReviewRows rows={rows} cur={cur} />}
           </div>
         </section>
         {pagination && <Pagination {...pagination} />}

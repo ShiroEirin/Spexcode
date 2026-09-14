@@ -19,6 +19,7 @@ related:
   - spec-dashboard/src/Thread.jsx
   - spec-dashboard/src/textarea.js
   - spec-dashboard/test/new-issue-page.e2e.mjs
+  - spec-dashboard/test/new-issue-send-to.e2e.mjs
   - spec-dashboard/test/issue-hierarchy.e2e.mjs
 ---
 
@@ -137,7 +138,8 @@ theatre is invented for a model that has none. An actually empty issue store say
   up to four status glyphs in the board's own STATUS_COLOR/STATUS_GLYPH, `+n` past that, toned by the fleet's
   rolled-up work state — joined client-side against the board `sessions` the page already holds (no request, no
   re-sort). The detail's status band carries the work-state word and the same strip beside the issue's own state
-  mark, and the detail rail carries a **Sessions** section: the fleet as the one session forest with the one
+  mark, and the detail rail carries a **Sessions** section: the fleet as the one session forest, its rows the one session row
+  every list surface draws ([[session-row]]), with the one
   session context menu, one state-gated action per row (Merge / Relaunch / Close), the **New worker** door that
   types `@new:` into the composer for the human to send, and the other thread voices as participants. Work state is derived and
   never written onto the issue's open/closed lifecycle.
@@ -179,6 +181,15 @@ theatre is invented for a model that has none. An actually empty issue store say
   close as a second row at its `closedAt` ([[issues]]), both wearing the child's current state. The close row names no
   author, because the wire carries when a close happened, not who made it. A child whose close has no recorded instant
   (`closedAt: null` — a local close written before the store kept one) reads closed through that state mark alone.
+- **The issue tree is directly movable.** A row for a local issue in the list, including `group:parent`, is a whole-row
+  pointer gesture using [[drag-gesture]]'s six-pixel threshold and cleanup. Dropping it on another open local row writes
+  that row as its direct `parent`; while a nested row is held, the list's or detail Sub-issues block's trailing
+  **move to top level** drop zone writes `parent: null`. The source row dims, a 75%-scale inert ghost follows the pointer,
+  and a valid receiving row is highlighted without moving the list beneath the pointer. Forge rows never participate.
+  A drop on the source itself, one of its descendants, its existing parent, a closed issue, a forge issue, or any other
+  non-target surface is a no-op: it does not navigate, write, or show a success state. Escape, unmount, and a release
+  before the threshold cancel the gesture and leave the issue untouched. A failed write shows the service's original
+  error in the shared transient notice; a successful write reloads the current page after the board freshness push.
 - **A human writes from here — to the issue's OWN store.** The composer is the ONE shared thread-composer
   (the thread detail docks the same component, `Thread.jsx`): a quiet bordered container, a borderless
   writing surface floored at two lines that auto-grows through [[composer]], the action row always visible —
@@ -201,18 +212,18 @@ theatre is invented for a model that has none. An actually empty issue store say
   button per session in the action row ([[issue-binding]]): pressing it posts the reply AND hands it to that
   session as a message; the plain Send delivers only to the owners of pending widget drafts, and the token alone
   never does.
-- **Four references, two composers, two readings — one table.** A human writes in a session's conversation
-  composer ([[conversation]]) and in this thread's composer, and a session's prose is read in its conversation and
-  in this thread. The references behave the same in both places. Where a cell differs, the reason is who reads the
-  text (an agent reads a message, a human reads a thread) or whose lists a reference resolves against:
+- **Five capabilities, two composers — one alignment table.** The reply composer on an issue detail and the New
+  issue composer use the same grammar and the same explicit delivery action. A difference is recorded here rather
+  than left to implementation drift:
 
-  | reference | typed in the conversation | typed in the thread | read in the conversation | read in the thread |
-  |---|---|---|---|---|
-  | `@<session>` | the `@` door writes the full id; passive, and the send still goes only to this session | the same door; passive, and an exact id adds a **Send to @x** button that delivers | plain prose | plain prose |
-  | `@new[:<launcher>]`, `@parent:` | the same door; creates a child of this session once the send is durable | the same door; creates a worker bound to this issue once the reply is durable | plain prose | plain prose |
-  | `[[node]]` | the `[[` door; expanded to the node's live spec pointer at send, because an agent reads it | the `[[` door; kept as written, because a human reads it | a link to the node | a link to the node |
-  | `[[file:<name>]]` | no door: the CLI prints it when a session posts a file | no door | opens this session's posted file | opens the reply author's posted file |
-  | `[[widget:<name>]]` | no door: the CLI prints it when a session puts a widget | no door | this session's widget, live: drafts wait above this composer, and the send messages the session and commits the state | the reply author's widget, live: drafts wait above this composer, and the send replies, delivers to the owner and commits the state to the owner |
+  | capability | reply composer | New issue composer |
+  |---|---|---|
+  | `@<session>` / **Send to @x** | `@` inserts a full retained id; it stays passive until the shared button posts the reply and delivers it | `@` inserts a full retained id; the shared button creates the issue, then delivers the concern and description to that session; ordinary Create never delivers |
+  | `@new[:<launcher>]` / `@parent:` | the shared door writes the action token; after the reply is durable it dispatches a worker bound to this issue | the shared door writes the action token; after the issue is durable it dispatches a worker bound to the new issue |
+  | `[[node]]` | the shared `[[` door inserts the node reference and the reply keeps it as written | the same door inserts the reference; the new issue store derives its `nodes`/`Spec:` from the prose |
+  | `[[file:<name>]]` | no insertion door; a posted file reference resolves against the reply author's files | no insertion door; the same reference grammar is retained in the new issue body and resolves against its author when read |
+  | paste/drop attachment | the shared attachment queue uses `sink=evidence`, uploads bytes to `/api/evidence`, and inserts `![name](/api/evidence/<hash>)` at the caret | the same queue and evidence sink insert the same markdown link into the description |
+  | `[[widget:<name>]]` | no insertion door; a widget draft joins the preview, sends to its owner, and commits its state | not applicable: New has no session-owned widget frames to draw, so there is no draft block or widget delivery |
 
   A reference that resolves to nothing (a file or widget name the author never posted, or a reply by the human or
   a forge login) is the same unresolved chip in both readings.
@@ -226,7 +237,15 @@ theatre is invented for a model that has none. An actually empty issue store say
   **description** written in the SAME [[composer]] surface every other writing box in this app uses (a quiet
   bordered container, a borderless auto-growing textarea floored at a page-sized height, the persistent
   action row carrying the [[mentions]] `@`/`[[` doors through the ONE shared trigger-insert mechanism) —
-  New is never a second dialect of "an input". A **Write/Preview** switch renders the draft through the SAME
+  New is never a second dialect of "an input". An exact retained `@<session>` grows the same shared **Send to
+  @x** button group as the reply composer. Pressing that button creates the issue first and then delivers the new
+  issue's concern and description to the selected session; ordinary Create creates without delivery. `@new` and
+  `@parent:` remain the same durable post-then-dispatch actions as in the reply composer. `[[file:<name>]]`
+  follows the same passive parsing and author-scoped resolution as a reply. A pasted or dropped file is evidence
+  bytes instead: the content-addressed hash is cited by the markdown image link and is sent in `evidence[]`.
+  A posted file remains a session-owned filesystem path reference, while evidence is repository-scoped
+  content-addressed bytes. Widget draft blocks are **not
+  applicable** on New because no other session's widget frame is rendered there. A **Write/Preview** switch renders the draft through the SAME
   `SpecBody` the detail page renders the stored body with, so what the writer proofreads is what the issue
   will look like; an empty draft says so instead of previewing blank. SIDE rail: the compact **store
   picker** naming each store's canonical label exactly once — the one place the rail takes INPUT rather than

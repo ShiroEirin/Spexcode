@@ -690,8 +690,22 @@ export async function postIssueAssign(id, session) {
   })
   return res.json()
 }
+export async function postIssueUnassign(id, session) {
+  const res = await apiFetch(`/api/issues/${encodeURIComponent(id)}/unassign`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session }),
+  })
+  return res.json()
+}
 export async function postIssueClose(id) {
   const res = await apiFetch(`/api/issues/${encodeURIComponent(id)}/close`, { method: 'POST' })
+  return res.json()
+}
+export async function postIssueReparent(id, parent) {
+  const res = await apiFetch(`/api/issues/${encodeURIComponent(id)}/reparent`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ parent }),
+  })
   return res.json()
 }
 // Promote is the one local lifecycle action besides close: it creates the real forge issue first, then
@@ -700,10 +714,12 @@ export async function postIssuePromote(id) {
   const res = await apiFetch(`/api/issues/${encodeURIComponent(id)}/promote`, { method: 'POST' })
   return res.json()
 }
-export async function postIssueThread({ concern, body, evidence, store, parent }) {
+// `deliverTo` is populated only by an explicit Send to @x action on the New issue composer. The reference in
+// the body remains passive; ordinary Create sends no delivery list.
+export async function postIssueThread({ concern, body, evidence, store, parent, deliverTo = [] }) {
   const res = await apiFetch('/api/issues', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ concern, body, store, ...(parent ? { parent } : {}), ...(evidence?.length ? { evidence } : {}) }),
+    body: JSON.stringify({ concern, body, store, ...(parent ? { parent } : {}), ...(evidence?.length ? { evidence } : {}), ...(deliverTo.length ? { deliverTo } : {}) }),
   })
   return res.json()
 }

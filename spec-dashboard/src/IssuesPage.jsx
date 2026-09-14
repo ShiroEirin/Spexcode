@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
-import { loadIssue, loadSessionTimeline, postIssueClose, postIssuePromote, postIssueReply, postIssueThread } from './data.js'
-import { ledgerFromChildren, ledgerFromTimeline } from './issueLedger.js'
+import { loadIssue, loadSessionTimeline, postIssueClose, postIssuePromote, postIssueReply, postIssueReparent, postIssueThread } from './data.js'
+import { latestPerSession, ledgerFromChildren, ledgerFromTimeline, ledgerSince } from './issueLedger.js'
 import { MENTION_RE, TriggerButton, typeTrigger, useMentionAutocomplete } from './mentions.jsx'
 import { ComposerSurface, ComposerTextarea, composingKey } from './Composer.jsx'
 import { SpecBody } from './NodeView.jsx'
-import { Replies, ReplyComposer } from './Thread.jsx'
+import { bodyEvidence, Replies, ReplyComposer, SendToSessionActions } from './Thread.jsx'
+import { useAttachQueue } from './useAttachQueue.jsx'
 import { useWidgetHost } from './widgetHost.js'
 import { useT } from './i18n/index.jsx'
 import { DetailShell, FacetMenu, ListPage, ReviewListRow, ReviewRows, ReviewState, SecondaryFilters, SideSection, SideValue } from './ReviewShell.jsx'
@@ -14,14 +15,15 @@ import { reviewPageNumber, useReviewPage } from './reviewPage.js'
 import { useTransientNotice } from './TransientNotice.jsx'
 import { routeHash } from './route.js'
 import { addressHash, detailBackHash, specAddress } from './address.js'
-import { Icon } from './icons.jsx'
+import { Icon, IconButton } from './icons.jsx'
 import IssueLabels from './IssueLabels.jsx'
 import IssueSessions, { FleetStrip, FleetWorkState } from './IssueSessions.jsx'
-import { issueFleet } from './session.js'
+import { issueFleet, mentionedSessions } from './session.js'
 import { useLaunchers } from './launch.js'
 import { useReportDocumentName } from './documentActions.jsx'
 import { usePaneActive } from './workspace.jsx'
 import { useViewScope } from './ViewScope.jsx'
+import { elementAt, startDrag } from './dragGesture.js'
 
 const EMPTY_QUERY = {}
 
@@ -37,6 +39,8 @@ const EMPTY_QUERY = {}
 // detail — the local store reserves the same word at id minting ([[local-issues]]), so no issue can own it.
 export const NEW_PARAM = 'new'
 
+const ISSUE_GHOST_SCALE = 0.75
+
 const concluded = (i) => i.status !== 'open'
 
 const age = (ts) => {
@@ -51,6 +55,121 @@ const issueNumber = (id) => {
   const parts = String(id || '').split('#')
   const value = parts.length > 1 ? parts.at(-1) : parts[0]
   return `#${value.length > 16 ? `${value.slice(0, 13)}…` : value}`
+}
+
+// One pointer gesture for every local issue row ([[issues-view]]): the list and a detail's Sub-issues block
+// share the same six-pixel threshold, click swallowing, cancellation and pointer-owned ghost. The DOM only
+// supplies candidate rows; this map supplies the hierarchy facts needed to reject self, descendant, closed and
+// forge landings before a request is made.
+function useIssueDrag(issues = [], { reload, onError } = {}) {
+  const [drag, setDrag] = useState(null)
+  const dragAbort = useRef(null)
+  const byId = useMemo(() => new Map(issues.map((issue) => [issue.id, issue])), [issues])
+
+  const landingAt = useCallback((point, held) => {
+    const row = elementAt(point.x, point.y, '[data-issue-drop-id]')
+    if (row) {
+      const id = row.dataset.issueDropId
+      const target = byId.get(id)
+      if (!target || target.store !== 'local' || target.status !== 'open' || id === held.id || id === held.parent || held.descendants.includes(id)) return undefined
+      return id
+    }
+    if (held.parent && elementAt(point.x, point.y, '[data-issue-root-drop]')) return null
+    return undefined
+  }, [byId])
+
+  const changeParent = useCallback(async (childId, parent) => {
+    const child = byId.get(childId)
+    if (!child || child.store !== 'local' || (child.parent || null) === parent) return
+    try {
+      const result = await postIssueReparent(childId, parent)
+      if (!result?.ok) throw new Error(result?.error || 'issue parent update refused')
+      await reload?.()
+    } catch (error) {
+      onError?.(error instanceof Error ? error.message : String(error))
+    }
+  }, [byId, onError, reload])
+
+  const startRowDrag = useCallback((event, issue) => {
+    if (event.button !== 0 || issue.store !== 'local') return
+    const source = event.currentTarget
+    const bounds = source.getBoundingClientRect()
+    const held = {
+      id: issue.id,
+      parent: issue.parent || null,
+      descendants: Array.isArray(issue.descendants) ? issue.descendants : [],
+      width: bounds.width,
+      height: bounds.height,
+      offsetX: event.clientX - bounds.left,
+      offsetY: event.clientY - bounds.top,
+      x: event.clientX,
+      y: event.clientY,
+      target: undefined,
+    }
+    const update = (point) => {
+      held.x = point.x
+      held.y = point.y
+      held.target = landingAt(point, held)
+      setDrag({ ...held })
+    }
+    const settle = () => {
+      document.body.classList.remove('is-session-dragging')
+      setDrag(null)
+      dragAbort.current = null
+    }
+    dragAbort.current = startDrag(event, {
+      onStart: (point) => {
+        document.body.classList.add('is-session-dragging')
+        update(point)
+      },
+      onMove: update,
+      onDrop: (point) => {
+        const target = landingAt(point, held)
+        settle()
+        if (target !== undefined) void changeParent(held.id, target)
+      },
+      onCancel: settle,
+    })
+  }, [changeParent, landingAt])
+
+  useEffect(() => () => dragAbort.current?.(), [])
+
+  return { drag, startRowDrag }
+}
+
+function IssueRows({ issues = [], rows: suppliedRows = null, sessions = [], stores = [], onLabel = null, reload, onError, rootLabel, cur = null }) {
+  const t = useT()
+  const { drag, startRowDrag } = useIssueDrag(issues, { reload, onError })
+  const rows = suppliedRows || issues.map((issue) => issueRow(issue, { t, sessions, stores, onLabel }))
+  const byId = new Map(issues.map((issue) => [issue.id, issue]))
+  const decorated = rows.map((row) => {
+    const issue = byId.get(row.key)
+    if (!issue) return row
+    const local = issue.store === 'local'
+    return {
+      ...row,
+      cls: `${row.cls || ''}${drag?.id === issue.id ? ' fv-issue-dragging' : ''}${drag?.target === issue.id ? ' fv-issue-drop-target' : ''}`,
+      rowProps: local ? {
+        'data-issue-drop-id': issue.id,
+        'aria-grabbed': drag?.id === issue.id || undefined,
+        onMouseDown: (event) => startRowDrag(event, issue),
+      } : undefined,
+    }
+  })
+  const ghost = drag && decorated.find((row) => row.key === drag.id)
+  return (
+    <>
+      <ReviewRows rows={decorated} cur={cur} />
+      {drag?.parent && <div className={`fv-issue-root-drop${drag.target === null ? ' on' : ''}`} data-issue-root-drop data-tip={rootLabel} aria-label={rootLabel}>
+        <Icon name="corner-up-left" size={14} />
+        <span>{rootLabel}</span>
+      </div>}
+      {ghost && <div className="si-session-drag-ghost fv-issue-drag-ghost" aria-hidden="true" inert
+        style={{ width: drag.width, height: drag.height, '--si-session-drag-ghost-scale': ISSUE_GHOST_SCALE, left: drag.x - drag.offsetX * ISSUE_GHOST_SCALE, top: drag.y - drag.offsetY * ISSUE_GHOST_SCALE }}>
+        {ghost.content}
+      </div>}
+    </>
+  )
 }
 
 // the page's recognized qualifier vocabulary — what the highlight overlay colors and the key
@@ -105,7 +224,7 @@ function issueRow(th, { t, sessions = [], stores = [], onLabel = null }) {
   }
 }
 
-export function IssuesListPage({ data, loading, error, query, onQueryText, sessions = [] }) {
+export function IssuesListPage({ data, loading, error, query, onQueryText, sessions = [], reload, onError }) {
   const t = useT()
   if (data && !data.enabled) return <div className="fv-note">{t('session.issuesOff')}</div>
 
@@ -190,6 +309,7 @@ export function IssuesListPage({ data, loading, error, query, onQueryText, sessi
         { label: groupFacet.label, value: groupFacet.value, active: !!groupFacet.value, options: groupFacet.options, clearLabel: groupFacet.clearLabel, onChange: (value) => surgery('group', value) },
       ]} />}
       rows={rows}
+      renderRows={(items, cur) => <IssueRows issues={issues} rows={items} sessions={sessions} stores={stores} onLabel={(name) => surgery('label', name)} reload={reload} onError={onError} rootLabel={t('session.issuesRootDrop')} cur={cur} />}
       pagination={data ? {
         page: data.page, pageCount: data.pageCount, prev: data.prev, next: data.next,
         hrefFor: (target) => routeHash('issues', null, reviewRouteQuery(text, ISSUE_QUERY_DEFAULT, target)),
@@ -207,17 +327,17 @@ export function IssuesListPage({ data, loading, error, query, onQueryText, sessi
 // the fleet's declaration ledger ([[issue-binding]]): one timeline read per fleet session, re-read when a fleet
 // row's status or note moves on the board (the same push the rail repaints on). Read-time only — the issue
 // stores nothing — and a failed read is an empty ledger for that session, never a broken thread.
-function useFleetLedger(fleet) {
+function useFleetLedger(fleet, since) {
   const [ledger, setLedger] = useState([])
   const key = fleet.map((s) => `${s.id}:${s.status}:${s.note || ''}`).join('|')
   useEffect(() => {
     let live = true
     if (!fleet.length) { setLedger([]); return undefined }
     Promise.all(fleet.map((s) => loadSessionTimeline(s.id, { limit: 60 }).then((w) => ledgerFromTimeline(s.id, w?.events)).catch(() => [])))
-      .then((all) => { if (live) setLedger(all.flat()) })
+      .then((all) => { if (live) setLedger(latestPerSession(ledgerSince(all.flat(), since))) })
     return () => { live = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key])
+  }, [key, since])
   return ledger
 }
 
@@ -247,7 +367,7 @@ const relationRows = (th) => {
 // list page's own rows, a hide-completed switch over those rows of the one read, and the `+ Sub-issue` door — a real
 // anchor to the compose page with the parent filled in, offered only where the store takes a sub-issue (an open local
 // issue). The door prepares; the compose page writes.
-function SubIssues({ issue, kids, sessions }) {
+function SubIssues({ issue, kids, sessions, reload, onError }) {
   const t = useT()
   const [hideDone, setHideDone] = useState(false)
   const closed = issue.childCounts?.closed ?? 0
@@ -279,7 +399,7 @@ function SubIssues({ issue, kids, sessions }) {
       </header>
       {shown.length > 0 && (
         <div className="rl-list fv-subissues-rows">
-          <ReviewRows rows={shown.map((kid) => issueRow(kid, { t, sessions }))} />
+          <IssueRows issues={shown.map((kid) => ({ ...kid, parent: issue.id }))} sessions={sessions} reload={reload} onError={onError} rootLabel={t('session.issuesRootDrop')} />
         </div>
       )}
     </section>
@@ -309,7 +429,7 @@ function SubIssueDoor({ issue }) {
 // composer docked at its foot, and the store/originator/node/permalink metadata in the SIDE rail (reflowed
 // above the body at phone width). One thread surface for both stores; the only store-specific affordances
 // are metadata. Sign/accept/reject are not product verbs.
-export function IssueDetailPage({ issue: th, specs, sessions, onOpenSession, onWrite, onQueryText }) {
+export function IssueDetailPage({ issue: th, specs, sessions, onOpenSession, onWrite, onQueryText, onError }) {
   const t = useT()
   const local = th.store === 'local'
   const isConcluded = concluded(th)
@@ -320,7 +440,7 @@ export function IssueDetailPage({ issue: th, specs, sessions, onOpenSession, onW
   const replies = Array.isArray(th.replies) ? th.replies : []
   const status = th.status || 'open'
   const { fleet } = issueFleet(th, sessions)
-  const ledger = useFleetLedger(fleet)
+  const ledger = useFleetLedger(fleet, th.created)
   // every issue the hierarchy links is titled from the read's own `refs` ([[issues]]) — one read, no request per link
   const refs = th.refs || {}
   const kids = (th.children || []).map((id) => refs[id]).filter(Boolean)
@@ -439,7 +559,7 @@ export function IssueDetailPage({ issue: th, specs, sessions, onOpenSession, onW
         </div>
       )}
       {th.body && <div className="fvd-body"><SpecBody body={th.body} /></div>}
-      <SubIssues issue={th} kids={kids} sessions={sessions} />
+      <SubIssues issue={th} kids={kids} sessions={sessions} reload={() => onWrite?.('')} onError={onError} />
       {threadRows.length > 0 && <h2 className="fv-thread-head">{t('session.issuesThread', { n: threadRows.length })}</h2>}
       <Replies replies={replies} sessions={sessions} ledger={threadLedger} widgetHost={widgetHost} />
     </DetailShell>
@@ -503,6 +623,7 @@ export default function IssuesPage({ param = null, query = EMPTY_QUERY, onOpenSe
   // ([[tab-strip]]'s labels). The detail already has the concern; it reports it once and the frame keeps it.
   useReportDocumentName(param && !composing ? routeHash('issues', param) : null, detail.issue?.concern)
   const flash = (outcomes) => { if (outcomes) notify(outcomes) }
+  const onIssueError = useCallback((message) => notify(message, { kind: 'error' }), [notify])
   const onWrite = async (outcomes) => { flash(outcomes); await (param ? detail.reload() : list.reload()) }
   const onQueryText = (nextText) => scope.ownQuery(queryParam(nextText, ISSUE_QUERY_DEFAULT))
 
@@ -525,9 +646,9 @@ export default function IssuesPage({ param = null, query = EMPTY_QUERY, onOpenSe
       return <DetailShell missing={t('reviewShell.issueNotFound', { id: param })} listHref={routeHash('issues')} listLabel={t('reviewShell.backToIssues')} />
     }
     // keyed by the issue, so a pending widget draft or a lifecycle error never carries over to another thread
-    return <IssueDetailPage key={detail.issue.id} issue={detail.issue} specs={specs} sessions={sessions} onOpenSession={onOpenSession} onWrite={onWrite} onQueryText={onQueryText} />
+    return <IssueDetailPage key={detail.issue.id} issue={detail.issue} specs={specs} sessions={sessions} onOpenSession={onOpenSession} onWrite={onWrite} onQueryText={onQueryText} onError={onIssueError} />
   }
-  return <IssuesListPage data={list.data} loading={list.loading} error={list.error} query={query} onQueryText={onQueryText} sessions={sessions} />
+  return <IssuesListPage data={list.data} loading={list.loading} error={list.error} query={query} onQueryText={onQueryText} sessions={sessions} reload={list.reload} onError={onIssueError} />
 }
 
 // canonical store display names — the permalink label derives from the issue's OWN `store` identity
@@ -565,6 +686,7 @@ function NewIssuePage({ specs, sessions, stores: allStores, parent = null, issue
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const taRef = useRef(null)
+  const attach = useAttachQueue({ inputRef: taRef, setValue: setBody, variant: 'new', sink: 'evidence', disabled: busy || preview })
   const { launchers } = useLaunchers()
   // on a PAGE the menu opens downward under the caret line — no pop-out boundary to clear, so no `up`/
   // `fixedAbove` overlay geometry ([[mentions]]).
@@ -575,13 +697,16 @@ function NewIssuePage({ specs, sessions, stores: allStores, parent = null, issue
   // the node links the prose ALREADY carries — the same `[[id]]` grammar the store derives `nodes:` from,
   // shown while writing instead of stated as a rule nobody can verify.
   const nodes = [...new Set([...body.matchAll(MENTION_RE)].map((m) => m[1]))]
-  const submit = async () => {
+  // The shared delivery doors are explicit actions: the exact @ reference stays in the issue body, while the
+  // selected id is sent separately so the backend can create first and then hand over the new issue.
+  const mentioned = mentionedSessions(body, sessions)
+  const submit = async (deliverTo = []) => {
     const c = concern.trim()
     if (!c || busy) return
     setBusy(true)
     setErr('')
     try {
-      const res = await postIssueThread({ concern: c, body: body.trim() || undefined, store, parent: parent || undefined })
+      const res = await postIssueThread({ concern: c, body: body.trim() || undefined, evidence: bodyEvidence(body), store, parent: parent || undefined, deliverTo })
       if (res?.ok && res.id) onCreated?.(res.id, res.outcomes || '')
       else setErr(res?.error || t('session.issuesPostFailed'))
     } finally { setBusy(false) }
@@ -634,7 +759,8 @@ function NewIssuePage({ specs, sessions, stores: allStores, parent = null, issue
             </div>
           </div>
           <ComposerSurface
-            className="fv-new-compose"
+            className={`fv-new-compose${attach.dragging ? ' dragover' : ''}`}
+            {...(preview ? {} : attach.dropProps)}
             editor={preview
               ? (
                 <div className="fv-new-preview" role="tabpanel">
@@ -645,23 +771,28 @@ function NewIssuePage({ specs, sessions, stores: allStores, parent = null, issue
                 <div className="fv-tawrap" role="tabpanel">
                   <ComposerTextarea ref={taRef} className="fv-textarea" rows={1} value={body} placeholder={t('session.issuesBodyPlaceholder')}
                     disabled={busy} onChange={(e) => { setBody(e.target.value); ac.sync(e.target) }}
-                    onSelect={(e) => ac.sync(e.target)} onBlur={ac.close}
+                    onSelect={(e) => ac.sync(e.target)} onBlur={ac.close} onPaste={attach.onPaste}
                     onKeyDown={(e) => { if (composingKey(e)) return; if (ac.onKeyDown(e)) return; if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submit() } }} />
                   {ac.menuEl}
+                  {attach.queue}
                 </div>
               )}
             footer={
               <div className="fv-actions">
+                {attach.fileInput}
                 <TriggerButton label={t('thread.mentionActor')} disabled={busy || preview}
                   onClick={() => typeTrigger(taRef.current, '@', setBody, ac.sync)}>@</TriggerButton>
                 <TriggerButton label={t('thread.mentionNode')} disabled={busy || preview}
                   onClick={() => typeTrigger(taRef.current, '[[', setBody, ac.sync)}>[[</TriggerButton>
+                <IconButton icon={attach.busy ? 'loader' : 'paperclip'} size={14} iconClassName={attach.busy ? 'si-attach-busy' : undefined}
+                  className="si-command-tool" label={t('thread.attachTitle')} disabled={busy || preview || attach.busy} onClick={attach.pick} />
               </div>
             }
           />
         </div>
         <div className="fv-new-actions">
           {err && <span className="fv-error">{err}</span>}
+          <SendToSessionActions sessions={mentioned} disabled={busy || preview} sendable={!!concern.trim()} onSend={(id) => submit([id])} />
           {/* Cancel is the same return the back anchor is — a REAL list anchor, never history.back. */}
           <a className="fv-cancel" href={returnHref}>{t('session.issuesCancel')}</a>
           <button type="button" className="fv-post" disabled={busy || !concern.trim()} onClick={submit}>

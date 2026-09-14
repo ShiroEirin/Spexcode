@@ -17,6 +17,7 @@ import { SessionFilesContext } from './fileRefs.js'
 import { FileRef } from './Transcript.jsx'
 import { composeWidgetMessage, widgetCommits, widgetOwners } from './widgetHost.js'
 import { useIsMobile } from './useIsMobile.js'
+import { useAttachQueue } from './useAttachQueue.jsx'
 
 // The ONE thread UI ([[issues-view]]): the reply list + the reply composer, shared by every home an
 // Issue thread renders in — the issue detail (BOTH stores: a forge issue's GitHub comments are the same
@@ -92,6 +93,7 @@ export function Replies({ replies, sessions = [], ledger = [], widgetHost = null
           <div className="fv-reply-meta">
             {r.by && <span className="fv-reply-by" data-tip={r.by}>{author ? sessionHeadline(author) : r.by}</span>}
             {r.at && <span className="fv-reply-at">{r.at}</span>}
+            {author && <a className="ds-action fv-declaration-open" href={routeHash('sessions', r.by)} data-tip={t('fleet.openConsole')}><Icon name="terminal" size={11} />{t('fleet.openConsole')}</a>}
             <span className="fv-declaration-word">{t(r.event === 'closed' ? 'thread.closedSubIssue' : 'thread.openedSubIssue')}</span>
           </div>
           <a className="fv-subissue-link" href={href} onClick={(event) => newTabAnchor(event, href)}>
@@ -165,6 +167,7 @@ export function ReplyComposer({ onSend, specs = [], sessions = [], focusId = nul
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')       // a failed send (a forge can be unreachable) surfaces, never swallows
   const taRef = useRef(null)
+  const attach = useAttachQueue({ inputRef: taRef, setValue: setBody, variant: 'command', sink: 'evidence', disabled: busy })
   const { launchers } = useLaunchers()
   const ac = useMentionAutocomplete({ inputRef: taRef, value: body, setValue: setBody, specs, sessions, launchers, focusId, up: true })
   const frames = bodyEvidence(body)         // the blob links currently in the body (preview + the send's evidence[])
@@ -220,24 +223,23 @@ export function ReplyComposer({ onSend, specs = [], sessions = [], focusId = nul
       <div className="fv-tawrap">
         <ComposerTextarea ref={taRef} className="fv-textarea" rows={1} value={body} placeholder={t('session.issuesReplyPlaceholder')}
           disabled={busy} onChange={(e) => { setBody(e.target.value); ac.sync(e.target) }}
-          onSelect={(e) => ac.sync(e.target)} onBlur={() => ac.close()}
+          onSelect={(e) => ac.sync(e.target)} onBlur={() => ac.close()} onPaste={attach.onPaste}
           onKeyDown={(e) => { if (composingKey(e)) return; if (ac.onKeyDown(e)) return; if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send() } }} />
         {ac.menuEl}
+        {attach.queue}
       </div>
   )
   const footer = (
       /* the buttons swallow mousedown so a click never blurs the textarea; the row itself is persistent. */
       <div className="fv-actions">
+        {attach.fileInput}
         <TriggerButton label={t('thread.mentionActor')} disabled={busy} onClick={() => insertTrigger('@')}>@</TriggerButton>
         <TriggerButton label={t('thread.mentionNode')} disabled={busy} onClick={() => insertTrigger('[[')}>[[</TriggerButton>
+        <IconButton icon={attach.busy ? 'loader' : 'paperclip'} size={14} iconClassName={attach.busy ? 'si-attach-busy' : undefined}
+          className="si-command-tool" label={t('thread.attachTitle')} disabled={busy || attach.busy} onClick={attach.pick} />
         {err && <span className="fv-error">{err}</span>}
         <div className="fv-actions-end">
-          {mentioned.map((s) => (
-            <button type="button" key={s.id} className="ds-action fv-send-to" disabled={busy || !sendable} data-tip={t('thread.sendToTitle', { to: s.id })}
-              onMouseDown={(e) => e.preventDefault()} onClick={() => send([s.id])}>
-              <Icon name="send" size={12} />{t('thread.sendTo', { to: sessionHeadline(s) })}
-            </button>
-          ))}
+          <SendToSessionActions sessions={mentioned} disabled={busy} sendable={sendable} onSend={(id) => send([id])} />
           {actionsEnd}
           <IconButton icon="send" size={14} className="fv-send" label={busy ? t('session.issuesSending') : t('session.issuesSend')}
             disabled={busy || !sendable} onMouseDown={(e) => e.preventDefault()} onClick={() => send()} />
@@ -245,6 +247,20 @@ export function ReplyComposer({ onSend, specs = [], sessions = [], focusId = nul
       </div>
   )
   return (
-    <ComposerSurface className="fv-compose" preview={preview} editor={editor} footer={footer} />
+    <ComposerSurface className={`fv-compose${attach.dragging ? ' dragover' : ''}`} preview={preview} editor={editor} footer={footer} {...attach.dropProps} />
   )
+}
+
+// The explicit delivery doors shared by the reply and New issue composers ([[issues-view]]). `@<session>`
+// remains passive; a door appears only for an exact retained session and its caller decides whether pressing it
+// replies or creates an issue before handing the text over.
+export function SendToSessionActions({ sessions = [], disabled = false, sendable = true, onSend }) {
+  const t = useT()
+  return sessions.map((s) => (
+    <button type="button" key={s.id} className="ds-action fv-send-to" disabled={disabled || !sendable}
+      data-tip={t('thread.sendToTitle', { to: s.id })}
+      onMouseDown={(e) => e.preventDefault()} onClick={() => onSend?.(s.id)}>
+      <Icon name="send" size={12} />{t('thread.sendTo', { to: sessionHeadline(s) })}
+    </button>
+  ))
 }

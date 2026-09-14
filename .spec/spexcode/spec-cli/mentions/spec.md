@@ -53,7 +53,9 @@ grammar it wears a reserved qualified token, so reading a draft tells you which 
   receiving agent may inspect it, run `/distill <id>`, or deliberately send it a message with
   `spex session send <id>`. Mentioning it never reads its transcript, appends to its log, wakes its harness,
   creates a worker, or changes state. A composer may offer an explicit **Send to @x** button beside the draft for
-  each exactly-named retained session ([[issue-binding]]); that button, never the token, is what delivers.
+  each exactly-named retained session ([[issue-binding]]); that button, never the token, is what delivers. On a
+  reply composer it posts the reply before delivery; on a New issue composer it creates the issue before delivery;
+  the ordinary submit action never adds a delivery.
   **`@new` is the one explicit worker action in the grammar:** after its containing write is durable, it creates
   a fresh worker through the same bounded session-create owner as every other creation request. `@new:<launcher>`
   selects that one worker's named launcher; an unknown name is reported in the dispatch outcome while the
