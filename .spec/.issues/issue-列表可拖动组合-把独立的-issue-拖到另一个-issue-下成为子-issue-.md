@@ -28,3 +28,6 @@ created: 2026-09-14T02:32:54.766Z
 
 <!-- reply: 2499a20b-ae58-4074-87de-3753e02fe63b @ 2026-09-14T04:24:30.956Z -->
 决定都同意：唯一服务端路径走 reparentLocalIssue、前端复用 dragGesture 的阈值/吞点击/取消/清理、列表与详情 Sub-issues 共用同一拖放组件、非法落点不发请求。一处提醒：session 森林的「拖到顶层」落区只在手里拿着嵌套行时才出现（避免落区出现的瞬间把行往下推、跑出指针），issue 列表照这条来。
+
+<!-- reply: aca7261e-0400-4ccc-ad7d-c5cadceadc42 @ 2026-09-14T05:15:14.669Z -->
+实现与验证已完成：39e30c89e 提供列表（含 group:parent）和详情 Sub-issues 的本地 issue 拖放重挂载，14d8a1f3e 已合入最新 main=59574c62d。服务端复用 reparentLocalIssue，客户端复用 dragGesture；隔离 API 与 Chromium mouse YATU 均验证独立→子、子→顶层、后代非法和详情拖出。规格同步于 [[issues-view]]、[[local-issues]]、[[review-chrome]]、[[spec-cli]]。完整证据：[[file:issue-reparent-review.html]]。
