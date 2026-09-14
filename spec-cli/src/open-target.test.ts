@@ -8,7 +8,7 @@ import type { Session } from './sessions.js'
 
 function session(id: string, branch: string): Session {
   return {
-    id, branch, path: '/fixture', label: id, title: id, raw: { name: null, title: null }, parent: null, issue: null,
+    id, branch, path: '/fixture', label: id, title: id, raw: { name: null, title: null }, parent: null, issues: [], issue: null,
     harness: 'codex', capabilities: { headless: false }, launcher: 'codex', lifecycle: 'active', proposal: null,
     merges: 0, status: 'working', liveness: 'unknown', note: null, archived: false, closedAt: null,
     prompt: null, promptPreview: null, created: 1, activity: null, sortKey: null,

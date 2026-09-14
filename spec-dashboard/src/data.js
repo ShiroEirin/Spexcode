@@ -690,6 +690,13 @@ export async function postIssueAssign(id, session) {
   })
   return res.json()
 }
+export async function postIssueUnassign(id, session) {
+  const res = await apiFetch(`/api/issues/${encodeURIComponent(id)}/unassign`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session }),
+  })
+  return res.json()
+}
 export async function postIssueClose(id) {
   const res = await apiFetch(`/api/issues/${encodeURIComponent(id)}/close`, { method: 'POST' })
   return res.json()
