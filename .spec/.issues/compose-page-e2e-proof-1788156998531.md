@@ -1,9 +1,10 @@
 ---
 concern: compose-page e2e proof 1788156998531
 by: human
-status: open
+status: landed
 nodes: issues-view
 created: 2026-08-31T06:16:39.205Z
+closedAt: 2026-09-14T01:32:02.275Z
 ---
 
 created from the routed compose page, linking [[issues-view]]
