@@ -159,9 +159,8 @@ export default {
     projects: '项目',
   },
   plugins: {
-    profileLabel: '启动 profile',
-    profileAll: ({ n }) => `${n} 个核心钩子全部保留`,
-    profileSome: ({ kept, off }) => `保留 ${kept} 个 · 这里被禁用的：${off}`,
+    profileOff: ({ name, n }) => `profile ${name} 关掉了 ${n} 个`,
+    profileTip: ({ off }) => `启动时的 SPEX_PROFILE 把这些关掉了，它们在图上原地划线：${off}`,
     orderTip: '同一事件内的顺序 —— 数字小的先跑；只有一个事件挂了不止一个钩子时它才真的决定事情',
     blocksTip: '这个钩子被允许拒绝该事件。拒不拒绝是它每次现场决定的：派发器之所以把它的 exit 2 或 decision:block 变成真正的中断，正是因为有这个标志',
     title: '插件',

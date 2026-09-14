@@ -4055,13 +4055,9 @@ body.is-session-dragging .si-pill.archive:hover {
   font: var(--type-meta) var(--ui-font); }
 .pg-search:focus-visible { outline: none; border-color: var(--blue); }
 .pg-bar .seg-option { height: 22px; padding: 0 var(--space-4); font-size: var(--type-meta); }
-.pg-profile { display: inline-flex; align-items: baseline; gap: var(--space-2); margin-left: auto;
-  font-size: var(--type-meta); color: var(--muted); }
-/* the profile's NAME is a value read out of the environment, so it is set apart as one — otherwise `full`
-   runs into the sentence after it and reads as an adjective of that sentence rather than the name it is */
-.pg-profile-k { color: var(--muted); }
-.pg-profile code { font-family: var(--mono); font-size: var(--type-caption); color: var(--ink2);
-  background: var(--panel2); border-radius: var(--radius); padding: 1px var(--space-2); }
+/* the profile, drawn only when it subtracts, and the ledger's window: both sit at the bar's far end, and each
+   takes the free space in turn so either one alone still lands there */
+.pg-profile { margin-left: auto; font-size: var(--type-meta); color: var(--yellow); }
 
 .pg-split { position: relative; display: grid; grid-template-columns: min(var(--pg-panel), 50%) minmax(0, 1fr);
   flex: 1; min-height: 0; }
@@ -4151,7 +4147,7 @@ body.is-session-dragging .si-pill.archive:hover {
 .pg-run-refuse { color: var(--orange); }
 .pg-run-why { font-family: var(--mono); color: var(--ink2); overflow-wrap: anywhere; }
 /* the bar's one live number: the ledger's whole window, so the counts in the detail are never read as all-time */
-.pg-ledger { color: var(--muted); font-size: var(--type-meta); font-variant-numeric: tabular-nums; }
+.pg-ledger { margin-left: auto; color: var(--muted); font-size: var(--type-meta); font-variant-numeric: tabular-nums; }
 /* the script is the document's own code block; its heading names the file in the prose heading voice */
 .pg-file { margin-top: var(--space-7); }
 .pg-file-name { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--space-3);
