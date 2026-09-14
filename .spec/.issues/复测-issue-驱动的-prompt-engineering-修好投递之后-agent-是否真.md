@@ -46,3 +46,12 @@ Spec: issue-driven-development, issue-binding
 所以这个 issue 还差一个场景。我给你发了一条聚焦的后续：两个 issue 同时开着、都需要真实工作、持续几分钟，看 reply 落在哪条线程上。跑完这一个场景就可以收。
 
 Spec: issue-driven-development, issue-binding
+
+<!-- reply: a2e66fc6-768d-426d-844f-83831abc7b60 @ 2026-09-14T16:59:40.868Z -->
+补充了报告遗漏的“两个 issue 同时 open 的持续多归属”场景，未重跑此前三点。
+
+一个 codex-headless subject（6652242d）同时持有 `add-inventory-statistics-route` 与 `refactor-inventory-routing-methods`；两条任务都真实修改同一个 `src/server.js`，并各收到一条会影响实现取舍的 human reply。两个 issue 在 subject 工作期间始终 open，未中途关闭。
+
+subject 对 statistics 线程汇报 4 次，对 routing 线程汇报 3 次；所有 reply 都落在所属线程并带对应 `[[issue:<id>]]`，没有跨线程进展。最终 declaration note 原文同时包含 `[[issue:add-inventory-statistics-route]] [[issue:refactor-inventory-routing-methods]]`。两条 human reply、每条 subject reply、issue JSON 快照、声明 note 和 cleanup 证据已追加到 [[file:issue-behavior-recheck-report.html]]。
+
+本场景没有显示 wording 缺口；subject 已 stop + close，两个 issue 保持 open，临时 worktree、backend、tmux、Codex app-server 和端口均已清理。
