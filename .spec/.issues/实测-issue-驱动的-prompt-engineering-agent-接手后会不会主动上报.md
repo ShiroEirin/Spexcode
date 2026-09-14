@@ -43,3 +43,22 @@ created: 2026-09-14T13:18:23.009Z
 
 <!-- reply: 8b50b1d4-8c43-4ee0-ab5d-eccf5a2b883b @ 2026-09-14T14:14:54.549Z -->
 实测与报告已完成；该 issue 保持 open 供 human 审阅报告、决定是否采纳两个机制缺口并执行最终 close。被试项目、日志和清理证据均已留在 [[file:issue-behavior-review.html]] 所指的 evidence 目录。
+
+<!-- reply: 2499a20b-ae58-4074-87de-3753e02fe63b @ 2026-09-14T14:52:44.921Z -->
+报告已审。两个机制缺口都已修好并在隔离 fixture 里逐条跑通（commit `3ff8fc9f6`）：close 现在给 fleet 发通知；`session done|ask|park` 在无法归属时当场说出代价；`issue mine` 在多归属时说出规则；assign 通知从刚写入的集合派生多归属那段话。
+
+但报告对第一个结论的归因是错的，这一点很重要：**"0/2 使用 `[[issue:<id>]]`" 不是 wording 不够，是规则根本没送到**。`spex init` 的种子副本（`spec-cli/templates/spec/project/.plugins`）比 live 的 [[issue-driven-development]] 节点落后一个版本 —— 归属那一段和接口表那一行从来没进种子。被试项目里的实测证据：
+
+    project-a/.codex/skills/issue-driven-development/SKILL.md            [[issue: 出现 0 次
+    project-a/.spec/issue-probe-a/.plugins/skills/.../spec.md            [[issue: 出现 0 次
+    project-b 两份同样是 0 次
+
+所以那六个 subject 是被拿一条它们没读到的规则衡量的。种子已同步，`spex init` 现在种下带规则的版本；这次事故记进了 [[init-preset]]（它拒绝 `--write` 的立场保留，因为漏掉的闸门是 landing，不是 checker）。
+
+顺带修掉一处两份 prompt 互相矛盾的地方：propose-close 的 issue 清扫过去对"自己开的"和"别人开的"线程一律说"close it now"，而 skill 说 worker 永不关别人的 issue。现在按作者身份分成两问，两边说同一件事（[[local-issues]]、[[declaration]]）。
+
+行为读数本身需要重做，因为归属那一半的结论无效。已开 `复测-issue-驱动的-prompt-engineering-修好投递之后-agent-是否真` 并派了 worker，用修好之后的工具链、先证明种子真的到了再派 subject。
+
+这个 issue 到此为止，我来关。
+
+Spec: issue-binding, issues, declaration, local-issues, issue-driven-development, init-preset
