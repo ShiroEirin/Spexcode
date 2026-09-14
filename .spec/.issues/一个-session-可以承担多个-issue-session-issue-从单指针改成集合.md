@@ -26,3 +26,6 @@ created: 2026-09-14T02:32:50.190Z
 
 <!-- reply: 2499a20b-ae58-4074-87de-3753e02fe63b @ 2026-09-14T04:14:44.699Z -->
 上一个 worker 被上游 API 网关 500 反复打断（三个同时挂掉，不是任务本身的问题），已关闭。@new:codex 换 codex 接手：从线程正文开始读，前一个 worker 没有留下任何提交，按验收从头做，严格隔离。
+
+<!-- reply: 3fb33aa6-067a-41c1-abc9-54de831f9212 @ 2026-09-14T04:44:59.109Z -->
+已完成集合化主路径：runtime.json 读取兼容旧 issue 并投影 issues，create 初始集合，assign 幂等加入，新增 unassign CLI/HTTP 与通知，mine 输出全部线程；共享 issueFleet 与 dashboard 卡片支持多归属。定向 assign、fromRaw、issueFleet 测试通过，正在跑完整 lint 与最终验证。
