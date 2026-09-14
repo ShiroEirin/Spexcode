@@ -17,6 +17,7 @@ import { SessionFilesContext } from './fileRefs.js'
 import { FileRef } from './Transcript.jsx'
 import { composeWidgetMessage, widgetCommits, widgetOwners } from './widgetHost.js'
 import { useIsMobile } from './useIsMobile.js'
+import { useAttachQueue } from './useAttachQueue.jsx'
 
 // The ONE thread UI ([[issues-view]]): the reply list + the reply composer, shared by every home an
 // Issue thread renders in — the issue detail (BOTH stores: a forge issue's GitHub comments are the same
@@ -165,6 +166,7 @@ export function ReplyComposer({ onSend, specs = [], sessions = [], focusId = nul
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')       // a failed send (a forge can be unreachable) surfaces, never swallows
   const taRef = useRef(null)
+  const attach = useAttachQueue({ inputRef: taRef, setValue: setBody, variant: 'command', sink: 'evidence', disabled: busy })
   const { launchers } = useLaunchers()
   const ac = useMentionAutocomplete({ inputRef: taRef, value: body, setValue: setBody, specs, sessions, launchers, focusId, up: true })
   const frames = bodyEvidence(body)         // the blob links currently in the body (preview + the send's evidence[])
@@ -220,16 +222,20 @@ export function ReplyComposer({ onSend, specs = [], sessions = [], focusId = nul
       <div className="fv-tawrap">
         <ComposerTextarea ref={taRef} className="fv-textarea" rows={1} value={body} placeholder={t('session.issuesReplyPlaceholder')}
           disabled={busy} onChange={(e) => { setBody(e.target.value); ac.sync(e.target) }}
-          onSelect={(e) => ac.sync(e.target)} onBlur={() => ac.close()}
+          onSelect={(e) => ac.sync(e.target)} onBlur={() => ac.close()} onPaste={attach.onPaste}
           onKeyDown={(e) => { if (composingKey(e)) return; if (ac.onKeyDown(e)) return; if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send() } }} />
         {ac.menuEl}
+        {attach.queue}
       </div>
   )
   const footer = (
       /* the buttons swallow mousedown so a click never blurs the textarea; the row itself is persistent. */
       <div className="fv-actions">
+        {attach.fileInput}
         <TriggerButton label={t('thread.mentionActor')} disabled={busy} onClick={() => insertTrigger('@')}>@</TriggerButton>
         <TriggerButton label={t('thread.mentionNode')} disabled={busy} onClick={() => insertTrigger('[[')}>[[</TriggerButton>
+        <IconButton icon={attach.busy ? 'loader' : 'paperclip'} size={14} iconClassName={attach.busy ? 'si-attach-busy' : undefined}
+          className="si-command-tool" label={t('thread.attachTitle')} disabled={busy || attach.busy} onClick={attach.pick} />
         {err && <span className="fv-error">{err}</span>}
         <div className="fv-actions-end">
           <SendToSessionActions sessions={mentioned} disabled={busy} sendable={sendable} onSend={(id) => send([id])} />
@@ -240,7 +246,7 @@ export function ReplyComposer({ onSend, specs = [], sessions = [], focusId = nul
       </div>
   )
   return (
-    <ComposerSurface className="fv-compose" preview={preview} editor={editor} footer={footer} />
+    <ComposerSurface className={`fv-compose${attach.dragging ? ' dragover' : ''}`} preview={preview} editor={editor} footer={footer} {...attach.dropProps} />
   )
 }
 

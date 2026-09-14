@@ -2,7 +2,7 @@
 title: attach-queue
 status: active
 hue: 170
-desc: The one client hook behind every composer's paperclip — paste, drop and pick become the resumable upload stream, per-file rows, and a path spliced at the caret.
+desc: The one client hook behind every composer's attachment control — paste, drop and pick become one queued transfer, per-file rows, and sink-specific text spliced at the caret.
 code:
   - spec-dashboard/src/useAttachQueue.jsx
 related:
@@ -15,13 +15,18 @@ related:
 
 # attach-queue
 
-[[file-attach]] states the contract — a file attached to an authored composer is carried to the machine the
-session runs on and the draft is left holding its absolute path. This node is that contract's client half as
-ONE hook, `useAttachQueue`, which every authored composer instantiates for its own textarea: the New Session
-prompt and the Command Box in the session console, the Conversation footer in TimelineChat. A composer that
-renders the hook's paperclip has the whole path; there is no other way to wear the glyph.
+[[file-attach]] states the session contract — a file attached to an authored session composer is carried to the
+machine the session runs on and the draft is left holding its absolute path. Issue composers use the same hook
+with the `evidence` sink: bytes are stored in the shared content-addressed evidence cache and the draft is left
+holding `![name](/api/evidence/<hash>)`. This node is that contract's client half as ONE hook, `useAttachQueue`,
+which every authored composer instantiates for its own textarea. A composer that renders the hook's attachment
+control has the complete gesture set and queue; there is no second attachment mechanism.
 
-The hook is pointed at a composer by its textarea ref and value setter. It owns: the three gestures (a paste
+The hook is pointed at a composer by its textarea ref and value setter. Its `sink` is `uploads` by default (the
+resumable `/api/uploads` stream and path splice); `evidence` posts the exact file bytes to `/api/evidence`,
+reports the same queued/uploading/complete/cancelled/failed rows and progress, and splices a markdown image link
+using the returned hash. The evidence sink accepts any file type; rendering later is decided by the blob's served
+Content-Type, not by a client-side image-only check. It owns: the three gestures (a paste
 carrying files claims the event, a plain text paste falls through; a drag over the surface reports `dragging`
 so the host can ring, a drop attaches; `pick` clicks the hidden `<input type=file>` the hook itself renders);
 the transfer loop over [[file-attach]]'s resumable stream — create, ordered chunk `PATCH`es with the committed

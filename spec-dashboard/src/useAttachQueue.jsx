@@ -3,14 +3,12 @@ import { Icon, IconButton } from './icons.jsx'
 import { useT } from './i18n/index.jsx'
 import { apiUrl } from './project.js'
 
-// [[file-attach]]'s CLIENT HALF as one hook: every authored composer — the New Session prompt, the terminal
-// Command Box, the Conversation footer — attaches a file the same three ways (paste, drop, pick), carries it
-// over the one resumable `/api/uploads` stream, and is left holding the file's ABSOLUTE path spliced at its
-// caret. The hook owns the per-file rows (name, bytes sent, progress, retry/cancel, the brief `attached`
-// fade), the hidden `<input type=file>` its paperclip triggers, and the drop ring; the host only renders
-// what it returns and wires the gestures onto its own surface. It used to live inside SessionInterface,
-// routed by a `target` string, which is how the Conversation footer came to wear a paperclip that did
-// nothing: an attachment path a composer cannot reach is not a shared mechanism.
+// [[file-attach]]'s CLIENT HALF as one hook: every authored composer attaches a file the same three ways
+// (paste, drop, pick), then sends it through its chosen sink. Session composers use the resumable `/api/uploads`
+// stream and hold an absolute path; issue composers use `/api/evidence` and hold a content-addressed markdown
+// link. The hook owns the per-file rows (name, bytes sent, progress, retry/cancel, the brief completion fade),
+// the hidden `<input type=file>` its attachment control triggers, and the drop ring; the host only renders what
+// it returns and wires the gestures onto its own surface.
 
 const SINGLE_UPLOAD_WORKER = 1
 const BYTES_PER_KIBIBYTE = 1024
@@ -66,6 +64,41 @@ const uploadFetch = async (url, init, controller, timeoutMs) => {
     controller.signal.removeEventListener('abort', abort)
   }
 }
+// Evidence is a content-addressed byte post rather than a resumable filesystem upload. XHR is used here
+// only for its upload progress event; the same controller and queue row still own cancellation and errors.
+const uploadEvidence = (file, controller, onProgress) => new Promise((resolve, reject) => {
+  const xhr = new XMLHttpRequest()
+  let settled = false
+  const finish = (fn, value) => {
+    if (settled) return
+    settled = true
+    controller.signal.removeEventListener('abort', abort)
+    fn(value)
+  }
+  const abort = () => xhr.abort()
+  controller.signal.addEventListener('abort', abort, { once: true })
+  xhr.upload.onprogress = (event) => {
+    if (event.lengthComputable) onProgress(Math.min(file.size, event.loaded))
+  }
+  xhr.onerror = () => finish(reject, new Error('evidence upload failed'))
+  xhr.onabort = () => finish(reject, new Error('upload cancelled'))
+  xhr.onload = () => {
+    let body = null
+    try { body = xhr.responseText ? JSON.parse(xhr.responseText) : null } catch { /* responseError below names the status */ }
+    if (xhr.status < 200 || xhr.status >= 300) {
+      finish(reject, new Error(body?.error || `upload failed (HTTP ${xhr.status})`))
+      return
+    }
+    if (!body?.hash) {
+      finish(reject, new Error('evidence upload did not return a hash'))
+      return
+    }
+    finish(resolve, body.hash)
+  }
+  xhr.open('POST', apiUrl('/api/evidence'))
+  xhr.setRequestHeader('content-type', file.type || 'application/octet-stream')
+  xhr.send(file)
+})
 const retryTransientUpload = async (run, transfer, controller) => {
   let retries = 0
   for (;;) {
@@ -103,10 +136,10 @@ const spliceAtCaret = (inputRef, setValue, text) => {
   })
 }
 
-// `inputRef`/`setValue` name the composer the path lands in; `variant` picks the queue's row styling
+// `inputRef`/`setValue` name the composer the sink result lands in; `variant` picks the queue's row styling
 // (`new` under the centered launch box, `command` inside a docked composer card); `disabled` (an offline
 // or archived session) makes every gesture inert — there is no live machine to carry a file to.
-export function useAttachQueue({ inputRef, setValue, variant = 'command', disabled = false }) {
+export function useAttachQueue({ inputRef, setValue, variant = 'command', disabled = false, sink = 'uploads' }) {
   const t = useT()
   const [rows, setRows] = useState([])
   const [dragging, setDragging] = useState(false)
@@ -117,7 +150,7 @@ export function useAttachQueue({ inputRef, setValue, variant = 'command', disabl
   // the composer the file was attached FROM keeps its path even if the host re-points the hook (a session
   // switch mid-upload): each row captures the splice it will perform when it was queued.
   const spliceRef = useRef(null)
-  spliceRef.current = (path) => spliceAtCaret(inputRef, setValue, path)
+  spliceRef.current = (text) => spliceAtCaret(inputRef, setValue, text)
 
   const replaceRows = (next) => { rowsRef.current = next; setRows(next) }
   const patchRow = (id, patch) => replaceRows(rowsRef.current.map((item) => item.id === id ? { ...item, ...patch } : item))
@@ -129,6 +162,15 @@ export function useAttachQueue({ inputRef, setValue, variant = 'command', disabl
     const controller = new AbortController()
     controllersRef.current.set(id, controller)
     try {
+      if (sink === 'evidence') {
+        onPolicy?.(SINGLE_UPLOAD_WORKER)
+        const hash = await uploadEvidence(item.file, controller, (offset) => patchRow(id, { offset }))
+        const latest = rowsRef.current.find((candidate) => candidate.id === id)
+        if (latest?.phase === 'cancelled') return null
+        item.splice(`![${item.file.name || 'attachment'}](/api/evidence/${hash})`)
+        patchRow(id, { phase: 'complete', offset: item.file.size, hash })
+        return SINGLE_UPLOAD_WORKER
+      }
       let transferId = item.transferId
       let transfer = null
       if (transferId) {

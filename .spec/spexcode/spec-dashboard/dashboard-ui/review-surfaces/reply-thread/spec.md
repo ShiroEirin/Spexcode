@@ -59,8 +59,13 @@ one governing home, and the two pages reference it instead of re-describing it.
   the auto-growing borderless textarea, the persistent action row, the IME Enter boundary — is [[composer]];
   the `@`/`[[` doors and their menu are [[mentions]]. This node owns what a THREAD needs from them: which
   actions ride the row, what a send posts through, and that the menu opens where the composer sits (upward
-  from a docked composer, downward on a page). It adds no second editor and no second menu — the composer
-  has no `/` palette; `/` is the session console's grammar ([[command-box]]), not a thread's.
+  from a docked composer, downward on a page). The thread composer also mounts the shared attachment queue with
+  `sink=evidence`: paste, drop, or pick stores exact bytes at `/api/evidence`, then inserts
+  `![name](/api/evidence/<hash>)` at the caret. On send, `bodyEvidence(text)` derives those hashes for `evidence[]`;
+  the body link remains the readable source. This is distinct from `[[file:<name>]]`, which resolves a session-owned
+  posted filesystem path; evidence is repository-scoped content-addressed bytes rendered by `BlobMedia`. It adds no
+  second editor and no second menu — the composer has no `/` palette; `/` is the session console's grammar
+  ([[command-box]]), not a thread's.
 - **Explicit session delivery has one action group.** The exact retained-session doors are rendered by the shared
   `SendToSessionActions` helper in `Thread.jsx`, which the reply composer and the Issues compose page both call. The
   helper owns the button label, icon, tooltip, disabled/sendable state, and mousedown focus guard; each home supplies

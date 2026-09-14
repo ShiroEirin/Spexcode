@@ -222,6 +222,7 @@ theatre is invented for a model that has none. An actually empty issue store say
   | `@new[:<launcher>]` / `@parent:` | the shared door writes the action token; after the reply is durable it dispatches a worker bound to this issue | the shared door writes the action token; after the issue is durable it dispatches a worker bound to the new issue |
   | `[[node]]` | the shared `[[` door inserts the node reference and the reply keeps it as written | the same door inserts the reference; the new issue store derives its `nodes`/`Spec:` from the prose |
   | `[[file:<name>]]` | no insertion door; a posted file reference resolves against the reply author's files | no insertion door; the same reference grammar is retained in the new issue body and resolves against its author when read |
+  | paste/drop attachment | the shared attachment queue uses `sink=evidence`, uploads bytes to `/api/evidence`, and inserts `![name](/api/evidence/<hash>)` at the caret | the same queue and evidence sink insert the same markdown link into the description |
   | `[[widget:<name>]]` | no insertion door; a widget draft joins the preview, sends to its owner, and commits its state | not applicable: New has no session-owned widget frames to draw, so there is no draft block or widget delivery |
 
   A reference that resolves to nothing (a file or widget name the author never posted, or a reply by the human or
@@ -240,7 +241,10 @@ theatre is invented for a model that has none. An actually empty issue store say
   @x** button group as the reply composer. Pressing that button creates the issue first and then delivers the new
   issue's concern and description to the selected session; ordinary Create creates without delivery. `@new` and
   `@parent:` remain the same durable post-then-dispatch actions as in the reply composer. `[[file:<name>]]`
-  follows the same passive parsing and author-scoped resolution as a reply. Widget draft blocks are **not
+  follows the same passive parsing and author-scoped resolution as a reply. A pasted or dropped file is evidence
+  bytes instead: the content-addressed hash is cited by the markdown image link and is sent in `evidence[]`.
+  A posted file remains a session-owned filesystem path reference, while evidence is repository-scoped
+  content-addressed bytes. Widget draft blocks are **not
   applicable** on New because no other session's widget frame is rendered there. A **Write/Preview** switch renders the draft through the SAME
   `SpecBody` the detail page renders the stored body with, so what the writer proofreads is what the issue
   will look like; an empty draft says so instead of previewing blank. SIDE rail: the compact **store

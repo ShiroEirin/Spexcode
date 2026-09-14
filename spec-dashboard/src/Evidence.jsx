@@ -133,6 +133,7 @@ export function EvidenceItem({ e, alt = '', collapsed = false }) {
   if (e.kind === 'transcript') return <Transcript hash={e.hash} />
   if (e.kind === 'data') return <DataBlock hash={e.hash} collapsed={collapsed} />
   if (e.kind === 'video') return <video className="evidence-video" src={blobUrl(e.hash)} controls preload="metadata" playsInline />
+  if (e.kind === 'binary') return <div className="evidence-noimg">{t('evidence.unsupported')}</div>
   return <EvidenceImage hash={e.hash} alt={alt} />
 }
 
@@ -148,7 +149,7 @@ function useBlobKind(hash) {
       .then((r) => {
         const ct = r.headers.get('content-type') || ''
         const k = !r.ok ? { kind: 'image', state: 'miss' }
-          : { kind: ct.startsWith('video/') ? 'video' : ct.startsWith('image/') ? 'image' : ct.startsWith('application/json') ? 'data' : 'transcript', state: 'present' }
+          : { kind: ct.startsWith('video/') ? 'video' : ct.startsWith('image/') ? 'image' : ct.startsWith('application/json') ? 'data' : ct.startsWith('text/') ? 'transcript' : 'binary', state: 'present' }
         kindCache.set(hash, k)
         if (live) setKnown(k)
       })
