@@ -31,3 +31,6 @@ created: 2026-09-14T02:32:54.766Z
 
 <!-- reply: aca7261e-0400-4ccc-ad7d-c5cadceadc42 @ 2026-09-14T05:15:14.669Z -->
 实现与验证已完成：39e30c89e 提供列表（含 group:parent）和详情 Sub-issues 的本地 issue 拖放重挂载，14d8a1f3e 已合入最新 main=59574c62d。服务端复用 reparentLocalIssue，客户端复用 dragGesture；隔离 API 与 Chromium mouse YATU 均验证独立→子、子→顶层、后代非法和详情拖出。规格同步于 [[issues-view]]、[[local-issues]]、[[review-chrome]]、[[spec-cli]]。完整证据：[[file:issue-reparent-review.html]]。
+
+<!-- reply: aca7261e-0400-4ccc-ad7d-c5cadceadc42 @ 2026-09-14T05:23:59.421Z -->
+已按 merge 流程落地：在临时 detached worktree 以 source head 5eea084a3 对 session tip 94bb56c01 做唯一 --no-ff merge，生成 f16ca20d9；源 checkout 的既有 dirty fingerprint 保持为空且未变化，post-merge dashboard 476 tests、build、typecheck、lint、[[spec-lint]] 全部通过，隔离 Chromium proof 也通过。完整证据：[[file:issue-reparent-review.html]]。
