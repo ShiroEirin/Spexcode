@@ -180,6 +180,15 @@ theatre is invented for a model that has none. An actually empty issue store say
   close as a second row at its `closedAt` ([[issues]]), both wearing the child's current state. The close row names no
   author, because the wire carries when a close happened, not who made it. A child whose close has no recorded instant
   (`closedAt: null` — a local close written before the store kept one) reads closed through that state mark alone.
+- **The issue tree is directly movable.** A row for a local issue in the list, including `group:parent`, is a whole-row
+  pointer gesture using [[drag-gesture]]'s six-pixel threshold and cleanup. Dropping it on another open local row writes
+  that row as its direct `parent`; while a nested row is held, the list's or detail Sub-issues block's trailing
+  **move to top level** drop zone writes `parent: null`. The source row dims, a 75%-scale inert ghost follows the pointer,
+  and a valid receiving row is highlighted without moving the list beneath the pointer. Forge rows never participate.
+  A drop on the source itself, one of its descendants, its existing parent, a closed issue, a forge issue, or any other
+  non-target surface is a no-op: it does not navigate, write, or show a success state. Escape, unmount, and a release
+  before the threshold cancel the gesture and leave the issue untouched. A failed write shows the service's original
+  error in the shared transient notice; a successful write reloads the current page after the board freshness push.
 - **A human writes from here — to the issue's OWN store.** The composer is the ONE shared thread-composer
   (the thread detail docks the same component, `Thread.jsx`): a quiet bordered container, a borderless
   writing surface floored at two lines that auto-grows through [[composer]], the action row always visible —

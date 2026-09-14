@@ -694,6 +694,13 @@ export async function postIssueClose(id) {
   const res = await apiFetch(`/api/issues/${encodeURIComponent(id)}/close`, { method: 'POST' })
   return res.json()
 }
+export async function postIssueReparent(id, parent) {
+  const res = await apiFetch(`/api/issues/${encodeURIComponent(id)}/reparent`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ parent }),
+  })
+  return res.json()
+}
 // Promote is the one local lifecycle action besides close: it creates the real forge issue first, then
 // closes out the local thread with the permalink trail.
 export async function postIssuePromote(id) {

@@ -779,6 +779,7 @@ export default {
     issuesSubCount: ({ closed, total }) => `子 issue 已关闭 ${closed}/${total}`,
     issuesSubHideDone: '隐藏已完成',
     issuesSubNew: '子 issue',
+    issuesRootDrop: '移出父 issue',
     issuesDuplicateOf: '重复于',
     inputPlaceholder: '描述工作 · @ 会话 · [[ 规格 · / 命令 · ⏎ 启动 · ⇧⏎ 换行',
     menuCommands: '命令',
