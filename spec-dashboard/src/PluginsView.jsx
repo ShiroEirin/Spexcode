@@ -17,12 +17,18 @@ import { SpecBody } from './NodeView.jsx'
 // it: the frame and its controls never move, the list and the detail scroll independently, and selecting a
 // row answers the question in place instead of spending the whole window to go and look. So the page root
 // is a bounded pane ([[page-scroll]] exempts these deliberately) and the split is the one
-// [[diff-document]] already establishes — resizable master list, pinned zone headings, detail pane owning
-// its own overflow.
+// [[diff-document]] already establishes — resizable master pane, detail pane owning its own overflow.
 //
-// The LIFECYCLE SPINE survives the change of shape and gets better from it: the seven events are the list's
-// sticky group headings now, so the event a hook runs on stays overhead while its siblings scroll under it,
-// instead of being a label you have already scrolled past.
+// @@@the-master-is-a-lifecycle-drawing - the master pane is not a list with event headings any more; it is
+// the agent's lifecycle drawn the way the harness's own hooks reference and Vue's lifecycle diagram draw
+// theirs: nested frames for the loops (a session, each turn inside it, each tool call inside that), a
+// spine down the left with one station per event, and every hook as a pill hanging off the station it
+// fires on. The other two surfaces take their real place in the same picture instead of two more headings:
+// always-on prose is folded into the agent's context at SessionStart, and skills/commands are what the
+// agent may reach for inside the tool loop. A station with nothing bound is still drawn — the lifecycle is
+// the harness's, and an empty station says "nothing runs here", which a list could never say. The filter
+// and the search DIM what they exclude rather than removing it, because a lifecycle with missing stations is
+// a wrong picture, not a shorter one.
 //
 // @@@the-detail-is-a-spec-reading - the selected plugin IS a spec node, so its detail is drawn in the node
 // page's own grammar ([[spec-view]]: title, one-line description, a property row under a hairline, then the
@@ -44,21 +50,6 @@ const SURFACE_FILTERS = ['all', 'hook', 'system', 'invoked']
 const Mark = ({ when, glyph, tone, tip }) => (when
   ? <span className={`pg-mark pg-${tone}`} data-tip={tip} aria-label={tip}>{glyph}</span>
   : null)
-
-function Row({ row, selected, onSelect, mark = null, meta = null, dim = false }) {
-  const on = selected === row.name
-  return (
-    <button type="button"
-      className={`ft-row pg-item${on ? ' on' : ''}${dim ? ' is-dim' : ''}`}
-      aria-current={on ? 'true' : undefined}
-      data-tip={row.desc || undefined}
-      onClick={() => onSelect(row.name)}>
-      <span className="pg-rail">{mark}</span>
-      <span className="ft-label">{row.name}</span>
-      {meta}
-    </button>
-  )
-}
 
 // The detail is the one thing the old page could not do: say what the plugin DOES. Its text is fetched per
 // selection ([[plugins-view]]), so this pane owns a small load of its own and says so rather than blanking.
@@ -121,6 +112,73 @@ function Detail({ name, row, profile, t }) {
   )
 }
 
+
+// The harness's lifecycle vocabulary, in the order an agent meets it and the loop each event belongs to.
+// [[plugins-view]] says which events carry hooks; this says where each sits in the picture. An event the
+// reader carries that is not named here is drawn after the session frame rather than dropped.
+const FRAMES = [
+  { key: 'session', events: ['SessionStart'], inner: {
+    key: 'turn', events: ['UserPromptSubmit'], inner: {
+      key: 'tool', events: ['PreToolUse', 'PostToolUse'], inner: null, after: [],
+    }, after: ['Notification', 'Stop', 'StopFailure'] },
+    after: [] },
+]
+const KNOWN_EVENTS = new Set(['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Notification', 'Stop', 'StopFailure'])
+// a station's aside: what the agent is doing there that no hook is — said once, where it happens
+const STATION_ASIDE = { PreToolUse: 'plugins.toolRuns', Notification: 'plugins.waiting', Stop: 'plugins.refusedBack' }
+
+function Pill({ row, name, selected, onSelect, dim, off, mark = null, order = null, trail = null, small = false }) {
+  const on = selected === name
+  return (
+    <button type="button"
+      className={`lc-pill${small ? ' lc-chip' : ''}${on ? ' on' : ''}${dim ? ' is-dim' : ''}${off ? ' is-off' : ''}`}
+      aria-current={on ? 'true' : undefined} data-tip={row?.desc || undefined}
+      onClick={() => onSelect(name)}>
+      {mark}<span className="lc-pill-name">{name}</span>
+      {order != null && <span className="pg-ord">{order}</span>}{trail}
+    </button>
+  )
+}
+
+function Station({ event, hooks, byName, keep, profile, selected, onSelect, t, children }) {
+  const many = hooks.length > 1
+  return (
+    <div className="lc-station">
+      <span className="lc-dot" aria-hidden="true" />
+      <div className="lc-station-body">
+        <div className="lc-station-row">
+          <span className="lc-event">{event}</span>
+          {hooks.length > 0 && <span className="lc-tie" aria-hidden="true" />}
+          <div className="lc-hooks">
+            {hooks.map((hook) => {
+              const row = byName.get(hook.name)
+              return <Pill key={hook.name} row={row} name={hook.name} selected={selected} onSelect={onSelect}
+                dim={!keep(row)} off={profile.disables.includes(hook.name)}
+                mark={<Mark when={hook.block} glyph="⊘" tone="refuse" tip={t('plugins.blocksTip')} />}
+                order={many ? hook.order : null} />
+            })}
+          </div>
+          {STATION_ASIDE[event] && <span className={`lc-aside lc-aside-${event}`}>{t(STATION_ASIDE[event])}</span>}
+        </div>
+        {children}
+      </div>
+    </div>
+  )
+}
+
+function Cluster({ label, rows, keep, selected, onSelect, meta }) {
+  if (rows.length === 0) return null
+  return (
+    <div className="lc-cluster">
+      <span className="lc-cluster-label">{label}</span>
+      <div className="lc-cluster-pills">
+        {rows.map((row) => <Pill key={row.name} row={row} name={row.name} selected={selected} onSelect={onSelect}
+          dim={!keep(row)} small trail={meta ? meta(row) : null} />)}
+      </div>
+    </div>
+  )
+}
+
 export default function PluginsView() {
   const t = useT()
   const [view, setView] = useState(null)
@@ -128,7 +186,7 @@ export default function PluginsView() {
   const [selected, setSelected] = useState(null)
   const [query, setQuery] = useState('')
   const [surface, setSurface] = useState('all')
-  const [width, onDragStart, resetWidth] = useResizable('spex.pluginsPanelWidth', 300, { min: 220, max: 560 })
+  const [width, onDragStart, resetWidth] = useResizable('spex.pluginsPanelWidth', 380, { min: 260, max: 640 })
 
   useEffect(() => {
     let live = true
@@ -159,17 +217,29 @@ export default function PluginsView() {
 
   const { rows, spine, profile } = view
   const shown = rows.filter(keep)
-  const system = shown.filter((row) => row.surfaces.includes('system'))
-  const invoked = shown.filter((row) => row.surfaces.includes('skill') || row.surfaces.includes('command'))
-  const spineShown = spine
-    .map((slot) => ({ ...slot, hooks: slot.hooks.filter((hook) => keep(byName.get(hook.name))) }))
-    .filter((slot) => slot.hooks.length > 0)
+  const system = rows.filter((row) => row.surfaces.includes('system'))
+  const invoked = rows.filter((row) => row.surfaces.includes('skill') || row.surfaces.includes('command'))
+  const hooksOf = new Map(spine.map((slot) => [slot.event, slot.hooks]))
+  const offSpine = spine.filter((slot) => !KNOWN_EVENTS.has(slot.event))
+  const ctx = { byName, keep, profile, selected, onSelect: setSelected, t }
+  const surfaceMark = (row) => (row.surfaces.includes('skill') && row.surfaces.includes('command')
+    ? <span className="pg-surf is-both">{t('plugins.bothSurfaces')}</span> : null)
 
-  const zone = (key, count, label) => (
-    <div className="si-zone pg-zone" role="heading" aria-level="2" key={`z:${key}`}>
-      <span className="si-zone-count" aria-hidden="true">{count}</span>
-      <span className="si-zone-label">{label}</span>
-    </div>
+  // one frame of the lifecycle: its stations, the frame nested inside it, then the stations after that
+  const drawFrame = (frame) => (
+      <div className={`lc-frame lc-frame-${frame.key}`} data-label={t(`plugins.frame.${frame.key}`)}>
+        {frame.key !== 'session' && <span className="lc-loop" aria-hidden="true" title={t('plugins.repeats')}>↺</span>}
+        {frame.events.map((event) => (
+          <Station key={event} event={event} hooks={hooksOf.get(event) || []} {...ctx}>
+            {event === 'SessionStart' && <Cluster label={t('plugins.foldedIn')} rows={system} keep={keep}
+              selected={selected} onSelect={setSelected} />}
+            {event === 'PreToolUse' && <Cluster label={t('plugins.mayInvoke')} rows={invoked} keep={keep}
+              selected={selected} onSelect={setSelected} meta={surfaceMark} />}
+          </Station>
+        ))}
+        {frame.inner && drawFrame(frame.inner)}
+        {frame.after.map((event) => <Station key={event} event={event} hooks={hooksOf.get(event) || []} {...ctx} />)}
+      </div>
   )
 
   return (
@@ -191,37 +261,11 @@ export default function PluginsView() {
       </header>
 
       <div className="pg-split" style={{ '--pg-panel': `${width}px` }}>
-        <nav className="pg-list" aria-label={t('plugins.listLabel')}>
-          {/* the spine is the list's group headings now: the event stays overhead while its hooks scroll */}
-          {spineShown.map((slot) => (
-            <section key={slot.event}>
-              {zone(slot.event, slot.hooks.length, slot.event)}
-              {slot.hooks.map((hook) => (
-                <Row key={`${slot.event}:${hook.name}`} row={byName.get(hook.name) || { name: hook.name, desc: '' }}
-                  selected={selected} onSelect={setSelected}
-                  dim={profile.disables.includes(hook.name)}
-                  mark={<Mark when={hook.block} glyph="⊘" tone="refuse" tip={t('plugins.blocksTip')} />}
-                  meta={slot.hooks.length > 1
-                    ? <span className="pg-ord" data-tip={t('plugins.orderTip')}>{hook.order}</span>
-                    : null} />
-              ))}
-            </section>
-          ))}
-          {system.length > 0 && <section>
-            {zone('system', system.length, t('plugins.alwaysOn'))}
-            {system.map((row) => <Row key={row.name} row={row} selected={selected} onSelect={setSelected} />)}
-          </section>}
-          {invoked.length > 0 && <section>
-            {zone('invoked', invoked.length, t('plugins.invoked'))}
-            {invoked.map((row) => {
-              const both = row.surfaces.includes('skill') && row.surfaces.includes('command')
-              return <Row key={row.name} row={row} selected={selected} onSelect={setSelected}
-                meta={<span className={both ? 'pg-surf is-both' : 'pg-surf'}>
-                  {both ? t('plugins.bothSurfaces') : row.surfaces.includes('skill') ? 'skill' : 'command'}
-                </span>} />
-            })}
-          </section>}
-          {shown.length === 0 && <p className="pg-none">{t('plugins.noMatch')}</p>}
+        <nav className="pg-list lc" aria-label={t('plugins.listLabel')}>
+          {drawFrame(FRAMES[0])}
+          {offSpine.length > 0 && <div className="lc-frame lc-frame-else" data-label={t('plugins.frameElse')}>
+            {offSpine.map((slot) => <Station key={slot.event} event={slot.event} hooks={slot.hooks} {...ctx} />)}
+          </div>}
         </nav>
         <div className="pg-resize" onMouseDown={onDragStart} onDoubleClick={resetWidth} aria-hidden="true" />
         <Detail name={selected} row={byName.get(selected)} profile={profile} t={t} />

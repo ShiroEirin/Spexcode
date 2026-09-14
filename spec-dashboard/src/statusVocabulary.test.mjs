@@ -85,6 +85,9 @@ test('dashboard source does not mint a second multi-status literal', () => {
     // the thread ledger's row filter is a projection over lifecycle words — WHICH transitions a human reads on an
     // issue thread — declared once ([[issue-binding]]); its fixture exercises that one consumer.
     ['issueLedger.js', new Set(['LEDGER_STATUSES'])],
+    // the close dialog's one projection: WHICH statuses mean a session has settled itself, so closing it with the
+    // issue is the human's ordinary act ([[issue-binding]]).
+    ['issueClose.js', new Set(['CLOSABLE'])],
     ['issueLedger.test.mjs', new Set(['events'])],
   ])
   const violations = []

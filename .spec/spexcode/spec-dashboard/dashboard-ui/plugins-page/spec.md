@@ -2,7 +2,7 @@
 title: plugins-page
 status: active
 hue: 40
-desc: The rail's automation board — a bounded master/detail frame reading every plugin by the surface it plugs into, hooks grouped under the lifecycle event they fire on, and the selected plugin read beside it as a spec document — title, description, property row, rendered body, its script as a code block.
+desc: The rail's automation board — the agent's lifecycle drawn as nested loop frames with a spine of event stations, every hook a pill hanging off the station it fires on, always-on prose and skills placed where they act, and the selected plugin read beside it as a spec document.
 code:
   - spec-dashboard/src/PluginsView.jsx
 related:
@@ -31,19 +31,30 @@ what they are. Two things a spec tree structurally cannot say are the whole reas
 that plugs into two surfaces at once can appear only once in a tree, and a hook's event, its order inside
 that event, and whether it may refuse have nowhere in a tree to live.
 
-## the spine is the hook surface and only the hook surface
+## the master pane is the agent's lifecycle, drawn
 
-The events are the master list's group headings, in the order an agent meets them over one session, and
-each hook sits under the event it fires on, in its order, marked when it may refuse. Making the spine the
-list's headings rather than a drawn rail is what lets it survive being a board: the heading pins while its
-own hooks scroll under it, so the event you are reading is always overhead instead of a label you scrolled
-past. An event carrying two hooks is where the order stops being decoration. An event carrying none is
-simply absent from a filtered list — a group with no rows is a heading about nothing.
+The left pane is not a list. It is the lifecycle an agent lives through under this harness, drawn the way
+the harness's own hooks reference draws it and the way Vue's lifecycle diagram has taught a generation of
+readers to read one: nested frames for the loops — a session, each turn inside it, each tool call inside
+that — a spine down each frame with one station per event in the order they fire, and every hook a pill
+tied to the station it fires on. A repeating frame wears a loop glyph in its corner; the outer spine runs on
+beside the inner frame so the eye reads that the session continues after the turn and the turn after the
+tool call.
 
-The other surfaces have no timeline and are not forced onto one: always-on prose and invocable verbs are
-two more groups under the same headings, which is the honest shape, because they are not lined up in time.
-The bar's filter is the one control that narrows this, and it narrows the READING only — [[plugins-view]]
-always answers with the whole inventory, and the count says how much of it is showing.
+The other two surfaces are not two more headings. They take their real place in the picture: always-on
+prose is a cluster under SessionStart, because that is when it is folded into the agent; skills and commands
+are a cluster inside the tool loop, because that is where the agent reaches for them. A station's aside says
+what the agent is doing there that no hook does — the tool runs, waiting on the human, refused so the turn
+goes on — once, in italics, where it happens.
+
+A station is drawn whether or not a hook is bound to it. The lifecycle is the harness's; an empty station
+says "nothing runs here", which no list could say. For the same reason the bar's filter and the search DIM
+what they exclude instead of removing it: a lifecycle with missing stations is a wrong picture, not a shorter
+one. The count in the bar still reports how many the filter keeps. An event the reader carries that the
+drawing does not know is drawn after the session frame, never dropped.
+
+Order is drawn on a pill only where its station carries more than one hook — the only place the number
+decides anything. A hook the profile turns off is struck through in place rather than hidden.
 
 ## the question is what a thing DOES, and the answer is its own text
 
@@ -98,31 +109,24 @@ sentence, which is what a reader should be able to skim past.
 
 ## the colour budget is one narrow column
 
-A hook that may refuse its event puts a mark in the rail at the row's left edge, and nothing else on this
-board is tinted — so the hooks that can interrupt a session form a broken vertical line down the left that a
-reader finds without reading. The row itself is never coloured: a tinted row spends a whole line to say one
-word. The single exception is a node on two surfaces at once, which is the one fact a folder tree structurally
+A hook that may refuse its event carries one mark at the front of its pill, and nothing else on this board
+is tinted — so the hooks that can interrupt a session are the only spots of colour on the drawing, found
+without reading. The pill itself is never coloured: a tinted pill spends a whole name to say one word. The single exception is a node on two surfaces at once, which is the one fact a folder tree structurally
 cannot show, so it is the one that earns a hue.
 
 A hook the profile turned off is drawn quieter than the metadata beside it, not merely greyer than the name:
 its text is mixed toward the page's own ground, below `--muted`, because a reader should skim past it. Its
 refusal mark keeps full strength — what it would do if it ran has not changed.
 
-## the list row is a name, because the sentence has somewhere better to be
+## a pill is a name, because the sentence has somewhere better to be
 
-One tier in the list: the name, in the sidebars' row grammar, with the marks that change a reading pushed to
-its edges. The sentence that used to sit under every name is the detail pane's first paragraph now, where it
-is read once and in full instead of twenty-five times in truncated parallel — and a list of names is what
-makes the list scannable at all, which is the job a master list has.
-
-There is no third rank anywhere here, because this frame already spends the proportional/mono contrast
+One tier in the drawing: the name, in a pill, with the marks that change a reading at its edges. The
+sentence that once sat under every name is the detail's subtitle now, read once and in full instead of
+twenty-five times in truncated parallel — and a picture of names is what makes the lifecycle scannable at
+all. There is no third rank anywhere here, because this frame already spends the proportional/mono contrast
 channel globally — `--ui-font` IS the mono — so size and colour carry a ranking a product with two typefaces
-would split three ways.
-
-Rows are borderless and tight, like every other list this frame draws: a box around a card is a border spent
-on a rectangle rather than on the thing inside it. The group heading is a hairline and a count pod, never a
-drawn graphic — which is also how every workflow console worth copying draws one, because a border survives
-reflow and virtualisation and an SVG does not.
+would split three ways. Frames are hairlines with a caption on the border, never a drawn graphic, because a
+border survives reflow and an SVG does not.
 
 ## the profile is the switch, and it is read here, never written
 
@@ -162,11 +166,8 @@ list is the parts of THIS document — the plugins the board is about — the wa
 panel is the parts of one diff. The test is what a click does: selecting a row answers in the detail pane
 and changes no address, and the one link that leaves is explicit and lives in the detail's own header.
 
-Its rows are therefore the sidebars' one row grammar and its group headings the zone grammar, pinned so the
-lifecycle event a hook runs on stays overhead while its siblings scroll under it — the list is the one place
-on the board a heading pins, because a group heading is what makes a long list navigable; a detail's own
-overview is not. The divider is the shared resizable pane, clamped so the detail keeps at least half the
-width, and it stacks to a band above the detail on a phone.
+The master pane scrolls the drawing whole; nothing in it pins. The divider is the shared resizable pane,
+clamped so the detail keeps at least half the width, and it stacks to a band above the detail on a phone.
 
 The board is still `resident`, so the bare address is its one tab identity, and it is still absent from the
 published-tree page set because a static publication has no live plugin surface to read.

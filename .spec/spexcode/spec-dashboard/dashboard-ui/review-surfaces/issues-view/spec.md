@@ -190,6 +190,10 @@ theatre is invented for a model that has none. An actually empty issue store say
   non-target surface is a no-op: it does not navigate, write, or show a success state. Escape, unmount, and a release
   before the threshold cancel the gesture and leave the issue untouched. A failed write shows the service's original
   error in the shared transient notice; a successful write reloads the current page after the board freshness push.
+- **Close issue asks about the fleet.** While the issue carries any session, the composer's **Close issue** opens the
+  confirmation over its fleet ([[issue-binding]]): settled rows pre-picked to close with it, live rows pickable instead
+  to be asked to wrap up, the two exclusive, the issue staying open in the second case. An issue with no fleet closes
+  directly, as before.
 - **A human writes from here — to the issue's OWN store.** The composer is the ONE shared thread-composer
   (the thread detail docks the same component, `Thread.jsx`): a quiet bordered container, a borderless
   writing surface floored at two lines that auto-grows through [[composer]], the action row always visible —

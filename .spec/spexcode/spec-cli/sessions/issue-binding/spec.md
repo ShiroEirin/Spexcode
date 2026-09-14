@@ -132,6 +132,18 @@ with one visible fleet per issue, and close/retire/children/acceptance reachable
   write only when no backend answers. `SPEXCODE_ISSUES_DIR` is the one override that never leaves the process: a
   disposable store is a local write by definition, so an isolated run can never land on the real trunk through the
   project's recorded live backend — which outranks an unreachable env address for a shell without a session identity.
+- **Closing an issue asks about its fleet first.** An issue closed while the sessions carrying it are still open leaves
+  the board lying — the issue reads finished, its workers read busy. So while the fleet has any row, **Close issue**
+  opens a confirmation over the FLEET only (the thread's other voices carry no work): the rows that have settled
+  THEMSELVES (`close-pending`, `retired`) are listed first and pre-picked, the rows still live (working, asking,
+  parked, review, error) below them. **The two groups are exclusive**, because they are two different acts: picking
+  settled rows closes them with the issue through the same session-close route the console menu uses; picking live
+  rows instead asks each to wrap up — one ordinary message telling it to commit or discard, report on the thread, and
+  declare its own `done --propose close` — and the issue STAYS OPEN, because ending a session is its own act
+  ([[state]]) and closing the issue is the human's. Picking across the boundary switches groups rather than mixing
+  them, so nothing live is ever closed by surprise, and what one press does is derived from the picked set alone
+  (`issueClose.js`: `closable`, `closeAction`), never a second piece of state. An issue with no fleet closes directly,
+  as before.
 - **The composer's explicit send door.** The shared reply composer ([[issues-view]]) reads the draft's `@<id>`
   tokens that name a retained board session EXACTLY (`mentionedSessions`; the autocomplete writes full ids, so a
   prefix, a label, or the `@new`/`@parent:` doors are never deliveries) and shows one **Send to @x** button per
