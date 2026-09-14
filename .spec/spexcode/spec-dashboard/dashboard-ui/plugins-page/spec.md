@@ -2,7 +2,7 @@
 title: plugins-page
 status: active
 hue: 40
-desc: The rail's automation board — the agent's lifecycle drawn as nested loop frames with a spine of event stations, every hook a pill hanging off the station it fires on, always-on prose and skills placed where they act, and the selected plugin read beside it as a spec document.
+desc: The rail's automation board — the agent's lifecycle drawn as a spine of event stations with frames around the loops that repeat, every hook a pill hanging off the station it fires on, always-on prose and skills placed where they act, and the selected plugin read beside it as a spec document.
 code:
   - spec-dashboard/src/PluginsView.jsx
 related:
@@ -35,11 +35,11 @@ that event, and whether it may refuse have nowhere in a tree to live.
 
 The left pane is not a list. It is the lifecycle an agent lives through under this harness, drawn the way
 the harness's own hooks reference draws it and the way Vue's lifecycle diagram has taught a generation of
-readers to read one: nested frames for the loops — a session, each turn inside it, each tool call inside
-that — a spine down each frame with one station per event in the order they fire, and every hook a pill
-tied to the station it fires on. A repeating frame wears a loop glyph in its corner; the outer spine runs on
-beside the inner frame so the eye reads that the session continues after the turn and the turn after the
-tool call.
+readers to read one: a spine down the pane with one station per event in the order they fire, frames only
+around what REPEATS — each turn, and each tool call inside it — and every hook a pill tied to the station it
+fires on. A repeating frame wears a loop glyph in its corner, and the spine runs on beside it so the eye
+reads that the session continues after the turn and the turn after the tool call. The session itself is
+not framed: it is the page, and a box around everything is a box that says nothing.
 
 The other two surfaces are not two more headings. They take their real place in the picture: always-on
 prose is a cluster under SessionStart, because that is when it is folded into the agent; skills and commands
@@ -51,7 +51,7 @@ A station is drawn whether or not a hook is bound to it. The lifecycle is the ha
 says "nothing runs here", which no list could say. For the same reason the bar's filter and the search DIM
 what they exclude instead of removing it: a lifecycle with missing stations is a wrong picture, not a shorter
 one. The count in the bar still reports how many the filter keeps. An event the reader carries that the
-drawing does not know is drawn after the session frame, never dropped.
+drawing does not know is drawn after the last station, never dropped.
 
 Order is drawn on a pill only where its station carries more than one hook — the only place the number
 decides anything. A hook the profile turns off is struck through in place rather than hidden.
@@ -111,8 +111,9 @@ sentence, which is what a reader should be able to skim past.
 
 A hook that may refuse its event carries one mark at the front of its pill, and nothing else on this board
 is tinted — so the hooks that can interrupt a session are the only spots of colour on the drawing, found
-without reading. The pill itself is never coloured: a tinted pill spends a whole name to say one word. The single exception is a node on two surfaces at once, which is the one fact a folder tree structurally
-cannot show, so it is the one that earns a hue.
+without reading. The pill itself is never coloured: a tinted pill spends a whole name to say one word. A
+node on two surfaces at once is not marked in the drawing either — the detail's property row names both
+surfaces, and a tag on the pill was emphasis the picture did not need.
 
 A hook the profile turned off is drawn quieter than the metadata beside it, not merely greyer than the name:
 its text is mixed toward the page's own ground, below `--muted`, because a reader should skim past it. Its

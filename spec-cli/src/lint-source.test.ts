@@ -96,6 +96,14 @@ test('fresh Python repo treats every tracked regular text file as source without
   assert.ok(!out.includes('governing NOTHING'), out)
 })
 
+test('spec lint accepts combining-mark script ids and resolves their mentions', { skip }, () => {
+  const { code, out } = fixture({
+    '.spec/project/हिन्दी/spec.md': '---\ntitle: हिन्दी\n---\nA combining-mark script node.\n',
+  }, { governedRoots: [] }, {}, '# project\n\nSee [[हिन्दी]].\n')
+  assert.equal(code, 0, out)
+  assert.doesNotMatch(out, /id-format|mention:/, out)
+})
+
 test('TypeScript uses the same default; explicit exclude globs alone remove docs/build paths', { skip }, () => {
   const files = {
     'src/index.ts': 'export const answer = 42\n',

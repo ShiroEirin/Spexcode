@@ -19,6 +19,10 @@ test('parseMentions: qualified file and widget references stay out of node infer
   assert.deepEqual(parseMentions('see [[file:report.md]] and [[widget:plan]] plus [[issues-view]]').nodes, ['issues-view'])
 })
 
+test('parseMentions: combining-mark script ids stay one token', () => {
+  assert.deepEqual(parseMentions('see [[हिन्दी]] and [[ไทย]]').nodes, ['हिन्दी', 'ไทย'])
+})
+
 // ---- parseParentDirective: the @parent: action, consumed at the create boundary ----
 
 test('parseParentDirective: the directive names a supervisor and leaves the task text alone', () => {

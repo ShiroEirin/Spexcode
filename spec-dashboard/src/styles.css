@@ -4075,20 +4075,21 @@ body.is-session-dragging .si-pill.archive:hover {
    on, as Vue's lifecycle diagram hangs its hooks off the flow. Everything is a palette token and the only
    tint is the refusal mark, so the eye is led by structure, not colour. */
 .lc { padding: var(--space-4) var(--space-4) var(--space-6); }
+.lc-root { position: relative; padding: var(--space-2) 0; }
+.lc-root::after { content: ''; position: absolute; left: 4px; top: calc(var(--space-2) + 14px); bottom: calc(var(--space-2) + 14px); border-left: 1px solid var(--line); }
 .lc-frame { position: relative; margin-top: var(--space-6); padding: var(--space-5) var(--space-3) var(--space-3) var(--space-3);
   border: 1px solid var(--line); border-radius: var(--radius-lg); }
 .lc-frame + .lc-frame { margin-top: var(--space-5); }
 .lc-frame::before { content: attr(data-label); position: absolute; top: -9px; left: 14px; padding: 0 var(--space-2);
   background: var(--panel); color: var(--muted); font-size: var(--type-caption); }
 .lc-frame-turn, .lc-frame-tool { margin-top: var(--space-6); margin-bottom: var(--space-4); }
-.lc-frame-turn, .lc-frame-tool { margin-left: var(--space-5); }
+.lc-frame-turn { margin-left: var(--space-5); } .lc-frame-tool { margin-left: var(--space-5); }
 /* the spine: ONE line down each frame from its first station, stations as ticks on it; a nested frame sits
    beside the line, so the outer loop visibly carries on past the inner one */
 .lc-frame::after { content: ''; position: absolute; left: calc(var(--space-3) + 4px); top: calc(var(--space-5) + 14px);
   bottom: calc(var(--space-3) + 6px); border-left: 1px solid var(--line); }
-.lc-frame-turn::after, .lc-frame-tool::after { content: ''; }
 .lc-station { position: relative; display: flex; gap: var(--space-3); padding: var(--space-2) 0; }
-.lc-frame-turn > .lc-loop, .lc-frame-tool > .lc-loop { position: absolute; right: 10px; bottom: 2px; color: var(--muted); font-size: var(--type-meta); }
+.lc-loop { position: absolute; right: 10px; bottom: 2px; color: var(--muted); font-size: var(--type-meta); }
 .lc-dot { flex: none; position: relative; z-index: 1; width: 9px; height: 9px; margin-top: 5px; border-radius: 50%;
   background: var(--panel); border: 1.5px solid var(--ink2); }
 .lc-station-body { flex: 1; min-width: 0; }
@@ -4112,12 +4113,9 @@ body.is-session-dragging .si-pill.archive:hover {
 .lc-cluster-label { display: block; margin-bottom: var(--space-2); color: var(--muted); font-size: var(--type-caption); font-style: italic; }
 .lc-cluster-pills { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .lc-chip { height: 20px; padding: 0 var(--space-3); font-size: var(--type-caption); background: transparent; }
-.lc-chip .pg-surf { font-size: var(--type-caption); }
 .pg-mark { font-size: var(--type-caption); }
 .pg-refuse { color: var(--orange); }
 .pg-ord { flex: none; font-variant-numeric: tabular-nums; color: var(--muted); font-size: var(--type-caption); }
-.pg-surf { flex: none; color: var(--muted); font-size: var(--type-caption); }
-.pg-surf.is-both { color: var(--blue); }
 .pg-none { margin: 0; padding: var(--space-5); color: var(--muted); font-size: var(--type-meta); font-style: italic; }
 
 /* the detail pane is a SPEC READING, drawn in the node page's own grammar ([[spec-view]]'s `.pane-doc`: title,

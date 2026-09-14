@@ -13,6 +13,11 @@ test('the `@` menu offers both action doors, and each re-opens the menu behind i
   assert.match(mentions, /setMenu\(sessionMentionAt\(nextValue, caret, sessions, launchers\)\)/)
 })
 
+test('the node grammar includes combining marks everywhere the dashboard scans it', () => {
+  assert.match(mentions, /MENTION_RE = \/[\s\S]*\\p\{M\}[\s\S]*\/gu/)
+  assert.match(mentions, /while \(i >= 0 && \/[\s\S]*\\p\{M\}[\s\S]*\/u\.test\(value\[i\]\)/)
+})
+
 test('`@parent:` completes over the ordinary board and writes the stable full id', () => {
   assert.match(mentions, /if \(query\.startsWith\('parent:'\)\) \{/)
   assert.match(mentions, /return \{ kind: 'parent', items, index: 0, start: i, end: caret, query: q \}/)
