@@ -1,9 +1,10 @@
 ---
 concern: issue 列表可拖动组合：把独立的 issue 拖到另一个 issue 下成为子 issue、拖出恢复独立
 by: 2499a20b-ae58-4074-87de-3753e02fe63b
-status: open
+status: landed
 nodes: issues-view, local-issues
 created: 2026-09-14T02:32:54.766Z
+closedAt: 2026-09-14T05:24:48.745Z
 ---
 
 现状：层级已经有了（parent / children / reparent verb / group:parent 视图），但只能靠 CLI `spex issue reparent` 组合。人要的是 Linear 那种直接操作：在列表里把一个 issue 拖到另一个上，它就成为那个 issue 的子 issue；把子 issue 拖到顶层区域，它恢复独立。
