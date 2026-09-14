@@ -515,10 +515,9 @@ export function closeoutNudge(sessionId: string | null | undefined): string {
   const mine = open.filter((t) => t.by === sessionId)
   const theirs = open.filter((t) => t.by !== sessionId && t.replies.some((r) => r.by === sessionId))
   if (!mine.length && !theirs.length) return ''
-  const lines = ['\n\nIssue closeout — still-open local issues you touched:']
-  if (mine.length) lines.push(`  ${mine.length} you opened (${mine.map((t) => t.id).join(', ')}): close each whose work is finished (\`spex issue close <id>\`), or reply why it should stay open past this session (\`spex issue reply <id> --body "<why>"\`).`)
-  if (theirs.length) lines.push(`  ${theirs.length} opened by someone else (${theirs.map((t) => t.id).join(', ')}): do NOT close these — closing is the opener's act. Reply with where each stands, so whoever owns it can close it.`)
-  lines.push('  Some issues rightly outlive their session — this is a reminder to sweep, not a gate.')
+  const lines = ['\n\nIssue closeout — still-open local issues you touched. A reminder to sweep, not a gate: some rightly outlive their session.']
+  if (mine.length) lines.push(`  you opened (${mine.map((t) => t.id).join(', ')}): close each whose work is finished (\`spex issue close <id>\`), or reply why it stays open.`)
+  if (theirs.length) lines.push(`  opened by someone else (${theirs.map((t) => t.id).join(', ')}): reply where each stands; the opener closes it, not you.`)
   return lines.join('\n')
 }
 

@@ -51,9 +51,9 @@ really asking, not a reason to widen a store module's exports.
 points at ([[issue-binding]]), through the same merged read `show` uses; human output renders each thread in order and
 JSON returns an array. No session identity, or a session bound to no issue, is said plainly with the way to bind one
 (`spex issue assign <id> .`), never guessed from prompt text. More than one issue back is the ONE moment the
-count is known, so it is also where the attribution rule is said ([[issue-binding]]): a trailing line names the
-`[[issue:<id>]]` reference every reply and declaration note then owes. It goes to **stderr** in both forms — an
-agent reads it either way, and a `--json` consumer's parse never sees it.
+count is known, so it is where a trailing line names the `[[issue:<id>]]` reference a declaration note then owes
+([[issue-binding]]). It goes to **stderr** in both forms — an agent reads it either way, and a `--json`
+consumer's parse never sees it.
 
 **The hierarchy verbs render the store's forward facts.** `spex issue open --parent <id>` passes the parent through
 `open`'s ordinary backend-first path; `spex issue reparent <id> --to <parent-id|none>`, `spex issue relate <id>

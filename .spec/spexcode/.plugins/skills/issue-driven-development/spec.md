@@ -8,33 +8,26 @@ desc: How a session works its issue set so the Issues page stays true — find t
 
 # issue-driven-development
 
-An issue is where the human states the task; you are a session bound to it. The Issues page shows the human
-every session on the issue, what each is doing, and what needs them — **from facts you already produce**: your
-record's `issues` set, your declarations, your posted files and widgets, your replies on the thread. This
-skill is about producing those facts in the right place, so the page needs no second channel and you need no
-second vocabulary. One rule underneath everything: **say it where it is read**. Reasoning goes on the thread;
-state goes in a declaration; shape goes in a widget. Nothing goes in a private note the board cannot see.
+An issue is where the human states the task; you are a session bound to it. The Issues page is drawn from facts
+you already produce, so it needs no second channel and you need no second vocabulary. One rule underneath
+everything: **say it where it is read.** Reasoning goes on the thread; state goes in a declaration; shape goes in
+a widget; nothing goes in a private note the board cannot see.
 
-**This skill is opt-in, never volunteered.** It applies when your prompt names an issue thread, `spex issue mine`
-returns one, or the human asks you to take an issue. When none of that is true — the human simply asked for work
-— do the work: do not bring up issues, do not open one to house the task, and do not steer the conversation into
-this workflow. An issue is the human's way of stating a task, not a form you make them fill.
+When no issue is in play, the human simply asked for work: do the work. Do not bring up issues, open one to house
+the task, or steer the conversation here. An issue is their way of stating a task, not a form you make them fill.
 
 ## 1. find your issue — the first thing you run, before you read any code
 
-- `spex issue mine` prints every issue your session is bound to (the ones a thread's `@new` or `--issue`
-  created you for, or that a human assigned you), with each thread. `--json` returns an array. Run it on your
-  first turn, before opening a file: the prompt that named your task is not the same fact as the pointer the
-  board reads, and it can be one issue behind (a second issue may have been assigned to you since).
-- No issue bound and your prompt names one? Bind yourself: `spex issue assign <issue-id> .` — the Issues page
-  can only show you on the issue if the pointer exists. A worker that silently works an issue is invisible.
+- `spex issue mine` prints every issue your session is bound to (`--json` for an array). Run it on your first
+  turn, before opening a file: your prompt is not the pointer the board reads, and a second issue may have been
+  assigned since.
+- No issue bound and your prompt names one? Bind yourself: `spex issue assign <issue-id> .` — a worker the
+  pointer does not name is invisible on the page.
 - Read the whole thread before any code: `spex issue show <id>`. The concern is the task; the replies are
   the decisions already made; the `[[node]]` links are the specs you work under ([[spec-first]]).
-- **More than one issue back from `mine`? Then you have no "the issue" any more, and neither does anything you
-  write.** Every reply goes on the thread of the issue it is about — a report posted on your other issue is not
-  this issue's report, it is silence on this one plus noise on that one. And every declaration note names its
-  issue as `[[issue:<id>]]`, or it is attributed to none of them (§4). Say which issue you are working on before
-  you switch, and say it in the note.
+- **More than one back? Then you have no "the issue" any more.** Each report goes on the thread of the issue it
+  is about: posted on the other one it is silence here and noise there. Which issue a declaration is about you
+  say in the note (§4).
 
 ## 2. work under the issue's nodes
 
@@ -45,10 +38,9 @@ already contain goes on the thread as a reply, before or with the commit that ac
 
 ## 3. report on the thread, not beside it
 
-- Progress that a human will read again is a **reply**: `spex issue reply <id> --body -`. Short, factual, what
-  changed and what is next. One reply per real step, never a running commentary. From your worktree the verb
-  reaches the store through the backend you were launched from and signs the reply with your session id — you
-  do not commit to the trunk yourself, and you never need to.
+- Progress a human will read again is a **reply**: `spex issue reply <id> --body -`. Short, factual, what changed
+  and what is next; one per real step, never a running commentary. The verb signs it and stores it for you —
+  never commit to the trunk yourself.
 - Progress with a **shape** — a checklist of nodes, a before/after measurement, a choice you need — is a
   **widget**: put it with `spex session widget put <name> <file>` and point at it from the reply as
   `[[widget:<name>]]`; the thread draws it in place ([[draw]] has the contract). Redraw under the same name
@@ -60,8 +52,8 @@ already contain goes on the thread as a reply, before or with the commit that ac
 
 ## 4. your declaration is your status — do not duplicate it
 
-Your lifecycle declarations (`declaration`) are what the Issues page shows beside your row, painted in the
-board's own colours, with your note as the tooltip:
+Your lifecycle declarations are what the issue shows beside your row, in the board's colours, your note as the
+tooltip:
 
 | you say | the issue shows | when |
 |---|---|---|
@@ -74,16 +66,12 @@ So: **do not write "status: done" in a reply**, and do not open a second issue t
 declaration IS the status; the thread carries the reasoning behind it. A reply that says "I am blocked on X"
 without an `ask` declaration is invisible to the board — the human sees a working row.
 
-**Which issue a declaration is about is something you say, not something inferred.** Put `[[issue:<id>]]` in the
-note. An unqualified note is attributed only when you carry exactly one issue; carrying two or more, an
-unqualified note appears on NEITHER issue page, so the human waiting on your `ask` sees a working row and no
-question. `spex session done|ask|park` tells you when it could not attribute what you just wrote — re-declare
-with the issue named rather than leaving the row unread.
+**Which issue a declaration is about you say, with `[[issue:<id>]]` in the note.** Unqualified is read only from
+a session carrying exactly one; carrying more, it appears on no issue page, so the human waiting on your `ask`
+sees a working row and no question. The declaration verbs say when they could not attribute what you wrote.
 
-**A closed issue is over for you.** When a human closes an issue you are bound to, you are told: its thread is
-landed. Stop working it and stop replying to it, even mid-task — closing is the human's judgment that it is
-done, not a race for you to finish. It does not close YOU: if you hold uncommitted work for it, commit or
-discard it, say so in one last reply, then declare your own end. If you carry other issues, carry on there.
+**A closed issue is over for you**, even mid-task: you are told, and you stop there. It does not close YOU —
+commit or discard anything unlanded, say so in one last reply, then declare your own end.
 
 ## 5. split, hand over, escalate
 
@@ -103,27 +91,11 @@ discard it, say so in one last reply, then declare your own end. If you carry ot
 
 ## 6. what you never do
 
-- Never write to the state of an issue **someone else opened** (`close`, `promote`). Closing it is their
-  judgment that it is satisfied, taken after your merge lands; you declare, they close. The one exception is a
-  concern **you filed yourself** (§5's new issue) — that thread is yours to retire when its work is finished, and
-  the close-time sweep asks you to. Authorship is the whole test: `spex issue show <id>` names the opener.
+- Never write to the state of an issue **someone else opened** (`close`, `promote`): that is their judgment,
+  taken after your merge lands. A concern **you filed yourself** (§5) is the exception — yours to retire when its
+  work is finished. Authorship is the whole test, and `spex issue show <id>` names the opener.
 - Never mint a status vocabulary of your own in prose ("DONE", "WIP", emoji). The board has one.
 - Never `@new` on a thread from inside a worker unless you mean to spawn a worker for that thread — it is a real
   creation, bound to that thread's issue. On your own issue that is a sibling; on a sub-issue you opened, it is the split.
 - Never assume the thread is unread: if the thread already resolves your question, act on it and say so.
 
-## the interfaces, in one place
-
-| need | verb | read by |
-|---|---|---|
-| my issue(s) | `spex issue mine [--json]` | you |
-| the thread | `spex issue show <id> [--json]` | you |
-| bind / hand over | `spex issue assign <id> <SEL>` (`.` = me) | the Issues page rail, the target's inbox |
-| unbind | `spex issue unassign <id> <SEL>` | the Issues page rail, the target's inbox |
-| report | `spex issue reply <id> --body -` | the thread, the originator's inbox |
-| shape | `spex session widget put <name> <file>` + `[[widget:<name>]]` in a reply | the thread, in place |
-| evidence | `spex session files add <path>` + `[[file:<name>]]` | the rail's card, the thread |
-| issue attribution | `[[issue:<id>]]` in a declaration note | the named issue's ledger; passive link in the timeline |
-| status | `spex session done|ask|park …` | the row's colour, action and tooltip |
-| split | `spex issue open "…" --parent <id>`, then `@new` in a reply on it | the sub-issue's thread, the parent's fleet |
-| a new concern | `spex issue open "…" --node <id>` | the Issues list |

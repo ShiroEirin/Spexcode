@@ -64,14 +64,14 @@ with one visible fleet per issue, and close/retire/children/acceptance reachable
   unassign <issue> <SEL>` and `POST /api/issues/:id/unassign {session}` remove one member and tell the session that it
   no longer owns the thread; repeated removals are no-ops. Both halves are one verb: a binding nobody told the worker
   about is a lie on the board, and a message without the binding leaves the Issues page blind. The assignment message
-  names the issue's id in place of every pronoun and DERIVES its scope clause from the set the assign just wrote: a
-  session that now carries several is told the count, the ids, and that each reply belongs on its own thread while
-  each declaration note names its issue — measured, a worker told only to "read the thread and act on it" while
-  already holding another issue reported its progress on the OTHER thread and left this one empty.
+  names the issue's id in place of every pronoun and DERIVES its count from the set the assign just wrote, so the
+  text cannot disagree with the record — measured, a worker told only to "read the thread and act on it" while
+  already holding another issue reported its progress on the OTHER thread and left this one empty. It says nothing
+  the [[issue-driven-development]] skill already teaches ([[taste]] 24): a notice carries the facts of its moment,
+  the skill carries the rules, and both arrive in one context.
 - **A close is the third message of the binding.** Closing an issue ([[issues]]) tells every session whose own
   `issues` set names it that the thread is landed, through the same one send path assign uses: stop working it,
-  post no more replies on it, and — if other issues remain in the set — carry on there, naming the issue in what
-  you write. It deliberately does neither of the two things a reader might expect: it does not UNBIND (the pointer
+  post no more replies on it, and — if other issues remain in the set — carry on there. It deliberately does neither of the two things a reader might expect: it does not UNBIND (the pointer
   is provenance, and the closed issue's page still shows who worked it) and it does not END the session (that is
   the session's own act, [[state]]) — so the notice says the thread is landed and asks the session to declare its
   own end if it holds unlanded work. Only the pointer holders are told, exactly who assign speaks to: a descendant
