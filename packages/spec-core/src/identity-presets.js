@@ -12,18 +12,21 @@ export const DEFAULT_GATEWAY_ICON = 'gateway'
 
 export const IDENTITY_PRESETS = Object.freeze([
   {
-    // The brand mark: two brackets holding one file, cleft corner to corner and regenerated on the
-    // upper-right of the cleft. Painted rather than stroked — see the paint note below. Geometry is
-    // the pre-2026-09 brand mark (docs/brand/mark-dark.svg, since removed — see git history) scaled by 24/512;
-    // the two surface gradients flatten to their midpoints
-    // because a 24-unit chip has no room for a ramp and the format carries no defs.
-    id: 'spexcode', label: 'SpexCode', bg: '#12161C', fg: '#EFE8D8',
+    // The brand mark (docs/brand, 2026-09): a tile cut by one steep diagonal seam — cream upper-left carrying a
+    // black brush "<", near-black lower-right carrying an electric-cyan pixel ">". The seam runs (15.5,1)→(9.5,23)
+    // so both glyphs stay on their own ground; the black region follows the tile's own rounded corners so it
+    // never pokes outside the rect. Painted rather than stroked — see the paint note above. The chevron is a
+    // flat polygon standing in for the brush stroke; the ">" is five 2.5-unit blocks, one block thick, which is
+    // exactly what the 16px favicon resolves to as well.
+    id: 'spexcode', label: 'SpexCode', bg: '#F3ECDE', fg: '#0E0E10',
     shapes: [
-      { tag: 'path', d: 'M 4.500,4.500 L 9.750,4.500 L 9.750,6.656 L 6.656,6.656 L 6.656,17.344 L 9.750,17.344 L 9.750,19.500 L 4.500,19.500 Z', fill: '#EFE8D8', stroke: 'none' },
-      { tag: 'path', d: 'M 19.500,4.500 L 14.250,4.500 L 14.250,6.656 L 17.344,6.656 L 17.344,17.344 L 14.250,17.344 L 14.250,19.500 L 19.500,19.500 Z', fill: '#EFE8D8', stroke: 'none' },
-      { tag: 'path', d: 'M 15.281,15.281 L 11.731,13.057 L 12.269,10.943 L 8.719,8.719 L 8.719,15.281 Z', fill: '#327D95', stroke: 'none' },
-      { tag: 'path', d: 'M 8.719,8.719 L 12.269,10.943 L 11.731,13.057 L 15.281,15.281 L 15.281,12.000 L 12.000,8.719 Z', fill: '#82C3D6', stroke: 'none' },
-      { tag: 'path', d: 'M 8.569,8.957 L 11.946,11.073 L 11.408,13.186 L 15.132,15.520 L 15.431,15.043 L 12.054,12.927 L 12.592,10.814 L 8.868,8.480 Z', fill: '#E4F7FD', stroke: 'none' },
+      { tag: 'path', d: 'M 15.5,1 H 18 A 5 5 0 0 1 23 6 V 18 A 5 5 0 0 1 18 23 H 9.5 Z', fill: '#0E0E10', stroke: 'none' },
+      { tag: 'path', d: 'M 10.5,5.5 L 4,12 L 10.5,18.5 L 10.5,15.5 L 7,12 L 10.5,8.5 Z', fill: '#0E0E10', stroke: 'none' },
+      { tag: 'rect', x: 14.5, y: 5.75, width: 2.5, height: 2.5, fill: '#17E6F0', stroke: 'none' },
+      { tag: 'rect', x: 17, y: 8.25, width: 2.5, height: 2.5, fill: '#17E6F0', stroke: 'none' },
+      { tag: 'rect', x: 19.5, y: 10.75, width: 2.5, height: 2.5, fill: '#17E6F0', stroke: 'none' },
+      { tag: 'rect', x: 17, y: 13.25, width: 2.5, height: 2.5, fill: '#17E6F0', stroke: 'none' },
+      { tag: 'rect', x: 14.5, y: 15.75, width: 2.5, height: 2.5, fill: '#17E6F0', stroke: 'none' },
     ],
   },
   {

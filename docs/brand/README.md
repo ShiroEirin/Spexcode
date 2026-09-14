@@ -30,9 +30,10 @@ Rules learned while making the set, worth keeping:
 - **Keep the copy zone flat.** The right two-thirds of the banner and the lower half of the social card
   carry no strokes or texture beyond faint paper tooth; that is what lets badges and text sit under them.
 
-The dashboard's built-in `spexcode` identity preset (`packages/spec-core/src/identity-presets.js`) still
-draws the previous mark — two brackets holding a cleft file — as a 24-unit vector chip; replacing it with
-a vector of the new tile is a separate change.
+The dashboard's built-in `spexcode` identity preset (`packages/spec-core/src/identity-presets.js`) draws
+the same tile as a 24-unit vector chip — cream/black split on the steep seam, a flat black chevron for the
+brushed `<`, five cyan blocks for the pixel `>` — so the browser tab, project rows and rail show the
+favicon's geometry without loading a raster.
 
 Provenance: the artwork was generated with OpenAI GPT Image 2.5 (via OpenRouter) in a relay of
 single-set design sessions supervised through SpexCode, reviewed one set at a time and ranked by
