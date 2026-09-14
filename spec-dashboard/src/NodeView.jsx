@@ -74,6 +74,10 @@ export function SpecBody({ body, lineBase = 0 }) {
       const href = routeHash('spec', id)
       return <a className="doc-link" href={href} {...provenance} onClick={(event) => newTabAnchor(event, href)}>{id}</a>
     }}
+    renderIssueRef={(id, token, provenance) => {
+      const href = routeHash('issues', id)
+      return <a className="doc-link doc-issue-ref" href={href} {...provenance} onClick={(event) => newTabAnchor(event, href)}>{id}</a>
+    }}
     renderEvidence={(meta, token, provenance) => <span className="rich-evidence" data-evidence-hash={meta.hash} {...provenance}><BlobMedia hash={meta.hash} alt={meta.alt} /></span>}>
     {source}
   </Prose>

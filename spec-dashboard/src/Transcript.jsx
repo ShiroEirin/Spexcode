@@ -50,6 +50,10 @@ export function TimelineRichText({ children, className = '' }) {
       const href = routeHash('spec', id)
       return <a className="doc-link" href={href} {...provenance} onClick={(event) => newTabAnchor(event, href)}>{id}</a>
     }}
+    renderIssueRef={(id, token, provenance) => {
+      const href = routeHash('issues', id)
+      return <a className="doc-link doc-issue-ref" href={href} {...provenance} onClick={(event) => newTabAnchor(event, href)}>{id}</a>
+    }}
     renderEvidence={(meta, token, provenance) => <span className="rich-evidence" {...provenance}><BlobMedia hash={meta.hash} alt={meta.alt || 'evidence'} /></span>}>
     {children}
   </RichText>

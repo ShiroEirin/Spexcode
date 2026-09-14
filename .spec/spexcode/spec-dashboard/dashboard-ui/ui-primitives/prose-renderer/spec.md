@@ -85,6 +85,9 @@ made this node necessary.
     ahead of the node reference, so `file:` never reaches a surface as a node id; a surface with no session
     behind it (a spec body, an issue) renders the bare name. Whatever element a handler returns is keyed by the
     renderer, which is the one that puts it into a child list.
+  - `issue_ref` (`[[issue:<id>]]`) → a passive link through [[address-routing]] to the issue detail. It is read
+  ahead of the node reference, so `issue:` never reaches a surface as a node id; without a handler the id remains
+  visible text.
   Because the marks survive as tokens, the thread stops pre-stripping its own prose: the regex
   extraction and the sibling anchor/media rendering are DELETED, and a mark renders in place, wherever
   the text is read.

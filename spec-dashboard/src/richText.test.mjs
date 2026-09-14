@@ -172,3 +172,11 @@ test('a posted-file reference is its own token, rendered by the host or left as 
   assert.deepEqual(seen, ['report.html'])
   assert.match(hosted, /<a class="probe">report\.html<\/a>/)
 })
+
+test('an issue reference is a passive link when the timeline supplies its handler', () => {
+  const html = renderRichText('See [[issue:local#one]].', {
+    renderIssueRef: (id) => createElement('a', { className: 'issue-link', href: `#/issues/${id}` }, id),
+  })
+  assert.match(html, /<a class="issue-link" href="#\/issues\/local#one">local#one<\/a>/)
+  assert.doesNotMatch(html, /data-spec-id="issue:/)
+})
