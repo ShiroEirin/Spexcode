@@ -164,9 +164,8 @@ export default {
     projects: 'Projects',
   },
   plugins: {
-    profileLabel: 'startup profile',
-    profileAll: ({ n }) => `all ${n} core hooks retained`,
-    profileSome: ({ kept, off }) => `${kept} retained · disabled here: ${off}`,
+    profileOff: ({ name, n }) => `profile ${name} turns off ${n}`,
+    profileTip: ({ off }) => `the startup SPEX_PROFILE list disables these, struck through where they sit: ${off}`,
     orderTip: 'order inside this event — lower runs first; it only decides anything where an event carries more than one hook',
     blocksTip: 'this hook is allowed to refuse the event. It decides per run: the dispatcher turns its exit-2 or decision:block into a real interruption only because this flag is set',
     title: 'Plugins',

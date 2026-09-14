@@ -132,13 +132,19 @@ channel globally — `--ui-font` IS the mono — so size and colour carry a rank
 would split three ways. Frames are hairlines with a caption on the border, never a drawn graphic, because a
 border survives reflow and an SVG does not.
 
-## the profile is the switch, and it is read here, never written
+## the profile is the switch, and it is only news when it subtracts
 
 Every core hook's body opens by saying the startup `SPEX_PROFILE` list may disable it with a clean no-op, so
-that list is this surface's configuration and a board that omits it shows seven things that may or may not be
-running. It is shown as the state it is — which profile is active, how many hooks it keeps, which it turns
-off, with a disabled hook greyed in place rather than hidden. The board does not write it: the profile is an
-environment variable of the process an agent launches under, not a project setting this page owns.
+that list is this surface's configuration and a disabled hook must be visible as disabled — struck through
+where it sits, never hidden, because what it would do if it ran has not changed.
+
+The bar used to carry the profile always, as a sentence: its name, how many hooks it keeps, which it drops.
+When the profile retains everything — which is the ordinary case — that sentence said "nothing is turned
+off", and the drawing beside it already said the same thing by having nothing struck through. That is the
+ordinary case wearing a label, which is exactly what the marks rule forbids one line further down the page.
+So the profile appears in the bar only when it actually turns something off, and then it says the one thing
+the strikes cannot: which profile did it. The board still never writes it — the profile belongs to the
+process an agent launches under, not to a project setting this page owns.
 
 ## the board draws what the automation HAS DONE, and only what it can count exactly
 
