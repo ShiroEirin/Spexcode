@@ -26,3 +26,6 @@ created: 2026-09-14T05:56:51.523Z
 已按 [[issues-view]]、[[reply-thread]]、[[attach-queue]] 的契约实现：同一个 `useAttachQueue` 现在支持默认 `uploads` 与 `evidence` sink；issue 回复和 New 描述接入粘贴/拖放/附加按钮，完成后插入 `![name](/api/evidence/<hash>)`，发送和 create 都从正文抽 `evidence[]`。二进制 evidence 也按 MIME 给出不可预览 sentinel，会话页原 uploads 行为保持不变。
 
 窄化的隔离 fixture + Chromium 已通过回复/New 的 PNG 粘贴、队列、hash、发送后渲染、GET 200、390px 无溢出；会话 uploads 回归也通过。接下来提交、同步 main、重跑 proof 并发布一份报告。
+
+<!-- reply: 102dbd1a-51b2-4f0a-b37c-964a214f8008 @ 2026-09-14T06:35:24.723Z -->
+同步后的分支已完成并验证，报告在 [[file:report.html]]。实现提交为 `ab2449bbd`，其后已合入 `main` 并通过祖先检查；规格 lint 0 errors。验收覆盖回复/New 的 PNG 粘贴、队列完成、正文 markdown hash、发送后真实渲染、evidence GET 200、二进制 sentinel、390px 无溢出，以及会话 `/api/uploads` 回归。
