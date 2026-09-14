@@ -4226,3 +4226,10 @@ body.is-session-dragging .si-pill.archive:hover {
 .fv-voices { display: flex; flex-direction: column; gap: 3px; align-self: stretch; margin-top: 4px; padding-top: 6px; border-top: 1px solid color-mix(in srgb, var(--line) 55%, transparent); }
 /* the declaration row's door into its session ([[issue-binding]]): the rail control at caption size, pushed to the end. */
 .fv-declaration-open { margin-left: auto; min-height: 20px; padding: 1px 7px; font-size: var(--type-caption); }
+/* the Close issue confirmation ([[issue-binding]]): two exclusive groups of fleet rows over one action row. */
+.fv-close-modal .legend-body { min-width: 340px; max-width: 460px; }
+.fv-close-lead { margin: 0 0 8px; color: var(--ink2); font-size: var(--type-meta); }
+.fv-close-group { display: flex; flex-direction: column; gap: 3px; margin-bottom: 10px; }
+.fv-close-pick { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 2px 0; cursor: pointer; }
+.fv-close-pick input { flex: none; }
+.fv-close-actions { display: flex; justify-content: flex-end; gap: 6px; padding-top: 6px; border-top: 1px solid var(--line); }

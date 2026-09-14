@@ -435,6 +435,25 @@ export default {
     relDuplicatedBy: '被标重复',
   },
 
+  issueClose: {
+    title: '关闭这个 issue',
+    lead: {
+      open: ({ n }) => `有 ${n} 个会话承担这个 issue。勾选已收尾的随 issue 一起关闭，或勾选还在干的请它们收尾。`,
+      settled: ({ n }) => `有 ${n} 个会话承担这个 issue，且都已收尾。`,
+    },
+    groupReady: '已收尾 —— 可随 issue 一起关闭',
+    groupOpen: '还在干 —— 可请它收尾',
+    do: {
+      'issue-only': '只关闭 issue',
+      'close-with': ({ n }) => `关闭 issue 和 ${n} 个会话`,
+      'wrap-up': ({ n }) => `请 ${n} 个会话收尾`,
+    },
+    asked: ({ name }) => `已请 ${name} 收尾`,
+    closed: ({ name }) => `已关闭 ${name}`,
+    issueClosed: 'issue 已关闭',
+    refused: 'issue 关闭被拒绝',
+    wrapUpMessage: ({ issue, concern }) => `人要关闭 issue「${concern}」（${issue}），而你还承担着它。请现在收尾：该留的提交、不该留的丢弃，在线程上回复你留下了什么，然后声明 \`spex session done --propose close\`。如果确实有东西不能丢，改为声明 \`ask\` 并说明原因。`,
+  },
   fleet: {
     none: '无会话',
     need: ({ n }) => `需要你 · ${n}`,

@@ -280,9 +280,9 @@ test('post-merge nudge names `issue open` only where the store would accept it',
   }
 })
 
-// A minted id keeps the concern's unicode letters and numbers — the characters [[spec-lint]]'s id-format and a
+// A minted id keeps the concern's unicode letters, numbers, and combining marks — the characters [[spec-lint]]'s id-format and a
 // `[[id]]` link already accept ([[local-issues]]), so a concern in any script gets a readable address.
-test('a local issue id keeps the unicode letters and numbers of its concern', () => {
+test('a local issue id keeps the unicode letters, numbers, and combining marks of its concern', () => {
   const dir = mkdtempSync(join(tmpdir(), 'spex-issue-id-'))
   const previous = process.env.SPEXCODE_ISSUES_DIR
   process.env.SPEXCODE_ISSUES_DIR = dir
@@ -292,9 +292,11 @@ test('a local issue id keeps the unicode letters and numbers of its concern', ()
     assert.equal(mint('纯中文 concern 开 local issue 时 id 被 mint 成 issue'), '纯中文-concern-开-local-issue-时-id-被-mint-成-issue')
     assert.equal(mint('Ελληνικά, Ünïcode!'), 'ελληνικά-ünïcode')
     assert.equal(mint('cafe\u0301 menu'), 'caf\u00e9-menu')              // NFC: a combining accent is not a separator
+    assert.equal(mint('हिन्दी भाषा'), 'हिन्दी-भाषा')                    // Devanagari marks remain part of each word
     assert.equal(mint('界'.repeat(47) + '𠀀尾'), '界'.repeat(47) + '𠀀')         // 48 code points: an astral letter stays whole
     assert.equal(mint('!!! ???'), 'issue')                                      // no letter or number at all → `issue`
-    assert.equal(mint('——'), 'issue-2')
+    assert.equal(mint('\u0301'), 'issue-2')                                     // an isolated mark still has no letter or number
+    assert.equal(mint('——'), 'issue-3')
     assert.equal(mint('New'), 'new-2')                                          // the reserved address word still steps aside
   } finally {
     if (previous === undefined) delete process.env.SPEXCODE_ISSUES_DIR

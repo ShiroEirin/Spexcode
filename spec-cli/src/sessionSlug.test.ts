@@ -13,6 +13,7 @@ const OTHER = 'ce5362f3-ceb4-4f77-988f-197df214b15d'
 test('the first [[id]] mention is read across the full id grammar', () => {
   assert.equal(nodeFromPrompt('lead [[alpha]] then [[beta]]'), 'alpha')
   assert.equal(nodeFromPrompt('处理 [[中文节点]]'), '中文节点')
+  assert.equal(nodeFromPrompt('处理 [[हिन्दी]]'), 'हिन्दी')
   assert.equal(nodeFromPrompt('audit [[.plugins]]'), '.plugins')
   assert.equal(nodeFromPrompt('create [[not-yet-existing]]'), 'not-yet-existing')
   assert.equal(nodeFromPrompt('mention-free prompt'), null)

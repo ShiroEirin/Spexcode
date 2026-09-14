@@ -449,6 +449,10 @@ test('--pure plants the spec skeleton and nothing else: no .plugins, nothing in 
   assert.match(rootBody, /^title: rocket-delta$/m)
   assert.match(rootBody, /^# rocket-delta$/m)
 
+  const hindi = freshRepo()
+  hindi.spex('init', '.', '--pure', '--title', 'हिन्दी भाषा')
+  assert.equal(existsSync(join(hindi.proj, '.spec/हिन्दी-भाषा/spec.md')), true, 'combining-mark script titles keep a valid root id')
+
   // A title the ID vocabulary cannot take ([[spec-lint]]'s id-format) keeps the neutral root rather than
   // minting an illegal id — the config still carries the title, so the page is still named.
   const odd = freshRepo()

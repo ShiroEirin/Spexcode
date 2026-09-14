@@ -16,8 +16,8 @@ import { useEscLayer } from './escStack.js'
 // a `[[<id>]]` (Obsidian double-bracket) node-mention token. Optional leading dot so `[[.plugins]]` resolves
 // (a node id is its dir basename — see [[spec-pointer]]). Group 1 = the id. Used for both the New Session
 // launch grammar and the running-session send-time resolution — one pattern. Token chars are any unicode
-// letter/number (a CJK dir name is a legal node id), mirroring the server's MENTION.
-export const MENTION_RE = /\[\[(\.?[\p{L}\p{N}_-]+)\]\]/gu
+// letter/number/mark (a CJK or combining-mark-script dir name is a legal node id), mirroring the server's MENTION.
+export const MENTION_RE = /\[\[(\.?[\p{L}\p{N}\p{M}_-]+)\]\]/gu
 
 // the send-time twin of the launch owner's mention resolution: every `[[<id>]]` in a message to a RUNNING
 // session becomes an inline pointer at the node's live spec.md (`[[<id>]] (<path>)`), so the driven agent is
@@ -212,7 +212,7 @@ export function SlashMenu({ menu, up, head, onPick, onHover }) {
 // text between the `[[` and the caret. Returns the menu descriptor, or null when the caret isn't in a token.
 export function nodeMentionAt(value, caret, specs, focusId) {
   let i = caret - 1
-  while (i >= 0 && /[\p{L}\p{N}_.\-]/u.test(value[i])) i--
+  while (i >= 0 && /[\p{L}\p{N}\p{M}_.\-]/u.test(value[i])) i--
   // i now points just left of the id run; the id starts at i+1. `[[` must occupy value[i-1] and value[i].
   if (i >= 1 && value[i - 1] === '[' && value[i] === '[') {
     const query = value.slice(i + 1, caret)

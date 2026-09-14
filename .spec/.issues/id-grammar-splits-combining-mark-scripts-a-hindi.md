@@ -1,9 +1,10 @@
 ---
 concern: id grammar splits combining-mark scripts: a Hindi concern mints ह-न-द-भ-ष
 by: 8b9601ad-71d7-4080-af61-fcf0476b51d9
-status: open
+status: landed
 nodes: spec-lint, mentions, local-issues
 created: 2026-09-13T04:46:46.024Z
+closedAt: 2026-09-14T08:27:04.498Z
 ---
 
 在 concern-local-issue-id-mint-issue 修 local issue id 时发现的相邻问题，没有顺手改。

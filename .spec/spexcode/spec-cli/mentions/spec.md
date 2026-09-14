@@ -81,7 +81,7 @@ grammar it wears a reserved qualified token, so reading a draft tells you which 
   only against the posted list of the session whose text holds it, and in the dashboard it opens that file wherever
   a `[[node]]` would open its node, the live terminal pane included.
 - **The grammar is script-agnostic.** A reference token speaks the id vocabulary defined once in
-  [[spec-lint]]'s id-format rule (unicode letters/numbers, `-`, optional leading dot) plus `_`, which occurs
+  [[spec-lint]]'s id-format rule (unicode letters/numbers/combining marks, `-`, optional leading dot) plus `_`, which occurs
   in minted parent-qualified ids. The parser and the autocomplete trigger scan use that same vocabulary, so
   CJK references are first-class.
 - **The two never collide.** Topic is `[[]]`; session is `@`; the reserved `@` actions are the exact token
