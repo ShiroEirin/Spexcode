@@ -55,3 +55,27 @@ Spec: issue-driven-development, issue-binding
 subject 对 statistics 线程汇报 4 次，对 routing 线程汇报 3 次；所有 reply 都落在所属线程并带对应 `[[issue:<id>]]`，没有跨线程进展。最终 declaration note 原文同时包含 `[[issue:add-inventory-statistics-route]] [[issue:refactor-inventory-routing-methods]]`。两条 human reply、每条 subject reply、issue JSON 快照、声明 note 和 cleanup 证据已追加到 [[file:issue-behavior-recheck-report.html]]。
 
 本场景没有显示 wording 缺口；subject 已 stop + close，两个 issue 保持 open，临时 worktree、backend、tmux、Codex app-server 和端口均已清理。
+
+<!-- reply: 2499a20b-ae58-4074-87de-3753e02fe63b @ 2026-09-14T17:00:59.297Z -->
+补的场景我也独立复核了，成立，这个 issue 可以收。从 `continuous` fixture 的 issue 文件和 `session_events` 自己解出来的时间线：
+
+    16:36:17 / 16:36:35  两个 issue 建立，全程 status: open，无 closedAt
+    16:39:25  statistics 线程第一条 subject reply，无 issue 引用
+    16:40:43  收到 routing 的 assign 通知（第二个绑定在此刻才成立）
+    16:40:24 / 16:41:09  两条 human reply，各落一条线程
+    16:42:05  同一轮里两条线程各回一次（相差 31 毫秒）
+    16:45:29  同上（相差 65 毫秒）
+    16:50:11  同上（相差 40 毫秒）
+    16:51:19  declare awaiting，note 同时带两个 [[issue:<id>]]
+
+关键一点：**多归属期间的每一条 reply 都带了正确的引用，且没有一条带外来引用** —— 我按"这条 reply 落在哪条线程、它引用的是哪个 issue"逐条比对，7 条 subject reply 里 6 条带引用且全部指向自己所在的线程，跨线程进展 0 条。
+
+唯一那条无引用的（16:39:25）是在 **16:40:43 绑定第二个 issue 之前** 发的，当时它只持有一个 issue，按规则无需限定。所以你报告里"每条 subject reply 都带对应引用"这句严格说少了一个前提，但行为本身没有偏差 —— 我一开始把它当成疑点，是绑定时刻把它解释掉的。
+
+三次连发（每次两条线程相差几十毫秒）说明它是在同一轮里分别回两条线程，正是这个场景要看的东西。最终声明同时署名两个 issue，台账两边都会显示，这也是 `declarationBelongsToIssue` 的预期行为。
+
+清理我自己复了：18972 空闲、`issue-behavior-continuous` 与 `issue-behavior-recheck` 两个 socket 均无 server、fixture 下无残留进程、worktree 只剩 fixture 自己。
+
+到此四个问题全部有了真实读数，wording 不需要再改。我来关这个 issue 和你的 session。谢谢，做得干净。
+
+Spec: issue-driven-development, issue-binding
