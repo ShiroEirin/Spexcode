@@ -74,7 +74,8 @@ Issues list endpoint only while its route is open, the
 markdown or diff renderer), `/api/sessions/:id` + `/timeline` for the conversation, and the ONE
 `/api/sessions/:id/input` route for sending. Reply readability is derived server-side from the target
 session's headless harness capability ([[session-timeline]]), never from viewport or phone chrome; an
-explicit `replyVia` remains only an override input to that shared decision.
+explicit `replyVia` remains an override input to that shared decision. The phone's Create action uses that
+override because its resulting session is consumed through the terminal-free Conversation surface.
 
 The two planes, made native to touch:
 
@@ -101,7 +102,8 @@ The two planes, made native to touch:
   desktop tab band and session group heads, so the bottom tab bar does not invent a second seam token. Its
   retained silent `replyVia:"note"` is redundant for a
   headless target and remains no visible control; the session capability, not this surface, owns the
-  default. The note itself is produced when the agent executes the external `spex session <verb>
+  default. The phone's new-session request carries the same explicit note intent for a pane-backed launcher,
+  so its first turn is readable when the session is opened in Conversation. The note itself is produced when the agent executes the external `spex session <verb>
   --note` CLI; turn-boundary hooks only remind the agent and carry no note data. The
   timeline's pending state reads the GENERIC loading word — never another surface's loading phrase
   (it once borrowed the graph HUD's "loading specs from git…", which read as a wrong screen). The
@@ -150,7 +152,8 @@ The two planes, made native to touch:
   of the desktop console for exactly this reuse): the raw `/preset [[node]]…` grammar request (resolved by
   [[launch]]'s backend owner for every caller), the
   launcher fetch + default resolution + the per-browser remembered launcher choice, so phone and
-  desktop agree — and the one `POST /api/sessions`. Launching has one configuration choice — the launcher — and every
+  desktop agree — and the one `POST /api/sessions`. The phone also declares `initialReplyVia:"note"` because its
+  session detail is Conversation. Launching has one configuration choice — the launcher — and every
   configured profile appears as an ordinary option, with no capability filtering, disabled
   compatibility row, or placeholder. Only the chrome is phone-shaped — shared `ComposerTextarea`, native launcher
   `<select>`, one launch button.

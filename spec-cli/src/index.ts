@@ -17,6 +17,7 @@ import { getBoardJson } from './graphCache.js'
 import { boardStream, closeBoardFileWatchers, ensureBoardFileWatchers, notifyBoardChanged, flushDeferredWorktreeRegistryChange } from './graphStream.js'
 import { gitA, gitTry, repoRoot } from '@spexcode/spec-core'
 import { pluginDetail, pluginsView } from './plugins-view.js'
+import { readLedger } from './hook-ledger.js'
 import { cockpitReview } from './cockpit.js'
 import { EMPTY_PROMPT_ERROR, listSessions, listArchivedSessionIndex, sendText, drainSession, markHumanPromptActive, interruptSession, rawKey, stopSession, closeSession, resumeSession, captureSessionResult, sessionPrompt, renameSession, setSessionSort, linkZCodeChildSession, projectCreatedSession, sessionCreateRequest, superviseQueue, superviseTurnFailures, superviseDelivery, reconcileLaunchedRuntimes, startWorktreeTrashReaper } from './sessions.js'
 import { mergeSession, retractDiffComment, saveDiffComment, sendDiffComments, sessionDiff } from './session-review.js'
@@ -465,8 +466,12 @@ app.post('/api/issues/:id/unassign', async (c) => {
 app.post('/api/issues/:id/close', async (c) => {
   if (!issuesEnabled()) return c.json({ error: 'issues workflow is off' }, 403)
   const id = c.req.param('id')
+  const body = await c.req.json().catch(() => ({}))
   try {
-    const r = await closeIssue(id)
+    // the closer's name rides into the fleet notice ([[issue-binding]]): the Close issue button posts no `by`, so
+    // it reads `human`. The notice itself is sent from THIS process, the one that owns delivery, and its
+    // per-session outcome comes back on the response.
+    const r = await closeIssue(id, { by: await claimedAuthor(body?.by) })
     if (r.store !== 'local') await refreshForgeNow()
     notifyBoardChanged('full')   // atomic with persistence — see the write-visibility note above the reply route
     return c.json({ ok: true, ...r })
@@ -541,6 +546,11 @@ app.get('/api/plugins/surfaces', (c) => c.json(pluginsView()))
 // One plugin's TEXT — the contract it folds in, the steps it sends, the shell it runs — fetched when the
 // board selects it rather than shipped with the list, which would be most of a megabyte to answer a
 // question about one row. The name selects a node and the node names its own files; no path is taken here.
+// What the automation has actually DONE, from the dispatcher's own ledger ([[hook-ledger]]) — a separate read
+// from the inventory above on purpose: the inventory is a function of the declarations and never changes
+// between two loads, while this changes on every event, so keeping them apart means a growing ledger never
+// makes the inventory slower and the activity can be re-read on its own.
+app.get('/api/plugins/activity', (c) => c.json(readLedger()))
 app.get('/api/plugins/surfaces/:name', (c) => {
   const detail = pluginDetail(c.req.param('name'))
   return detail ? c.json(detail) : c.json({ error: 'no such plugin' }, 404)

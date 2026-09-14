@@ -70,10 +70,11 @@ it to `.spec/.issues` on its first store touch after a toolchain update — the 
   neutralized on write, so a body that itself contains that marker can't spawn a phantom reply or truncate
   the thread.
 - **An id is the concern's own words, in any script.** The file name a thread is minted under is its concern,
-  NFC-normalized and lowercased, with every run of characters that is not a unicode letter or number folded to
+  NFC-normalized and lowercased, with every run of characters that is not a unicode letter, number, or combining
+  mark folded to
   one `-`, trimmed, and cut at 48 code points (never mid-character). Those are exactly the characters
   [[spec-lint]]'s id-format and a [[mentions]] `[[id]]` link already accept, so a concern written in Chinese,
-  Greek or any other script keeps a readable, linkable address instead of collapsing to a placeholder. Only a
+  Greek, Hindi, Thai, or any other script keeps a readable, linkable address instead of collapsing to a placeholder. Only a
   concern with no letter or number at all mints `issue`. Collisions and the reserved address words take a
   numeric suffix under the store lock (below).
 - **Own lifecycle status**, store-authored never git-derived: current writes have one terminal state, `open` →
@@ -173,8 +174,12 @@ it to `.spec/.issues` on its first store touch after a toolchain update — the 
   second, **data-driven** nudge fires when the session proposes **close** — appended to the
   `done --propose close` declaration beside [[state]]'s resource-cleanup reminder, the same insertion point
   and the same semantics. `closeoutNudge(sessionId)` lists the **still-open local threads that session
-  touched** (authored or replied), asking for each: close it now if its work is finished, or reply why it should
-  stay open past this session. Empty set, feature OFF, or no session identity → it prints **nothing**, so a
+  touched**, split by AUTHORSHIP because the ask differs: a thread this session **opened** is its own concern to
+  retire — close it if its work is finished, or reply why it should stay open past this session; a thread
+  **someone else opened** that it merely replied on is not, and it is told so — report where it stands and leave
+  the close to the opener, whose judgment that is ([[issue-driven-development]]). Said as one ask each way, the
+  nudge and the skill's never-close rule are the same rule; said as one ask for both, they contradicted each
+  other inside the same agent's context. Empty set, feature OFF, or no session identity → it prints **nothing**, so a
   declaration never carries a vacuous reminder — the line is earned by data, never boilerplate. And it is a
   **nudge, never a gate**: some issues rightly outlive their session (a taste concern awaiting the drain),
   and a failure in the store check is reported loud while the declaration still lands.

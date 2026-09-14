@@ -1,3 +1,5 @@
+import { parseProseTokens } from './proseTokens.js'
+
 // The thread's DECLARATION LEDGER ([[issue-binding]]): the status declarations of the sessions on an issue,
 // read from each session's own timeline and merged into the reply thread AT READ TIME. Nothing is written to
 // the issue: a worker's `done --propose merge`, `ask`, `park` or a died turn already exist as timeline events,
@@ -8,10 +10,32 @@
 // and `queued` are the machine's breathing and stay off the ledger.
 const LEDGER_STATUSES = new Set(['awaiting', 'asking', 'parked', 'error'])
 
+// The issue names in a declaration note are the same semantic tokens the timeline renders. Walking the parsed
+// tree keeps fenced and inline code inert, matching the CLI mention grammar instead of adding a regex dialect here.
+export const issueRefsInNote = (note) => {
+  const found = []
+  const walk = (tokens) => {
+    for (const token of tokens || []) {
+      if (token?.type === 'prose_issue_ref' && token.meta?.id) found.push(token.meta.id)
+      if (token?.children) walk(token.children)
+    }
+  }
+  try { walk(parseProseTokens(note || '')) } catch { return [] }
+  return [...new Set(found)]
+}
+
+// A declaration belongs to the issue it names. An unqualified note keeps the compatibility fallback for a
+// session carrying one issue; with multiple issues, guessing would put the same state on the wrong thread.
+export const declarationBelongsToIssue = (note, issueId, assignedIssues = []) => {
+  const named = issueRefsInNote(note)
+  return named.length ? named.includes(issueId) : assignedIssues.length === 1 && assignedIssues[0] === issueId
+}
+
 // one session's timeline → its ledger rows. `display` is the board's display word when the server sent one
 // (review / done / close-pending for an awaiting row); a raw lifecycle word otherwise.
-export const ledgerFromTimeline = (sessionId, events = []) => (events || [])
+export const ledgerFromTimeline = (sessionId, events = [], issueId = null, assignedIssues = []) => (events || [])
   .filter((e) => e?.kind === 'status' && LEDGER_STATUSES.has(e.status))
+  .filter((e) => !issueId || declarationBelongsToIssue(e.note || '', issueId, assignedIssues))
   .map((e) => ({ kind: 'declaration', by: sessionId, at: e.ts, status: e.display || e.status, note: e.note || null }))
 
 // a sub-issue's OPENING and CLOSE are ledger rows too ([[issues-view]]): the parent's thread shows when each child was

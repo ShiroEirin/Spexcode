@@ -5,7 +5,10 @@
 const SESSION_RE = /(?:^|\s)@([\p{L}\p{N}_-]+(?::[\p{L}\p{N}_.-]+)?)/gu
 // Node ids use the same vocabulary as the dashboard trigger. Qualifiers such as `file:` and `widget:` are
 // separate passive references, so the colon must keep them out of node inference.
-const NODE_RE = /\[\[(\.?[\p{L}\p{N}_-]+)\]\]/gu
+const NODE_RE = /\[\[(\.?[\p{L}\p{N}\p{M}_-]+)\]\]/gu
+// Issue ids use the same unicode letter/number/mark vocabulary, with the store separator (`#`) accepted for
+// forge-shaped ids such as `github#12`. This qualified passive reference must stay ahead of NODE_RE.
+const ISSUE_RE = /\[\[issue:(\.?[\p{L}\p{N}\p{M}_.#-]+)\]\]/gu
 
 const uniq = (xs: string[]): string[] => [...new Set(xs)]
 
@@ -56,13 +59,15 @@ export function stripRefSigil(token: string): string {
   return token.startsWith('@') ? token.slice(1) : token
 }
 
-export function parseMentions(text: string): { sessions: string[]; nodes: string[] } {
+export function parseMentions(text: string): { sessions: string[]; nodes: string[]; issues: string[] } {
   const sessions: string[] = []
   const nodes: string[] = []
+  const issues: string[] = []
   const isQuoted = quoted(text)
   for (const m of text.matchAll(SESSION_RE)) if (!isQuoted(m.index!)) sessions.push(m[1])
+  for (const m of text.matchAll(ISSUE_RE)) if (!isQuoted(m.index!)) issues.push(m[1])
   for (const m of text.matchAll(NODE_RE)) if (!isQuoted(m.index!)) nodes.push(m[1])
-  return { sessions: uniq(sessions), nodes: uniq(nodes) }
+  return { sessions: uniq(sessions), nodes: uniq(nodes), issues: uniq(issues) }
 }
 
 // @@@ the @parent: directive - the second reserved `@` action and the addressing twin of @new: it names the

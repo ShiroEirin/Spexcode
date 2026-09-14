@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { latestPerSession, ledgerFromChildren, ledgerFromTimeline, ledgerSince, mergeThread } from './issueLedger.js'
+import { declarationBelongsToIssue, issueRefsInNote, latestPerSession, ledgerFromChildren, ledgerFromTimeline, ledgerSince, mergeThread } from './issueLedger.js'
 
 test('a session timeline yields only the declarations a human reads, in the board\'s own words', () => {
   const events = [
@@ -15,6 +15,33 @@ test('a session timeline yields only the declarations a human reads, in the boar
     { kind: 'declaration', by: 's1', at: '2026-09-13T01:30:00Z', status: 'review', note: 'fix committed' },
   ])
   assert.deepEqual(ledgerFromTimeline('s1', undefined), [])
+})
+
+test('declaration attribution uses explicit issue references and drops an unqualified multi-issue note', () => {
+  const events = [
+    { ts: '2026-09-14T01:00:00Z', kind: 'status', status: 'asking', note: 'for A [[issue:A]]' },
+    { ts: '2026-09-14T01:05:00Z', kind: 'status', status: 'parked', note: 'for B [[issue:B]]' },
+    { ts: '2026-09-14T01:10:00Z', kind: 'status', status: 'error', note: 'no issue named' },
+  ]
+  assert.deepEqual(ledgerFromTimeline('s1', events, 'A', ['A', 'B']).map((row) => row.note), ['for A [[issue:A]]'])
+  assert.deepEqual(ledgerFromTimeline('s1', events, 'B', ['A', 'B']).map((row) => row.note), ['for B [[issue:B]]'])
+  assert.equal(declarationBelongsToIssue('no issue named', 'A', ['A', 'B']), false)
+})
+
+test('declaration attribution falls back only for a single assigned issue and ignores quoted references', () => {
+  assert.equal(declarationBelongsToIssue('plain note', 'only', ['only']), true)
+  assert.equal(declarationBelongsToIssue('plain note', 'other', ['only']), false)
+  assert.equal(declarationBelongsToIssue('about [[issue:other]]', 'only', ['only']), false)
+  assert.equal(declarationBelongsToIssue('`[[issue:other]]`', 'only', ['only']), true)
+  assert.deepEqual(issueRefsInNote('`[[issue:other]]` and [[issue:only]]'), ['only'])
+})
+
+test('latest declaration is selected after issue attribution, so an unqualified multi-issue row cannot hide a named row', () => {
+  const events = [
+    { ts: '2026-09-14T01:00:00Z', kind: 'status', status: 'asking', note: 'A declaration [[issue:A]]' },
+    { ts: '2026-09-14T01:05:00Z', kind: 'status', status: 'asking', note: 'Unqualified declaration' },
+  ]
+  assert.deepEqual(ledgerFromTimeline('s1', events, 'A', ['A', 'B']).map((row) => row.note), ['A declaration [[issue:A]]'])
 })
 
 test('replies and declarations share one time line, replies first at a tie', () => {

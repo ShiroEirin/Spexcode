@@ -175,14 +175,14 @@ export function loadOne(id: string): Issue {
 }
 
 // a filesystem-safe, readable, collision-free id from the concern (slug + numeric suffix if taken). The slug keeps
-// unicode letters and numbers in any script; the 48-char cut counts code points so an astral letter never splits.
+// unicode letters, numbers, and combining marks in any script; the 48-char cut counts code points so an astral letter never splits.
 // RESERVED_IDS are the words an issue address gives its own meaning — `new` is the compose PAGE
 // ([[issues-view]]), so an issue owning that id would be unreachable at its own detail address. The slug
 // steps around them with the same numeric suffix a taken id gets: a collision, not a silent shadow.
 const RESERVED_IDS = new Set(['new'])
 function uniqueId(concern: string): string {
-  const slug = concern.normalize('NFC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '')
-  const base = Array.from(slug).slice(0, 48).join('') || 'issue'
+  const slug = concern.normalize('NFC').toLowerCase().replace(/[^\p{L}\p{N}\p{M}]+/gu, '-').replace(/^-+|-+$/g, '')
+  const base = /[\p{L}\p{N}]/u.test(slug) ? Array.from(slug).slice(0, 48).join('') : 'issue'
   const dir = localStoreDir()
   let id = base
   for (let n = 2; RESERVED_IDS.has(id) || existsSync(join(dir, `${id}.md`)); n++) id = `${base}-${n}`
@@ -507,10 +507,18 @@ export function nudge(node: string): string {
 // open — never a forced close.
 export function closeoutNudge(sessionId: string | null | undefined): string {
   if (!sessionId || sessionId === 'unknown' || !issuesEnabled()) return ''
-  const mine = loadLocalIssues().filter((t) =>
-    t.status === 'open' && (t.by === sessionId || t.replies.some((r) => r.by === sessionId)))
-  if (!mine.length) return ''
-  return `\n\nIssue closeout — ${mine.length} still-open local issue(s) you touched (opened or replied): ${mine.map((t) => t.id).join(', ')}. For each, close it now if its work is finished (\`spex issue close <id>\`), or reply why it should stay open past this session (\`spex issue reply <id> --body "<why>"\`). Some issues rightly outlive their session — this is a reminder to sweep, not a gate.`
+  const open = loadLocalIssues().filter((t) => t.status === 'open')
+  // @@@ the sweep is split by AUTHORSHIP - a concern this session filed itself is its own to retire; a thread
+  // someone else stated is theirs to accept, and closing it would be the worker deciding it was satisfied
+  // ([[issue-driven-development]]: you declare, the human closes). Told as one ask each way, the two halves
+  // agree with the skill instead of contradicting it — the old single ask said "close it now" about both.
+  const mine = open.filter((t) => t.by === sessionId)
+  const theirs = open.filter((t) => t.by !== sessionId && t.replies.some((r) => r.by === sessionId))
+  if (!mine.length && !theirs.length) return ''
+  const lines = ['\n\nIssue closeout — still-open local issues you touched. A reminder to sweep, not a gate: some rightly outlive their session.']
+  if (mine.length) lines.push(`  you opened (${mine.map((t) => t.id).join(', ')}): close each whose work is finished (\`spex issue close <id>\`), or reply why it stays open.`)
+  if (theirs.length) lines.push(`  opened by someone else (${theirs.map((t) => t.id).join(', ')}): reply where each stands; the opener closes it, not you.`)
+  return lines.join('\n')
 }
 
 // ───────────────────────── CLI ─────────────────────────

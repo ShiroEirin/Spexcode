@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
-import { loadIssue, loadSessionTimeline, postIssueClose, postIssuePromote, postIssueReply, postIssueReparent, postIssueThread } from './data.js'
+import { loadIssue, loadSessionTimeline, postIssueClose, postIssuePromote, postIssueReply, postIssueReparent, postIssueThread, postSessionClose, postSessionText } from './data.js'
 import { latestPerSession, ledgerFromChildren, ledgerFromTimeline, ledgerSince } from './issueLedger.js'
 import { MENTION_RE, TriggerButton, typeTrigger, useMentionAutocomplete } from './mentions.jsx'
 import { ComposerSurface, ComposerTextarea, composingKey } from './Composer.jsx'
@@ -18,7 +18,8 @@ import { addressHash, detailBackHash, specAddress } from './address.js'
 import { Icon, IconButton } from './icons.jsx'
 import IssueLabels from './IssueLabels.jsx'
 import IssueSessions, { FleetStrip, FleetWorkState } from './IssueSessions.jsx'
-import { issueFleet, mentionedSessions } from './session.js'
+import IssueCloseDialog from './IssueCloseDialog.jsx'
+import { issueFleet, mentionedSessions, sessionIssues } from './session.js'
 import { useLaunchers } from './launch.js'
 import { useReportDocumentName } from './documentActions.jsx'
 import { usePaneActive } from './workspace.jsx'
@@ -327,17 +328,19 @@ export function IssuesListPage({ data, loading, error, query, onQueryText, sessi
 // the fleet's declaration ledger ([[issue-binding]]): one timeline read per fleet session, re-read when a fleet
 // row's status or note moves on the board (the same push the rail repaints on). Read-time only — the issue
 // stores nothing — and a failed read is an empty ledger for that session, never a broken thread.
-function useFleetLedger(fleet, since) {
+function useFleetLedger(fleet, since, issueId) {
   const [ledger, setLedger] = useState([])
-  const key = fleet.map((s) => `${s.id}:${s.status}:${s.note || ''}`).join('|')
+  const key = fleet.map((s) => `${s.id}:${s.status}:${s.note || ''}:${sessionIssues(s).join(',')}`).join('|')
   useEffect(() => {
     let live = true
     if (!fleet.length) { setLedger([]); return undefined }
-    Promise.all(fleet.map((s) => loadSessionTimeline(s.id, { limit: 60 }).then((w) => ledgerFromTimeline(s.id, w?.events)).catch(() => [])))
+    Promise.all(fleet.map((s) => loadSessionTimeline(s.id, { limit: 60 })
+      .then((w) => ledgerFromTimeline(s.id, w?.events, issueId, sessionIssues(s)))
+      .catch(() => [])))
       .then((all) => { if (live) setLedger(latestPerSession(ledgerSince(all.flat(), since))) })
     return () => { live = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, since])
+  }, [key, since, issueId])
   return ledger
 }
 
@@ -440,7 +443,7 @@ export function IssueDetailPage({ issue: th, specs, sessions, onOpenSession, onW
   const replies = Array.isArray(th.replies) ? th.replies : []
   const status = th.status || 'open'
   const { fleet } = issueFleet(th, sessions)
-  const ledger = useFleetLedger(fleet, th.created)
+  const ledger = useFleetLedger(fleet, th.created, th.id)
   // every issue the hierarchy links is titled from the read's own `refs` ([[issues]]) — one read, no request per link
   const refs = th.refs || {}
   const kids = (th.children || []).map((id) => refs[id]).filter(Boolean)
@@ -449,6 +452,7 @@ export function IssueDetailPage({ issue: th, specs, sessions, onOpenSession, onW
   // the thread is a home of the one widget host ([[widgets]]): its replies draft into, and send from, this composer
   const widgetHost = useWidgetHost()
   const [composeSeed, setComposeSeed] = useState(null)   // a rail door's trigger for the composer to type, consumed once
+  const [closing, setClosing] = useState(false)          // the Close issue confirmation, open while the fleet has rows
   // what the thread shows — replies, fleet declarations and sub-issue events on one time line — counted once for its heading
   const threadLedger = [...ledger, ...ledgerFromChildren(kids)]
   const threadRows = [...replies, ...threadLedger]
@@ -545,12 +549,27 @@ export function IssueDetailPage({ issue: th, specs, sessions, onOpenSession, onW
             <>
               {actErr && <span className="fv-error">{actErr}</span>}
               {local && lifecycleBtn('promote', t('session.issuesPromote'), () => postIssuePromote(th.id), t('session.issuesPromoteTitle'))}
-              {lifecycleBtn('close', t('session.issuesCloseIssue'), () => postIssueClose(th.id), t('session.issuesCloseIssueTitle'))}
+              {fleet.length > 0
+                ? (
+                  <button type="button" className="fv-close-issue fv-life-close" disabled={!!acting} data-tip={t('session.issuesCloseIssueTitle')}
+                    onMouseDown={(e) => e.preventDefault()} onClick={() => setClosing(true)}>{t('session.issuesCloseIssue')}</button>
+                )
+                : lifecycleBtn('close', t('session.issuesCloseIssue'), () => postIssueClose(th.id), t('session.issuesCloseIssueTitle'))}
             </>
           )}
         />
       }
     >
+      {closing && (
+        <IssueCloseDialog issue={th} fleet={fleet} onClose={() => setClosing(false)} onError={(message) => setActErr(message)}
+          onDone={{
+            closeSession: (id) => postSessionClose(id),
+            closeIssue: () => postIssueClose(th.id),
+            // the wrap-up ask is an ordinary message on the one send path — the session ends itself ([[state]]).
+            wrapUp: (id) => postSessionText(id, t('issueClose.wrapUpMessage', { issue: th.id, concern: th.concern })),
+            finish: (outcomes) => onWrite?.(outcomes),
+          }} />
+      )}
       {th.duplicateOf && (
         <div className="fv-duplicate" role="note">
           <Icon name="circle-minus" size={14} />

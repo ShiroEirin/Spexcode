@@ -47,7 +47,13 @@ recorded failure is what a `--write` makes possible: nine files "written by an o
 regenerated", red on the trunk itself. A check has no such state — either the two copies say the same thing or
 the gate is red. It also refuses, rather than silently rewriting, a `[[link]]` to a node this repository has
 and the seed does not ship: that link would reach an adopter as a dangling mention in a node they never wrote,
-and a rule an author can follow beats a rewrite they never see. Repository lint, CI, and packaging compare
+and a rule an author can follow beats a rewrite they never see. The cost of the hand-edit is real and is now
+measured: a landed change to the [[issue-driven-development]] skill updated the live node and not its copy, so
+the rule it added ([[issue-binding]]'s `[[issue:<id>]]` attribution) reached every `spex init` project as
+ABSENCE, and six real workers in a behaviour probe were measured against a rule their skill file did not
+contain — the wording looked disobeyed when it had never been delivered. The check catches exactly this, and it
+caught it; what let the drift land was a merge that never ran the gate the check lives in. So the remedy is on
+the landing, not on the checker: nothing here becomes a generator, and no `--write` is added. Repository lint, CI, and packaging compare
 every byte, path, and executable bit, failing on changed, missing, or extra files. Core measurement prose,
 `reproduce-before-fix`, stop-gate, and multi-file hook handlers therefore ship as exactly what SpexCode runs.
 

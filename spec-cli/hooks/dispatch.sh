@@ -54,6 +54,34 @@ fi
 manifest="${SPEX_HOOK_MANIFEST:-$slot/hooks-manifest}"
 [ -f "$manifest" ] || { printf 'dispatch.sh: current tree has no hook manifest\n' >&2; exit 78; }
 input="$(cat 2>/dev/null || true)"    # capture stdin ONCE; each handler gets its own copy
+# @@@ the ledger - every handler run leaves two lines in <runtime>/hook-ledger/<day>.tsv: `start` before it
+# runs and `done` after, so a run the harness killed mid-way is a start with no done rather than nothing. This
+# is the ONLY place that sees every hook run on every event in every tree of the project, which is what makes
+# the count exact: the dispatcher is not sampling, it is the thing that runs them. One appended line per
+# write, far under a page, so concurrent sessions never interleave inside a line. A ledger that cannot be
+# written is reported once on stderr and never changes the verdict; SPEX_HOOK_LEDGER=off silences it.
+ledger=""
+if [ "${SPEX_HOOK_LEDGER:-on}" != off ] && [ -n "$rt" ]; then
+  ledger_dir="$rt/hook-ledger"
+  mkdir -p "$ledger_dir" 2>/dev/null && ledger="$ledger_dir/$(date +%Y-%m-%d).tsv" \
+    || printf 'dispatch.sh: hook ledger unwritable at %s\n' "$ledger_dir" >&2
+fi
+# the session column is the id the PAYLOAD names, raw — never the resolved SpexCode record id. Resolving that
+# means store lookups, and each one spawns git ([[hook-ledger]]): two per dispatch on the hottest path in the
+# product, paid on every tool call, to write a column no count needs. The hot path records what it was handed
+# and the reader resolves aliases once, where it is free. Filled on the first handler, so an event with no
+# bound handlers pays nothing at all.
+ledger_session=unset
+now_ms() { if [ -n "${EPOCHREALTIME:-}" ]; then printf '%s' "${EPOCHREALTIME/./}" | cut -c1-13; else printf '%s000' "$(date +%s)"; fi; }
+# one TSV line: ts_ms phase session harness event hook order code block ms reason — reason flattened to one line
+ledger_write() {
+  [ -n "$ledger" ] || return 0
+  [ "$ledger_session" != unset ] || ledger_session="$(hp_field "$input" session_id 2>/dev/null || true)"
+  [ -n "$ledger_session" ] || ledger_session="${SPEXCODE_SESSION_ID:-}"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$ledger_session" "$harness" "$event" "$3" "$4" "$5" "$6" "$7" \
+    "$(printf '%s' "$8" | tr '\t\n\r' '   ' | cut -c1-300)" >>"$ledger" 2>/dev/null \
+    || { printf 'dispatch.sh: hook ledger append failed: %s\n' "$ledger" >&2; ledger=""; }
+}
 err="/tmp/.spex-hook-$$.err"          # per-dispatch (pid-unique) stderr capture; no cross-session race
 cleanup() { rm -f "$err"; }
 trap cleanup EXIT
@@ -73,7 +101,10 @@ first_json=
 while IFS=$'\t' read -r ev order block script; do
   [ "$ev" = "$event" ] || continue
   handler="$proj/$script"
+  hook_name="${script%/*}"; hook_name="${hook_name##*/}"   # the node is the script's own folder
+  t0="$(now_ms)"; ledger_write "$t0" start "$hook_name" "$order" "" "" "" ""
   out="$(printf '%s' "$input" | bash "$handler" 2>"$err")"; code=$?
+  t1="$(now_ms)"
   outs+=("$out")
   # cheap shape test only; the merger does the real parse. A handler whose stdout starts with `{` is claiming
   # to speak the structured contract.
@@ -81,7 +112,9 @@ while IFS=$'\t' read -r ev order block script; do
   case "$trimmed" in
     '{'*) json_count=$((json_count + 1)); [ -n "$first_json" ] || first_json="$out" ;;
   esac
+  blocked=0
   if [ "$block" = "true" ] && { [ "$code" = "2" ] || printf '%s' "$out" | grep -q '"decision"[[:space:]]*:[[:space:]]*"block"'; }; then
+    blocked=1
     cat "$err" >&2
     # codex reads a Stop block's continuation prompt from STDERR (+ exit 2), NOT the claude-style
     # decision:block JSON a handler writes to stdout. So when we block on the JSON path under codex and the
@@ -104,6 +137,13 @@ while IFS=$'\t' read -r ev order block script; do
     printf 'dispatch.sh: %s handler %s exited %s\n' "$event" "$script" "$code" >&2
     [ -s "$err" ] && cat "$err" >&2
   fi
+  # the reason of a refusal is what a reader will want later: the handler's stderr, else the JSON reason
+  reason=""
+  if [ "$blocked" = 1 ]; then
+    reason="$(cat "$err" 2>/dev/null)"
+    [ -n "$reason" ] || reason="$(printf '%s' "$out" | sed -n 's/.*"reason"[[:space:]]*:[[:space:]]*"\(.*\)"[[:space:]]*}[[:space:]]*$/\1/p')"
+  fi
+  ledger_write "$t1" done "$hook_name" "$order" "$code" "$blocked" "$((t1 - t0))" "$reason"
 done < "$manifest"
 
 # ONE payload for the harness. Zero or one JSON document is exactly the old behaviour, byte for byte, and

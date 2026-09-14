@@ -140,4 +140,10 @@ store write; a forge id refuses it, because a forge issue holds no relations. Th
 a forge refresh before answering, so the follow-up read shows the store-authored closed state; the CLI's
 next read is a live pull. There is no parallel sign/accept/reject lifecycle; an issue is open until it is
 closed or promoted. Closing is lifecycle on the issue object, not graph state; it never writes a spec
-node's status.
+node's status. **And the close speaks to the issue's fleet**, in the same call: every session whose own
+`issues` set names this issue is told the thread is landed ([[issue-binding]]'s close notice), because the
+close changes the meaning of a pointer those sessions are working from and nothing else would tell them.
+The notice is advisory around a durable write — the close never fails or unwinds because a queue was
+unreachable, and each session's outcome comes back on `notified` for the caller to report. A repeat close
+tells nobody: it changed nothing. `promote` is deliberately not a close in this sense — the thread moved to
+the forge rather than finishing, and its permalink reply is what the thread carries.

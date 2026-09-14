@@ -10,6 +10,10 @@ related:
   - spec-cli/src/sessions.ts
   - spec-cli/src/mentions.ts
   - spec-cli/src/issue-assign.ts
+  - spec-cli/src/issue-attribution.ts
+  - spec-cli/src/issue-attribution.test.ts
+  - spec-cli/src/issues.ts
+  - spec-cli/src/session-declarations.ts
   - spec-cli/src/issues-cli.ts
   - spec-cli/src/index.ts
   - spec-cli/src/cli.ts
@@ -59,7 +63,23 @@ with one visible fleet per issue, and close/retire/children/acceptance reachable
   ordinary send path with an assignment message that says it is taking this thread on beside its own task. `spex issue
   unassign <issue> <SEL>` and `POST /api/issues/:id/unassign {session}` remove one member and tell the session that it
   no longer owns the thread; repeated removals are no-ops. Both halves are one verb: a binding nobody told the worker
-  about is a lie on the board, and a message without the binding leaves the Issues page blind.
+  about is a lie on the board, and a message without the binding leaves the Issues page blind. The assignment message
+  names the issue's id in place of every pronoun and DERIVES its count from the set the assign just wrote, so the
+  text cannot disagree with the record — measured, a worker told only to "read the thread and act on it" while
+  already holding another issue reported its progress on the OTHER thread and left this one empty. It says nothing
+  the [[issue-driven-development]] skill already teaches ([[taste]] 24): a notice carries the facts of its moment,
+  the skill carries the rules, and both arrive in one context.
+- **A close is the third message of the binding.** Closing an issue ([[issues]]) tells every session whose own
+  `issues` set names it that the thread is landed, through the same one send path assign uses: stop working it,
+  post no more replies on it, and — if other issues remain in the set — carry on there. It deliberately does neither of the two things a reader might expect: it does not UNBIND (the pointer
+  is provenance, and the closed issue's page still shows who worked it) and it does not END the session (that is
+  the session's own act, [[state]]) — so the notice says the thread is landed and asks the session to declare its
+  own end if it holds unlanded work. Only the pointer holders are told, exactly who assign speaks to: a descendant
+  working through its parent's pointer received the work from its parent and hears from it. The notice is advisory
+  around a durable write — a close is never undone because a queue was unreachable, its per-session outcome is
+  reported beside the close, and a repeat close tells nobody because it changed nothing. Measured before it
+  existed: a closed issue reached its fleet as nothing at all, and its workers went on replying to it and
+  repeating work.
 - **Joined at read, descendants inherited.** The dashboard's `issueFleet(issue, sessions)` is the ONE
   issue→session join: `assigned` are the unarchived board rows whose `issues` contains this issue or any issue below it (the
   read-time tree's `descendants`, [[issues]]) — a parent issue's fleet is its own plus every sub-issue's, so splitting
@@ -83,10 +103,13 @@ with one visible fleet per issue, and close/retire/children/acceptance reachable
   ONE state-gated action button per row on the same facts the console toolbar gates on: `review` → Merge
   (POST `/api/sessions/:id/merge`, the only declaration that offers a clickable merge — [[state]]),
   `retired` → Close (the menu's own confirm), liveness `offline` and not `queued` → Relaunch.
-  A plain click on a row **focuses** that session: it opens the session's console, where its branch, the other issues
-  it works, and its posted files / web services / widgets already live; ctrl/⌘-click opens that console in a new tab.
-  The rail draws no card of its own — it answers who is on the issue and whether anyone needs the human, and hands
-  every detail to the console.
+  **The rail is NAVIGATION, the body is the record.** Every session involved leaves its trace in the thread — its
+  latest declaration, its replies — and each of those rows is addressable by its author. A plain click on a rail row
+  (or a voice chip) scrolls to that session's trace and marks it briefly; it does NOT leave the page. Leaving is the
+  trace's own **Open console** door, one step further in, and ctrl/⌘-click on the rail row still opens that console
+  directly. A session with no trace yet (queued, nothing declared) has nothing to point at, so its click falls back to
+  the console. The rail draws no card of its own: it answers who is on the issue and whether anyone needs the human,
+  the body answers what each one said, and the console answers what one is doing.
   section's **New worker** door does not dispatch: it types the grammar's `@new:` trigger into the reply composer —
   the launcher menu opens there as it does for a hand — and the human's send is the act. Every write on the page
   leaves through the composer's send; a door only prepares it ([[mentions]], [[composer]]). The **Assign…** door opens the ONE session picker
@@ -120,6 +143,13 @@ with one visible fleet per issue, and close/retire/children/acceptance reachable
   `active`, `idle` and `queued` stay off it. Nothing is written to the issue: the worker's `done --propose merge`
   IS its report of readiness, which is why the skill forbids typing a status into a reply. A timeline that cannot
   be read contributes nothing, never a broken thread; the ledger re-reads when a fleet row's status or note moves.
+  A note containing `[[issue:<id>]]` is attributed only to that named issue; an unqualified note falls back to the
+  session's sole assigned issue, while a session assigned to multiple issues contributes no unqualified row. The
+  reference is passive and renders as the same issue-detail link in the session timeline and this thread. Because
+  that rule makes an unattributable declaration reach NO reader, it is spoken at the write: `spex session
+  done|ask|park` from a session carrying several issues whose note names none of them prints what it just cost
+  ([[declaration]]), and `spex issue mine` says the rule at the one moment the count is known. Both are advisories
+  around the same one grammar — nothing is stored twice, and no verb gains an issue flag beside the reference.
   **One line per session, and the ledger starts where the issue starts.** The thread keeps only each session's LATEST
   declaration, with a door into that session's console beside it: the issue page answers "who is on this and what state
   is it in", the session's own console answers "what is it doing", and copying its whole message stream here answered
@@ -132,6 +162,18 @@ with one visible fleet per issue, and close/retire/children/acceptance reachable
   write only when no backend answers. `SPEXCODE_ISSUES_DIR` is the one override that never leaves the process: a
   disposable store is a local write by definition, so an isolated run can never land on the real trunk through the
   project's recorded live backend — which outranks an unreachable env address for a shell without a session identity.
+- **Closing an issue asks about its fleet first.** An issue closed while the sessions carrying it are still open leaves
+  the board lying — the issue reads finished, its workers read busy. So while the fleet has any row, **Close issue**
+  opens a confirmation over the FLEET only (the thread's other voices carry no work): the rows that have settled
+  THEMSELVES (`close-pending`, `retired`) are listed first and pre-picked, the rows still live (working, asking,
+  parked, review, error) below them. **The two groups are exclusive**, because they are two different acts: picking
+  settled rows closes them with the issue through the same session-close route the console menu uses; picking live
+  rows instead asks each to wrap up — one ordinary message telling it to commit or discard, report on the thread, and
+  declare its own `done --propose close` — and the issue STAYS OPEN, because ending a session is its own act
+  ([[state]]) and closing the issue is the human's. Picking across the boundary switches groups rather than mixing
+  them, so nothing live is ever closed by surprise, and what one press does is derived from the picked set alone
+  (`issueClose.js`: `closable`, `closeAction`), never a second piece of state. An issue with no fleet closes directly,
+  as before.
 - **The composer's explicit send door.** The shared reply composer ([[issues-view]]) reads the draft's `@<id>`
   tokens that name a retained board session EXACTLY (`mentionedSessions`; the autocomplete writes full ids, so a
   prefix, a label, or the `@new`/`@parent:` doors are never deliveries) and shows one **Send to @x** button per

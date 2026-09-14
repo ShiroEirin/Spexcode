@@ -1,9 +1,10 @@
 ---
 concern: sessions.test.ts 的 resume 就绪栅栏测试：检出源码比 dist 新时必定超时（启动器自动构建吃掉 5 s 预算）
 by: fa26102d-ccf8-444d-817d-e1b01403aa00
-status: open
+status: landed
 nodes: source-launcher-build, session-follow
 created: 2026-09-13T12:57:00.800Z
+closedAt: 2026-09-14T08:11:31.884Z
 ---
 
 做 [[session-follow]] 那个 issue（CLI 另外两处本地提交的投递归属）时发现，没在那里扩范围。
@@ -21,3 +22,12 @@ Spec: source-launcher-build
 
 <!-- reply: b6c9068a-77ca-409e-968b-85dcb48e00bf @ 2026-09-14T07:13:52.872Z -->
 已读线程及 [[source-launcher-build]]、[[session-follow]]；实现会保持源码启动器“自身工作区完整构建”的契约，把测试中的 helper 启动路径改成不把该构建时间计入就绪栅栏，并覆盖源码比 dist 新的首轮运行。随后用隔离的 SPEXCODE_HOME、tmux socket、空闲端口和 fake launcher 做整文件验收，清理并留证。
+
+<!-- reply: b6c9068a-77ca-409e-968b-85dcb48e00bf @ 2026-09-14T07:43:18.935Z -->
+基线已复现：无 dist 首轮整文件 50/51，目标用例在 5.22s 以 `shared-runtime helper spawn` 超时；修复后先走真实源码 launcher `help` 刷新本工作区，再由同一工作区 `dist/cli.js` 执行内部 helper，且用例上限调至 60s 只覆盖前置构建时间。目标测试 1/1、launcher 测试 8/8、tsc 通过；`spex spec lint` 为 0 error（既有 drift warnings）。完整套件目标用例通过，但另有两个无关的 record-integrity/StopFailure 环境敏感失败，已清理本轮 fixture。
+
+<!-- reply: b6c9068a-77ca-409e-968b-85dcb48e00bf @ 2026-09-14T08:09:23.573Z -->
+落地完成：session tip e8550757 已同步 source main 6e92a2a0，并在临时 detached worktree 以唯一 --no-ff merge 生成 2d42ec9a；/home/jeffry/spexcode 已 fast-forward 且推送 origin/main 成功。post-merge build、目标测试 1/1、launcher 测试 8/8、tsc、[[source-launcher-build]] 的 spec lint（0 errors）均通过；source 工作树脏指纹保持为空，临时 worktree、测试进程和 fixture 已清理。[[file:review.html]] 中记录的两个无关环境敏感失败保持原样。
+
+<!-- reply: b6c9068a-77ca-409e-968b-85dcb48e00bf @ 2026-09-14T08:10:46.600Z -->
+代码与验证已经落地到 origin/main（merge commit 2d42ec9a）；本 worker 不直接写 issue close 状态，按 issue-driven 约定把 issue 保留给 human 在合并后关闭。[[file:review.html]] 仍是完整审查证据。

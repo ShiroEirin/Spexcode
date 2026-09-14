@@ -130,9 +130,9 @@ function templateSessions(nativeChosen: string[]): Record<string, any> | undefin
 // adopted repository's tree is rooted at a node literally named "project", and a published page shows that
 // as the top of the graph no matter what the project is called. A name the adopter gave us is the name the
 // root should carry: `--title zgent` means the root node IS zgent. Only the ID vocabulary constrains it
-// ([[spec-lint]]'s id-format: ascii [a-z0-9-] or a non-ascii letter/number), so a title that cannot be an
+// ([[spec-lint]]'s id-format: ascii [a-z0-9-] or a non-ascii letter/number/mark), so a title that cannot be an
 // id — "My App v2" — keeps the neutral `project` rather than minting something illegal.
-const ROOT_ID_RE = /^\.?(?:[a-z0-9-]|(?![\x00-\x7F])[\p{L}\p{N}])+$/u
+const ROOT_ID_RE = /^\.?(?:[a-z0-9-]|(?![\x00-\x7F])[\p{L}\p{N}\p{M}])+$/u
 export function rootNodeId(title: string | undefined): string | null {
   if (!title) return null
   const id = title.trim().toLowerCase().replace(/[\s_]+/g, '-').replace(/^-+|-+$/g, '').normalize('NFC')

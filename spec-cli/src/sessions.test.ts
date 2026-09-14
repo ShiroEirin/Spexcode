@@ -375,6 +375,9 @@ test('session-create API rejects stale fields before entering the transaction', 
 
   const removedNode = await sessionCreateRequest({ node: 'launcher-select', prompt: 'probe', launcher: 'claude' })
   assert.deepEqual(removedNode, { status: 400, error: 'unknown session-create field: node' })
+
+  const invalidReplyChannel = await sessionCreateRequest({ prompt: 'probe', launcher: 'claude', initialReplyVia: 'terminal' })
+  assert.deepEqual(invalidReplyChannel, { status: 400, error: 'session-create initialReplyVia must be "note"' })
 })
 
 // @@@ the @parent: directive is refused, not swallowed - a create that quietly landed at top level would
@@ -846,7 +849,7 @@ exec sleep 30
   }
 })
 
-test('resume holds the launch-readiness fence after shared-runtime spawn until the adapter validates', { timeout: 20_000, concurrency: false }, async () => {
+test('resume holds the launch-readiness fence after shared-runtime spawn until the adapter validates', { timeout: 60_000, concurrency: false }, async () => {
   const liveBefore = liveSessionsCensus()
   const previousHome = process.env.SPEXCODE_HOME
   const previousPath = process.env.PATH
@@ -869,10 +872,15 @@ test('resume holds the launch-readiness fence after shared-runtime spawn until t
   const sharedPid = join(sharedDir, 'runtime.pid'); const sharedReceipt = join(sharedDir, 'runtime.detached.json')
   const consumed = join(home, 'shared-spawn-consumed'); const helper = join(home, 'helper.sh')
   const spex = join(process.cwd(), 'bin', 'spex.mjs')
+  // Refresh the source workspace before entering the readiness fence. The launcher owns this build boundary;
+  // invoking the compiled CLI for the helper keeps that unrelated build time outside waitUntil's 5 s budget.
+  execFileSync(process.execPath, [spex, 'help'], { stdio: 'ignore' })
+  const compiledCli = join(process.cwd(), 'dist', 'cli.js')
+  assert.ok(existsSync(compiledCli), 'source launcher must leave a compiled CLI for the helper')
   writeFileSync(helper, `#!/usr/bin/env bash
 set -eu
 mkdir -p ${JSON.stringify(sharedDir)}
-${JSON.stringify(process.execPath)} ${JSON.stringify(spex)} internal shared-runtime-spawn ${JSON.stringify(sharedDir)} ${JSON.stringify(join(sharedDir, 'runtime.log'))} ${JSON.stringify(sharedPid)} ${JSON.stringify(sharedReceipt)} ${JSON.stringify(process.execPath)} -e 'setInterval(() => {}, 1000)'
+${JSON.stringify(process.execPath)} ${JSON.stringify(compiledCli)} internal shared-runtime-spawn ${JSON.stringify(sharedDir)} ${JSON.stringify(join(sharedDir, 'runtime.log'))} ${JSON.stringify(sharedPid)} ${JSON.stringify(sharedReceipt)} ${JSON.stringify(process.execPath)} -e 'setInterval(() => {}, 1000)'
 touch ${JSON.stringify(consumed)}
 `)
   chmodSync(helper, 0o755)

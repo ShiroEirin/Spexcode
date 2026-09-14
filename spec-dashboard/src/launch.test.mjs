@@ -34,6 +34,26 @@ test('ordinary interactive launch posts only the prompt and named launcher', asy
   }
 })
 
+test('Conversation launch carries the explicit initial note reply channel', async () => {
+  const originalFetch = globalThis.fetch
+  let request
+  globalThis.fetch = async (url, init) => {
+    request = { url, init }
+    return { ok: true, json: async () => ({ id: 'session-1' }) }
+  }
+
+  try {
+    await createSession('open this in Conversation', 'claude-local', { initialReplyVia: 'note' })
+    assert.deepEqual(JSON.parse(request.init.body), {
+      prompt: 'open this in Conversation',
+      launcher: 'claude-local',
+      initialReplyVia: 'note',
+    })
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
 // THE LAUNCH COMPOSER'S SUBMIT. [[new-session-tab]]: plain Enter launches, Shift+Enter inserts a line,
 // and the explicit control remains the pointer twin. Completion menus consume Enter before this textarea
 // handler, so choosing a dropdown item cannot launch accidentally.

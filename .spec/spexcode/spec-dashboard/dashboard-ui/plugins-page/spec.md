@@ -2,7 +2,7 @@
 title: plugins-page
 status: active
 hue: 40
-desc: The rail's automation board — a bounded master/detail frame reading every plugin by the surface it plugs into, hooks grouped under the lifecycle event they fire on, and the selected plugin read beside it as a spec document — title, description, property row, rendered body, its script as a code block.
+desc: The rail's automation board — the agent's lifecycle drawn as a spine of event stations with frames around the loops that repeat, every hook a pill hanging off the station it fires on, always-on prose and skills placed where they act, and the selected plugin read beside it as a spec document.
 code:
   - spec-dashboard/src/PluginsView.jsx
 related:
@@ -16,6 +16,7 @@ related:
   - spec-dashboard/src/i18n/en.js
   - spec-dashboard/src/i18n/zh.js
   - spec-cli/src/plugins-view.ts
+  - spec-cli/src/hook-ledger.ts
 ---
 
 # plugins-page
@@ -31,19 +32,32 @@ what they are. Two things a spec tree structurally cannot say are the whole reas
 that plugs into two surfaces at once can appear only once in a tree, and a hook's event, its order inside
 that event, and whether it may refuse have nowhere in a tree to live.
 
-## the spine is the hook surface and only the hook surface
+## the master pane is the agent's lifecycle, drawn
 
-The events are the master list's group headings, in the order an agent meets them over one session, and
-each hook sits under the event it fires on, in its order, marked when it may refuse. Making the spine the
-list's headings rather than a drawn rail is what lets it survive being a board: the heading pins while its
-own hooks scroll under it, so the event you are reading is always overhead instead of a label you scrolled
-past. An event carrying two hooks is where the order stops being decoration. An event carrying none is
-simply absent from a filtered list — a group with no rows is a heading about nothing.
+The left pane is not a list. It is the lifecycle an agent lives through under this harness, drawn the way
+the harness's own hooks reference draws it and the way Vue's lifecycle diagram has taught a generation of
+readers to read one: a spine down the pane with one station per event in the order they fire, frames only
+around what REPEATS — each turn, and each tool call inside it — and every hook a pill tied to the station it
+fires on. A repeating frame wears a loop glyph in its corner, and the spine runs on beside it so the eye
+reads that the session continues after the turn. A frame draws a spine of its own only when it holds two
+stations to join: the turn frame holds one station and the tool loop, and a line running past that loop to
+nowhere is a dangling stroke, so it draws none. The session itself is
+not framed: it is the page, and a box around everything is a box that says nothing.
 
-The other surfaces have no timeline and are not forced onto one: always-on prose and invocable verbs are
-two more groups under the same headings, which is the honest shape, because they are not lined up in time.
-The bar's filter is the one control that narrows this, and it narrows the READING only — [[plugins-view]]
-always answers with the whole inventory, and the count says how much of it is showing.
+The other two surfaces are not two more headings. They take their real place in the picture: always-on
+prose is a cluster under SessionStart, because that is when it is folded into the agent; skills and commands
+are a cluster inside the tool loop, because that is where the agent reaches for them. A station's aside says
+what the agent is doing there that no hook does — the tool runs, waiting on the human, refused so the turn
+goes on — once, in italics, where it happens.
+
+A station is drawn whether or not a hook is bound to it. The lifecycle is the harness's; an empty station
+says "nothing runs here", which no list could say. For the same reason the bar's filter and the search DIM
+what they exclude instead of removing it: a lifecycle with missing stations is a wrong picture, not a shorter
+one. The count in the bar still reports how many the filter keeps. An event the reader carries that the
+drawing does not know is drawn after the last station, never dropped.
+
+Order is drawn on a pill only where its station carries more than one hook — the only place the number
+decides anything. A hook the profile turns off is struck through in place rather than hidden.
 
 ## the question is what a thing DOES, and the answer is its own text
 
@@ -98,50 +112,68 @@ sentence, which is what a reader should be able to skim past.
 
 ## the colour budget is one narrow column
 
-A hook that may refuse its event puts a mark in the rail at the row's left edge, and nothing else on this
-board is tinted — so the hooks that can interrupt a session form a broken vertical line down the left that a
-reader finds without reading. The row itself is never coloured: a tinted row spends a whole line to say one
-word. The single exception is a node on two surfaces at once, which is the one fact a folder tree structurally
-cannot show, so it is the one that earns a hue.
+A hook that may refuse its event carries one mark at the front of its pill, and nothing else on this board
+is tinted — so the hooks that can interrupt a session are the only spots of colour on the drawing, found
+without reading. The pill itself is never coloured: a tinted pill spends a whole name to say one word. A
+node on two surfaces at once is not marked in the drawing either — the detail's property row names both
+surfaces, and a tag on the pill was emphasis the picture did not need.
 
 A hook the profile turned off is drawn quieter than the metadata beside it, not merely greyer than the name:
 its text is mixed toward the page's own ground, below `--muted`, because a reader should skim past it. Its
 refusal mark keeps full strength — what it would do if it ran has not changed.
 
-## the list row is a name, because the sentence has somewhere better to be
+## a pill is a name, because the sentence has somewhere better to be
 
-One tier in the list: the name, in the sidebars' row grammar, with the marks that change a reading pushed to
-its edges. The sentence that used to sit under every name is the detail pane's first paragraph now, where it
-is read once and in full instead of twenty-five times in truncated parallel — and a list of names is what
-makes the list scannable at all, which is the job a master list has.
-
-There is no third rank anywhere here, because this frame already spends the proportional/mono contrast
+One tier in the drawing: the name, in a pill, with the marks that change a reading at its edges. The
+sentence that once sat under every name is the detail's subtitle now, read once and in full instead of
+twenty-five times in truncated parallel — and a picture of names is what makes the lifecycle scannable at
+all. There is no third rank anywhere here, because this frame already spends the proportional/mono contrast
 channel globally — `--ui-font` IS the mono — so size and colour carry a ranking a product with two typefaces
-would split three ways.
+would split three ways. Frames are hairlines with a caption on the border, never a drawn graphic, because a
+border survives reflow and an SVG does not.
 
-Rows are borderless and tight, like every other list this frame draws: a box around a card is a border spent
-on a rectangle rather than on the thing inside it. The group heading is a hairline and a count pod, never a
-drawn graphic — which is also how every workflow console worth copying draws one, because a border survives
-reflow and virtualisation and an SVG does not.
-
-## the profile is the switch, and it is read here, never written
+## the profile is the switch, and it is only news when it subtracts
 
 Every core hook's body opens by saying the startup `SPEX_PROFILE` list may disable it with a clean no-op, so
-that list is this surface's configuration and a board that omits it shows seven things that may or may not be
-running. It is shown as the state it is — which profile is active, how many hooks it keeps, which it turns
-off, with a disabled hook greyed in place rather than hidden. The board does not write it: the profile is an
-environment variable of the process an agent launches under, not a project setting this page owns.
+that list is this surface's configuration and a disabled hook must be visible as disabled — struck through
+where it sits, never hidden, because what it would do if it ran has not changed.
 
-## the board says what the automation IS, never how a branch is doing
+The bar used to carry the profile always, as a sentence: its name, how many hooks it keeps, which it drops.
+When the profile retains everything — which is the ordinary case — that sentence said "nothing is turned
+off", and the drawing beside it already said the same thing by having nothing struck through. That is the
+ordinary case wearing a label, which is exactly what the marks rule forbids one line further down the page.
+So the profile appears in the bar only when it actually turns something off, and then it says the one thing
+the strikes cannot: which profile did it. The board still never writes it — the profile belongs to the
+process an agent launches under, not to a project setting this page owns.
 
-The rows here are declarations: which surface a node plugs into, which event it binds, whether it may
-refuse. None of that changes between one session and the next, so a number that DOES change belongs to a
-board about work, not to this one. An earlier draft carried a health bar counting live worktrees against
-declared contracts, and its denominator was wrong three times running — dormant directories, then live
-sessions, then, on inspection, branch age — because the quantity it wanted did not exist on this surface to
-be counted correctly. That is the general rule, not an anecdote about one bar: a figure this page cannot
-derive from the plugin definitions it reads is a figure this page must not draw, and the reader who wants
-the fleet's state has [[sessions-view]] for it.
+## the board draws what the automation HAS DONE, and only what it can count exactly
+
+The declarations here — which surface a node plugs into, which event it binds, whether it may refuse — are
+the same on every load. What moves is what the automation has actually done, and that is now on the page,
+because [[hook-ledger]] makes it countable: the dispatcher that writes it is the thing that runs every hook,
+so a count is a fact about execution rather than an estimate of it.
+
+This does not reopen the door the health bar walked through. That bar counted live worktrees against declared
+contracts and its denominator was wrong three times running — dormant directories, then live sessions, then
+branch age — because the quantity it wanted did not exist on this surface to be counted correctly. The rule
+it taught stands unchanged: a figure this page cannot derive exactly is a figure it must not draw. The
+difference is that this one has a real denominator and a stated window, and the window is drawn with it, so a
+count is never read as all-time. The reader who wants the fleet's state still has [[sessions-view]].
+
+The activity is a SECOND read, independent of the inventory: the inventory is a function of the declarations
+and identical between two loads, the activity changes on every event. So a slow or absent ledger leaves the
+drawing whole and the page simply says nothing about what has run, which is the honest failure for a fact
+nobody has yet.
+
+Two readings earn a place in the drawing itself, under the same marks rule as everything else. A hook that is
+installed and has NEVER been dispatched in the whole window says so in words on its pill — that is the fact
+the count exists to surface, and it was true of one hook here for a month with nothing on any surface saying
+so. And a refusal carries its tally on the mark that already names the capability, because how many times it
+refused and that it may refuse are one reading. Everything else the ledger knows — how many dispatches, how
+many failed, how many were killed mid-run, the median cost, when it last ran, and why it last refused —
+belongs in the detail beside the plugin's own text, one rung quieter than the declarations, because a
+declaration is true forever and a count is only true of a window. A number on all twenty-seven pills would be
+the badge farm the marks rule exists to prevent.
 
 ## a board is a frame, not a document
 
@@ -162,11 +194,8 @@ list is the parts of THIS document — the plugins the board is about — the wa
 panel is the parts of one diff. The test is what a click does: selecting a row answers in the detail pane
 and changes no address, and the one link that leaves is explicit and lives in the detail's own header.
 
-Its rows are therefore the sidebars' one row grammar and its group headings the zone grammar, pinned so the
-lifecycle event a hook runs on stays overhead while its siblings scroll under it — the list is the one place
-on the board a heading pins, because a group heading is what makes a long list navigable; a detail's own
-overview is not. The divider is the shared resizable pane, clamped so the detail keeps at least half the
-width, and it stacks to a band above the detail on a phone.
+The master pane scrolls the drawing whole; nothing in it pins. The divider is the shared resizable pane,
+clamped so the detail keeps at least half the width, and it stacks to a band above the detail on a phone.
 
 The board is still `resident`, so the bare address is its one tab identity, and it is still absent from the
 published-tree page set because a static publication has no live plugin surface to read.

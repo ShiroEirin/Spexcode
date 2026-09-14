@@ -1,8 +1,9 @@
 ---
 concern: Close issue 的时候，就是会跳出一个框，确认顺便把承担这个任务的 sessions 也给 close 掉
 by: human
-status: open
+status: landed
 created: 2026-09-14T02:25:58.791Z
+closedAt: 2026-09-14T13:00:22.174Z
 ---
 
 它是这样的：可以加一个硬限制，就是必须所有承担这个任务的 session 都处于 close pending 或者已经被 Close 了的状态下，才可以去 Close 掉这个 issue。如果说不满足这个条件的话，可以在跳出的那个确认框里面，选一个叫做“nudge all sessions to enter close pending state”的选项
@@ -33,3 +34,16 @@ created: 2026-09-14T02:25:58.791Z
 - 规格写进 [[issues-view]]（Close issue 的确认框）和 [[issue-binding]]（fleet 即「承担」集合）。
 
 隔离 fixture + 真实浏览器验收：一个 issue 下 2 个 close-pending + 1 个 asking 的 worker，截默认选中、切换到 asking 后按钮变化、执行后 session 归档 / 收到消息、issue landed。
+
+<!-- reply: 2499a20b-ae58-4074-87de-3753e02fe63b @ 2026-09-14T07:27:48.555Z -->
+做完了，已落地 main d7b5770fb 并 push。
+
+按你第二段的自由版实现：
+- 只要 issue 还有 fleet，Close issue 就先弹确认框；框里**只列 fleet**（承担者），不列线程上其它的 voices。
+- 两组互斥：**已收尾的**（close-pending / retired）在上、默认全选；**还在干的**（working / asking / parked / review / error）在下、默认不选。勾了下面的，上面全部取消，反之亦然。
+- 底部动作随选择变：默认「Close issue and N sessions」→ 关 session（走 console 菜单同一条 close 路由）再关 issue；勾了还在干的 → 「Ask N sessions to wrap up」，给每个发一条普通消息（该留的提交、该丢的丢弃、在线程上说清楚，然后自己声明 `done --propose close`；确实不能丢就改声明 ask），**issue 保持 open**——结束会话是它自己的事，关 issue 是你的事。一个都不选 → 「Close issue only」。
+- 判断哪些「可关」和「按一下会做什么」是两个纯函数（`issueClose.js` 的 `closable` / `closeAction`），从勾选集合派生，不另存状态；「可关」的状态集合登记进了状态词表卫兵。
+
+实测（隔离 fixture + 真实 Chromium，一个 close-pending + 一个 working）：默认勾中 close-pending、按钮是「Close issue and 1 session」；点那个 working 的 → 上面取消、按钮变「Ask 1 session to wrap up」；按下去 issue 仍是 open；再打开、保持默认按下去 → issue 变 landed 且那个 session 从看板上消失。单测 479/479，lint 0。
+
+这条我认为可以关了，按规矩留给你关。

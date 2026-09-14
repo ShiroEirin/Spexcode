@@ -28,6 +28,9 @@ const hashFromUrl = (value) => {
   return match?.[1] || null
 }
 
+// Issue references share the id alphabet with the CLI grammar, plus the store separator used by forge ids.
+const ISSUE_ID_RE = /^\.?[\p{L}\p{N}\p{M}_.#-]+$/u
+
 const mathPlugin = (md) => {
   md.inline.ruler.before('escape', 'prose_math_inline', (state, silent) => {
     const start = state.pos
@@ -109,6 +112,22 @@ const semanticPlugin = (md) => {
     if (!silent) {
       const id = state.src.slice(state.pos + 2, end)
       const token = state.push('prose_spec_ref', 'a', 0)
+      token.content = id
+      token.meta = { id }
+    }
+    state.pos = end + 2
+    return true
+  })
+
+  // Runs ahead of the node reference: `issue:<id>` is a passive issue link, not a node mention. Keep the
+  // token narrow so malformed references remain authored text rather than becoming a misleading link.
+  md.inline.ruler.before('prose_spec_ref', 'prose_issue_ref', (state, silent) => {
+    if (!state.src.startsWith('[[issue:', state.pos)) return false
+    const end = state.src.indexOf(']]', state.pos + 8)
+    const id = end < 0 ? '' : state.src.slice(state.pos + 8, end)
+    if (!ISSUE_ID_RE.test(id)) return false
+    if (!silent) {
+      const token = state.push('prose_issue_ref', 'a', 0)
       token.content = id
       token.meta = { id }
     }
@@ -286,6 +305,9 @@ const renderInline = (h, children = [], options) => {
     else if (token.type === 'prose_spec_ref') {
       const value = options.renderSpecRef?.(token.meta.id, token, attrs(token, options.lineBase))
       current().push(value ?? h('span', { ...attrs(token, options.lineBase), className: 'doc-ref', 'data-spec-id': token.meta.id }, token.meta.id))
+    } else if (token.type === 'prose_issue_ref') {
+      const value = options.renderIssueRef?.(token.meta.id, token, attrs(token, options.lineBase))
+      current().push(value ?? h('span', { ...attrs(token, options.lineBase), className: 'doc-issue-ref', 'data-issue-id': token.meta.id }, token.meta.id))
     } else if (token.type === 'prose_widget_ref') {
       const value = options.renderWidgetRef?.(token.meta.name, token, attrs(token, options.lineBase))
       current().push(value ?? h('span', { ...attrs(token, options.lineBase), className: 'doc-widget-ref', 'data-widget-ref': token.meta.name }, token.meta.name))
@@ -339,6 +361,7 @@ const blockElement = (h, token, children, options) => {
  * `renderCodeCopy(source, token)` supplies a code block's copy control; without it the block has none.
  * `renderFileRef(name, token, provenance)` is the door a `[[file:<name>]]` opens; without it the name is text.
  * `renderWidgetRef(name, token, provenance)` draws a `[[widget:<name>]]` in place; without it the name is text.
+ * `renderIssueRef(id, token, provenance)` opens a passive `[[issue:<id>]]` reference; without it the id is text.
  */
 export function renderProseTokens(tokens, options = {}) {
   const h = options.h

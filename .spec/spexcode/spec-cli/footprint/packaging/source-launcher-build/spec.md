@@ -8,6 +8,7 @@ code:
 related:
   - spec-cli/bin/spex.mjs
   - spec-cli/package.json
+  - spec-cli/src/sessions.test.ts
 ---
 
 # source-launcher-build

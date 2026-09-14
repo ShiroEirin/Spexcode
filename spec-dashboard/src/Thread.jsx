@@ -106,13 +106,26 @@ export function Replies({ replies, sessions = [], ledger = [], widgetHost = null
     if (r.kind === 'declaration') {
       const color = STATUS_COLOR[r.status] || STATUS_COLOR.idle
       return (
-        <div className="fv-reply fv-declaration" key={`d-${i}`} style={{ '--decl': color }}>
+        // the body is where an agent leaves its trace, so every row a session authored is addressable: the rail
+        // scrolls to it rather than leaving the page ([[issue-binding]]).
+        <div className="fv-reply fv-declaration" key={`d-${i}`} data-thread-session={r.by} style={{ '--decl': color }}>
           <div className="fv-reply-meta">
             <span className="fv-reply-by" data-tip={r.by}>{author ? sessionHeadline(author) : r.by}</span>
             {r.at && <span className="fv-reply-at">{r.at}</span>}
+            {author && <a className="ds-action fv-declaration-open" href={routeHash('sessions', r.by)} data-tip={t('fleet.openConsole')}><Icon name="terminal" size={11} />{t('fleet.openConsole')}</a>}
             <span className="fv-declaration-word" aria-label={t('thread.declared')}><span aria-hidden="true">{STATUS_GLYPH[r.status] || '·'}</span> {t(`status.${r.status}`)}</span>
           </div>
-          {r.note && <div className="fv-declaration-note">{r.note}</div>}
+          {r.note && <Prose className="rich-text fv-declaration-note" softBreak="break"
+            renderSpecRef={(id, token, provenance) => {
+              const href = routeHash('spec', id)
+              return <a className="doc-link" href={href} {...provenance} onClick={(event) => newTabAnchor(event, href)}>{id}</a>
+            }}
+            renderIssueRef={(id, token, provenance) => {
+              const href = routeHash('issues', id)
+              return <a className="doc-link doc-issue-ref" href={href} {...provenance} onClick={(event) => newTabAnchor(event, href)}>{id}</a>
+            }}>
+            {r.note}
+          </Prose>}
         </div>
       )
     }
@@ -121,7 +134,7 @@ export function Replies({ replies, sessions = [], ledger = [], widgetHost = null
       : { sessionId: author?.id || null, widgets: author?.widgets || [] }
     const filesScope = { sessionId: author?.id || null, files: author?.files || [], tabs: !isMobile }
     return (
-      <div className="fv-reply" key={i}>
+      <div className="fv-reply" key={i} data-thread-session={r.by || undefined}>
         <div className="fv-reply-meta">
           <span className="fv-reply-by">{r.by}</span>
           {r.at && <span className="fv-reply-at">{r.at}</span>}
@@ -131,6 +144,10 @@ export function Replies({ replies, sessions = [], ledger = [], widgetHost = null
             renderSpecRef={(id, token, provenance) => {
               const href = routeHash('spec', id)
               return <a className="doc-link" href={href} {...provenance} onClick={(event) => newTabAnchor(event, href)}>{id}</a>
+            }}
+            renderIssueRef={(id, token, provenance) => {
+              const href = routeHash('issues', id)
+              return <a className="doc-link doc-issue-ref" href={href} {...provenance} onClick={(event) => newTabAnchor(event, href)}>{id}</a>
             }}
             renderTimeAnchor={(meta, token, provenance) => <span className="fv-anchor" {...provenance}>{meta.label}</span>}
             renderEvidence={(meta, token, provenance) => <span className="fv-reply-media" data-evidence-hash={meta.hash} {...provenance}><BlobMedia hash={meta.hash} alt={meta.alt || 'evidence'} /></span>}

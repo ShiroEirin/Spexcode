@@ -122,6 +122,11 @@ async function putDeclarationWidget(argv: readonly string[], sessionId: string |
   }
 }
 
+// a declaration by a session carrying several issues must name the issue it is about, or no issue page shows it
+// ([[issue-binding]]); the DATA half lives with the issue module, as the propose-close closeout nudge does.
+const attributionAdvisory = async (sessionId: string | null | undefined, note?: string): Promise<string> =>
+  (await import('./issue-attribution.js')).declarationAttributionNudge(sessionId, note)
+
 export async function runSessionDeclaration(verb: DeclarationVerb, argv: readonly string[] = process.argv): Promise<void> {
   const sessionId = flag(argv, 'session')
   const note = flag(argv, 'note')
@@ -146,7 +151,8 @@ export async function runSessionDeclaration(verb: DeclarationVerb, argv: readonl
       catch (e) { console.error(`issue closeout check failed (declaration unaffected): ${e instanceof Error ? e.message : e}`) }
     }
     const done = mark(() => s.markDone(proposal, sess, note))
-    console.log(done.ok ? `done (${proposal})${DECLARED}${noteEcho(note)}${closeNote}` : done.reason ?? noRecord())
+    const attribution = done.ok ? await attributionAdvisory(sess ?? s.ownSessionId(), note) : ''
+    console.log(done.ok ? `done (${proposal})${DECLARED}${noteEcho(note)}${attribution}${closeNote}` : done.reason ?? noRecord())
     return
   }
 
@@ -154,11 +160,11 @@ export async function runSessionDeclaration(verb: DeclarationVerb, argv: readonl
   if (verb === 'park') {
     // sugar: the agent is waiting on a background task; it will self-resume (NOT idle/awaiting)
     const parked = mark(() => s.markState('parked', { note, sessionId: sess }))
-    console.log(parked.ok ? `parked${DECLARED}${noteEcho(note)}` : parked.reason ?? noRecord())
+    console.log(parked.ok ? `parked${DECLARED}${noteEcho(note)}${await attributionAdvisory(sess ?? s.ownSessionId(), note)}` : parked.reason ?? noRecord())
     return
   }
 
   // The agent deliberately pauses for a human response. This is authored state, not an active-only inference.
   const asked = mark(() => s.markState('asking', { note, sessionId: sess }))
-  console.log(asked.ok ? `asking${DECLARED}${noteEcho(note)}` : asked.reason ?? noRecord())
+  console.log(asked.ok ? `asking${DECLARED}${noteEcho(note)}${await attributionAdvisory(sess ?? s.ownSessionId(), note)}` : asked.reason ?? noRecord())
 }

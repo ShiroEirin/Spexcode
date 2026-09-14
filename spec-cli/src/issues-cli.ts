@@ -122,6 +122,11 @@ async function issueVerbs(args: string[]): Promise<number> {
     const missing = bound.filter((_, index) => !issues[index])
     if (missing.length) { console.error(`spex issue mine: bound to '${missing[0]}' but no such issue is readable (see \`spex issue ls --all\`)`); return 1 }
     console.log(hasFlag(args, 'json') ? JSON.stringify(issues, null, 2) : issues.map((t) => renderIssue(t!)).join('\n\n'))
+    // @@@ the attribution rule where it is read - `mine` is the worker's first read, and it is the ONE moment the
+    // worker can be told it carries more than one issue, because only here is the count known. Measured: workers
+    // ran this first and still declared without naming an issue, so the rule is said here rather than only in the
+    // skill. On stderr in both forms: an agent reads it, a `--json` consumer's parse never sees it.
+    if (bound.length > 1) console.error(`\nyou carry ${bound.length} issues — name the issue in each declaration note, e.g. [[issue:${bound[0]}]].`)
     return 0
   }
   if (args[0] === 'links') {
@@ -137,10 +142,13 @@ async function issueVerbs(args: string[]): Promise<number> {
     if (!id || id.startsWith('--')) { console.error('usage: spex issue close <issue-id> [--duplicate-of <canonical-id>]   (a local id, or a forge id like github#12)'); return 2 }
     const duplicateOf = fl(args, 'duplicate-of')
     try {
-      const r = await closeIssue(id, { duplicateOf })
-      console.log(r.store === 'local'
+      const { summarizeCloseNotices } = await import('./issue-assign.js')
+      const r = await closeIssue(id, { duplicateOf, by: envSessionId() || 'human' })
+      // the fleet notice is part of what the close DID, so it is reported with it — including a queue it could not reach
+      const told = summarizeCloseNotices(r.notified)
+      console.log((r.store === 'local'
         ? `closed '${id}' — local thread landed${duplicateOf ? ` as a duplicate of '${duplicateOf}'` : ''}`
-        : `closed '${id}' on ${r.store}${r.url ? `  ${r.url}` : ''}`)
+        : `closed '${id}' on ${r.store}${r.url ? `  ${r.url}` : ''}`) + (told ? ` · ${told}` : ''))
       return 0
     } catch (e) {
       console.error(`spex issue close: ${e instanceof Error ? e.message : e}`)
@@ -165,8 +173,10 @@ async function issueVerbs(args: string[]): Promise<number> {
         return 2
       }
       if (type === 'duplicate') {
-        await closeIssue(id, { duplicateOf: other })
-        console.log(`closed '${id}' — local thread landed as a duplicate of '${other}'`)
+        const { summarizeCloseNotices } = await import('./issue-assign.js')
+        const dup = await closeIssue(id, { duplicateOf: other, by: envSessionId() || 'human' })
+        const toldDup = summarizeCloseNotices(dup.notified)
+        console.log(`closed '${id}' — local thread landed as a duplicate of '${other}'${toldDup ? ` · ${toldDup}` : ''}`)
       } else {
         relateLocalIssue(id, type, other)
         console.log(`'${id}' ${type === 'blocks' ? 'blocks' : 'is related to'} '${other}'`)
