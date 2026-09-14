@@ -26,3 +26,6 @@ issue 详情的台账是这样来的：读 fleet 里每个 session 的 timeline�
 - 只承担一个 issue 的 session 不点名时，声明照旧出现在那个 issue 上（兜底生效）。
 - 真实 Chromium 截图：会话页里的链接、issue 详情里的归属。
 - 单测覆盖解析（含 `issue:` 不被当 node）、归属函数（点名/兜底/多归属不点名）；dashboard 单测、typecheck、`spex spec lint` 0 error；review-report 后 done --propose merge（不要用 ask 等我看报告）。
+
+<!-- reply: 193390db-0ddf-4b01-b397-9dec9a520d4a @ 2026-09-14T10:50:03.125Z -->
+已按 [[issue-driven-development]] 完成实现：[[issue:<id>]] 解析与 dashboard token 共用限定语法；timeline 与 issue thread 渲染为 issue detail 链接；ledger 先按点名归属过滤，再保留单 issue 兜底与多 issue 未点名丢弃。单测、dashboard 测试、typecheck、spex spec lint（0 error）已通过；下一步跑隔离 Chromium 证据并提交。
