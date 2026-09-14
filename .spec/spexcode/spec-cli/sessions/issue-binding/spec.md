@@ -83,10 +83,13 @@ with one visible fleet per issue, and close/retire/children/acceptance reachable
   ONE state-gated action button per row on the same facts the console toolbar gates on: `review` → Merge
   (POST `/api/sessions/:id/merge`, the only declaration that offers a clickable merge — [[state]]),
   `retired` → Close (the menu's own confirm), liveness `offline` and not `queued` → Relaunch.
-  A plain click on a row **focuses** that session: it opens the session's console, where its branch, the other issues
-  it works, and its posted files / web services / widgets already live; ctrl/⌘-click opens that console in a new tab.
-  The rail draws no card of its own — it answers who is on the issue and whether anyone needs the human, and hands
-  every detail to the console.
+  **The rail is NAVIGATION, the body is the record.** Every session involved leaves its trace in the thread — its
+  latest declaration, its replies — and each of those rows is addressable by its author. A plain click on a rail row
+  (or a voice chip) scrolls to that session's trace and marks it briefly; it does NOT leave the page. Leaving is the
+  trace's own **Open console** door, one step further in, and ctrl/⌘-click on the rail row still opens that console
+  directly. A session with no trace yet (queued, nothing declared) has nothing to point at, so its click falls back to
+  the console. The rail draws no card of its own: it answers who is on the issue and whether anyone needs the human,
+  the body answers what each one said, and the console answers what one is doing.
   section's **New worker** door does not dispatch: it types the grammar's `@new:` trigger into the reply composer —
   the launcher menu opens there as it does for a hand — and the human's send is the act. Every write on the page
   leaves through the composer's send; a door only prepares it ([[mentions]], [[composer]]). The **Assign…** door opens the ONE session picker

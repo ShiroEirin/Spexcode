@@ -2220,9 +2220,10 @@ body.is-session-dragging .si-pill.archive:hover {
 .fv-originator { border-radius: var(--radius); padding: 1px 3px; }
 .fv-originator .ds-val-text { color: var(--ink2); font-family: var(--ui-font); }
 .fv-originator-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
-.fv-originator.openable { background: color-mix(in srgb, var(--green) 8%, transparent); }
-.fv-originator.openable:hover { background: color-mix(in srgb, var(--green) 16%, transparent); }
-.fv-originator.openable:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+/* At rest a voice chip is text with a dot, like every other rail value: the dot already says the state, so a
+   permanent tint said "selected" about a row nobody had touched. Openable ones answer the pointer with the shared
+   hover wash, the same one a list row uses, and take the app's own focus ring. */
+.fv-originator.openable:hover { background: var(--wash-hover); }
 .fv-originator.offline { opacity: .7; }
 .fv-close-issue { color: var(--orange); border-color: color-mix(in srgb, var(--orange) 35%, var(--line)); }
 .fv-close-issue:hover { background: var(--orange); color: var(--paper); border-color: var(--orange); }
@@ -4233,3 +4234,7 @@ body.is-session-dragging .si-pill.archive:hover {
 .fv-close-pick { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 2px 0; cursor: pointer; }
 .fv-close-pick input { flex: none; }
 .fv-close-actions { display: flex; justify-content: flex-end; gap: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
+/* the row the rail just navigated to ([[issue-binding]]): a brief wash so the eye lands on it, then nothing —
+   it is a pointer, not a selection the page has to remember. */
+.fv-reply.is-thread-focus { animation: thread-focus 1.6s ease-out 1; }
+@keyframes thread-focus { from { background: var(--wash-selected); } to { background: transparent; } }
