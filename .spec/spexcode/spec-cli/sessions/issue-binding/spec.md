@@ -2,7 +2,7 @@
 title: issue-binding
 status: active
 hue: 300
-desc: A session records the ONE issue it works for — `issue`, provenance beside `parent`, written at create (a thread's @new, `--issue`) and joined at read — so the Issues page can show, act on, and dispatch the sessions bound to an issue without the issue storing anything.
+desc: A session records the set of issues it works for — `issues`, provenance beside `parent`, written at create (a thread's @new, `--issue`) and joined at read — so the Issues page can show, act on, and dispatch the sessions bound to an issue without the issue storing anything.
 code:
   - spec-dashboard/src/IssueSessions.jsx
 related:
@@ -36,14 +36,15 @@ with one visible fleet per issue, and close/retire/children/acceptance reachable
 
 ## expanded spec
 
-- **One pointer, on the session.** The record carries `issue: string | null` — the id of the issue this
+- **A set, on the session.** The record carries `issues: string[]` — the ids of every issue this
   session works for (`local#…` or a forge id such as `github#12`), stored beside `parent` in the runtime
-  envelope (`issue`, conditional like `base`: an unbound record keeps its exact bytes) and projected on the
+  envelope (`issues`, conditional like `base`: an unbound record keeps its exact bytes) and projected on the
   public `Session`. It lives on the SESSION, never on the issue: a forge issue cannot hold a local session id,
   a local issue is a git commit per write, and the session record is the store SpexCode already owns for
-  provenance. Cardinality is the worker's: one worktree, one task, so session→issue is 0..1 and issue→sessions
-  is a join. Like `parent` ([[session-nesting]]) it is provenance and layout only — it never enters
-  lifecycle reconciliation, liveness, budgets ([[host-resource-budget]]), or any inferred transition.
+  provenance. Cardinality is session→issues 0..n and issue→sessions is a read-time join: one supervisor may
+  handle several issue threads at once. Like `parent` ([[session-nesting]]) it is provenance and layout only — it never enters
+  lifecycle reconciliation, liveness, budgets ([[host-resource-budget]]), or any inferred transition. For
+  compatibility, readers expose derived `issue = issues[0] ?? null`; it is not written for new records and will retire.
 - **Written at the create boundary, three ways, one owner.** `sessionCreateRequest` accepts `issue` as one
   more closed-shape input (a non-string is refused with `session-create issue must be a string`; it is
   trimmed, bound into the idempotency payload, and copied onto the record). Nothing resolves or validates the
@@ -53,13 +54,14 @@ with one visible fleet per issue, and close/retire/children/acceptance reachable
   create it forwards) passes it by hand; and an existing session is bound later by the assign verb — `spex issue assign <issue> <SEL>` and
   `POST /api/issues/:id/assign {session}` are one function (`assignIssueSession`): the ordinary session selector
   ([[session-selectors]]) over the working board picks the session (a closed one is off the board and refused; an
-  unknown or ambiguous selector fails with the resolver's own words), its record gains the pointer under the
-  record lock (re-pointing from another issue is allowed and named in the outcome), and the session is TOLD through
-  the one ordinary send path with an assignment message that says it is taking this thread on beside its own task.
-  Both halves are one verb: a pointer nobody told the worker about is a lie on the board, and a message without the
-  pointer leaves the Issues page blind. It is the twin of [[session-reparent]], moving `issue` instead of `parent`.
+  unknown or ambiguous selector fails with the resolver's own words), its record gains the issue in the set under the
+  record lock (a duplicate is an idempotent no-op), and a newly-added binding tells the session through the one
+  ordinary send path with an assignment message that says it is taking this thread on beside its own task. `spex issue
+  unassign <issue> <SEL>` and `POST /api/issues/:id/unassign {session}` remove one member and tell the session that it
+  no longer owns the thread; repeated removals are no-ops. Both halves are one verb: a binding nobody told the worker
+  about is a lie on the board, and a message without the binding leaves the Issues page blind.
 - **Joined at read, descendants inherited.** The dashboard's `issueFleet(issue, sessions)` is the ONE
-  issue→session join: `assigned` are the unarchived board rows whose `issue` is this issue or any issue below it (the
+  issue→session join: `assigned` are the unarchived board rows whose `issues` contains this issue or any issue below it (the
   read-time tree's `descendants`, [[issues]]) — a parent issue's fleet is its own plus every sub-issue's, so splitting
   work into sub-issues never hides a worker from the issue it serves; `fleet` adds every
   descendant of those rows through the same read-time tree the forest is drawn from — a worker's children
@@ -82,7 +84,7 @@ with one visible fleet per issue, and close/retire/children/acceptance reachable
   (POST `/api/sessions/:id/merge`, the only declaration that offers a clickable merge — [[state]]),
   `retired` → Close (the menu's own confirm), liveness `offline` and not `queued` → Relaunch. A plain click on a
   row opens its **card** in place (a second click closes it): the session's status word and declaration note,
-  the sub-issue it works when that is not this issue, its branch, and its posted files / web services / widgets as REAL anchors into the console surface that shows
+  every other issue it works when that is not this issue, its branch, and its posted files / web services / widgets as REAL anchors into the console surface that shows
   each ([[resource-tabs]]' address grammar) — every fact already on the wire, no second viewer — plus an **Open
   console** anchor, the door a plain click used to be; ctrl/⌘-click still opens the console in a new tab. The
   section's **New worker** door does not dispatch: it types the grammar's `@new:` trigger into the reply composer —
@@ -109,7 +111,7 @@ with one visible fleet per issue, and close/retire/children/acceptance reachable
   `widgets: [{ session, name, state }]`; the server groups them by owner and commits after the reply is durable and
   before any delivery, whether or not the owner is reachable, naming a commit that failed in the outcome. A worker
   that needs a decision therefore asks it on the issue with a widget, and receives the answer as a message.
-  `spex issue mine` is the worker's first read — the issue its record points at, with its thread.
+  `spex issue mine` is the worker's first read — every issue its record points at, with each thread.
   The behaviour a worker owes the page is the [[issue-driven-development]] skill: say it where it is read.
 - **The thread is the ledger.** The declarations of every fleet session — `awaiting` (shown as the board's
   review / done / close-pending word), `asking`, `parked`, `error` — are read from each session's own timeline

@@ -61,6 +61,11 @@ one governing home, and the two pages reference it instead of re-describing it.
   actions ride the row, what a send posts through, and that the menu opens where the composer sits (upward
   from a docked composer, downward on a page). It adds no second editor and no second menu — the composer
   has no `/` palette; `/` is the session console's grammar ([[command-box]]), not a thread's.
+- **Explicit session delivery has one action group.** The exact retained-session doors are rendered by the shared
+  `SendToSessionActions` helper in `Thread.jsx`, which the reply composer and the Issues compose page both call. The
+  helper owns the button label, icon, tooltip, disabled/sendable state, and mousedown focus guard; each home supplies
+  only the callback that performs its own durable write before delivery. A home may not copy this button markup into
+  a second action row.
 - **Identity is shown, never inferred twice.** A reply's author renders through the one liveness-aware
   originator chip where the home can join it against the board, and as a plain labelled value where it
   cannot (a forge login resolves to no session). The chip's behaviour is the shared side-rail primitive's

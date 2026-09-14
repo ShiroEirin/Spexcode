@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { AssignError, assignIssueSession, assignPrompt, summarizeAssign } from './issue-assign.js'
+import { AssignError, assignIssueSession, assignPrompt, summarizeAssign, summarizeUnassign, unassignIssueSession, type AssignDeps } from './issue-assign.js'
 import type { Issue } from './issues.js'
 import type { Session } from './sessions.js'
 
@@ -9,12 +9,12 @@ import type { Session } from './sessions.js'
 const issue: Issue = { id: 'local#fold', store: 'local', concern: 'fold count reads 0', by: 'human', status: 'open', nodes: ['session-forest'], created: '2026-09-13', closedAt: null, body: '', replies: [], evidence: [], labels: [],
   parent: null, relations: [], children: [], descendants: [], childCounts: { open: 0, closed: 0 }, blockedBy: [], relatedBy: [], duplicatedBy: [], duplicateOf: null }
 const row = (id: string, branch: string): Session => ({
-  id, branch, path: `/wt/${id}`, label: id, title: id, raw: { name: null, title: null }, parent: null, issue: null,
+  id, branch, path: `/wt/${id}`, label: id, title: id, raw: { name: null, title: null }, parent: null, issues: [], issue: null,
   harness: 'claude', capabilities: { headless: false }, launcher: null, lifecycle: 'active', proposal: null, merges: 0,
   status: 'working', liveness: 'online', note: null, archived: false, closedAt: null, prompt: null, promptPreview: null,
   created: 1, activity: null, sortKey: null,
 })
-const deps = (sessions: Session[]) => ({ listSessions: async () => sessions, sendText: async () => ({ ok: true }) })
+const deps = (sessions: Session[]): AssignDeps => ({ listSessions: async () => sessions, sendText: async () => ({ ok: true }) })
 
 test('assign refuses an unknown or ambiguous selector with the resolver\'s own words', async () => {
   const sessions = [row('aaaa-1111', 'node/x-1'), row('aaaa-2222', 'node/x-2')]
@@ -28,5 +28,31 @@ test('the assignment message names the thread, the node, and who handed it over'
   assert.match(text, /assigned issue "local#fold" by human/)
   assert.match(text, /\[\[session-forest\]\]/)
   assert.match(text, /spex issue show local#fold/)
-  assert.equal(summarizeAssign({ ok: true, issue: 'local#fold', session: 'aaaa-1111-x', previous: 'local#old', delivered: false, deliveryError: 'offline' }), 'assigned aaaa-111 to local#fold (was local#old) · NOT told: offline')
+  assert.equal(summarizeAssign({ ok: true, issue: 'local#fold', session: 'aaaa-1111-x', previous: 'local#old', added: true, issues: ['local#old', 'local#fold'], delivered: false, deliveryError: 'offline' }), 'assigned aaaa-111 to local#fold (also on local#old) · NOT told: offline')
+})
+
+test('assign is idempotent and unassign removes only the requested issue', async () => {
+  const sessions = [row('aaaa-1111', 'node/x-1')]
+  let sent = 0
+  let current = { session: 'aaaa-1111', governed: true, worktreePath: '/wt/aaaa-1111', branch: 'node/x-1', title: null, name: null, parent: null, issues: ['local#other'], issue: 'local#other', status: 'active', proposal: null, merges: 0, note: null, sortKey: null, createdAt: 1, harness: 'claude', harnessSessionId: null, runtimeStartToken: null, stopped: false, archived: false, closedAt: null, launcher: null, launchCmd: null, launchOwner: null } as any
+  const d: AssignDeps = {
+    listSessions: async () => sessions,
+    sendText: async () => { sent++; return { ok: true } },
+    readRecord: () => current,
+    writeRecord: (next) => { current = next as typeof current },
+    withRecordLock: async (_id, body) => body(),
+  }
+  const first = await assignIssueSession(issue, 'aaaa-1111', 'human', d)
+  assert.equal(first.added, true)
+  assert.deepEqual(current.issues, ['local#other', 'local#fold'])
+  const repeat = await assignIssueSession(issue, 'aaaa-1111', 'human', d)
+  assert.equal(repeat.added, false)
+  assert.equal(sent, 1, 'duplicate assignment does not send another prompt')
+  const removed = await unassignIssueSession(issue, 'aaaa-1111', 'human', d)
+  assert.equal(removed.removed, true)
+  assert.deepEqual(current.issues, ['local#other'])
+  const repeatRemoval = await unassignIssueSession(issue, 'aaaa-1111', 'human', d)
+  assert.equal(repeatRemoval.removed, false)
+  assert.equal(sent, 2, 'only the real removal sends a notification')
+  assert.match(summarizeUnassign(removed), /unassigned aaaa-111 from local#fold/)
 })
