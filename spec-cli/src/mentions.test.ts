@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { parseMentions, parseParentDirective, notifyOriginator, pickLoopIn, stripRefSigil, summarizeLoopIn } from './mentions.js'
+import { newIssueDeliveryPrompt, parseMentions, parseParentDirective, notifyOriginator, pickLoopIn, stripRefSigil, summarizeLoopIn } from './mentions.js'
 
 // ---- parseMentions: the pure grammar ----
 
@@ -13,6 +13,10 @@ test('parseMentions: session references and nodes are deduped first-seen', () =>
 
 test('parseMentions: a mid-word @ is not a session reference', () => {
   assert.deepEqual(parseMentions('mail me at user@example.com').sessions, [])
+})
+
+test('parseMentions: qualified file and widget references stay out of node inference', () => {
+  assert.deepEqual(parseMentions('see [[file:report.md]] and [[widget:plan]] plus [[issues-view]]').nodes, ['issues-view'])
 })
 
 // ---- parseParentDirective: the @parent: action, consumed at the create boundary ----
@@ -56,6 +60,14 @@ const off = (id: string, name: string | null) => ({ id, name, title: null, liven
 test('summarizeLoopIn: courtesy is distinct from @ references', () => {
   assert.equal(summarizeLoopIn({ originator: 'alice' }), 'looped in originator @alice (online)')
   assert.equal(summarizeLoopIn(), '')
+})
+
+test('newIssueDeliveryPrompt identifies a newly opened issue and carries concern plus description', () => {
+  const prompt = newIssueDeliveryPrompt('local#new', 'issues-view', 'human', 'A concern', 'Details here')
+  assert.match(prompt, /opened a new issue "A concern"/)
+  assert.match(prompt, /Details here/)
+  assert.match(prompt, /spex issue show local#new/)
+  assert.match(prompt, /re: \[\[issues-view\]\]/)
 })
 
 // ---- the dispatch fallback chain (R3): filer → node's governing session → nobody ----

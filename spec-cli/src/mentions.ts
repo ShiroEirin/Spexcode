@@ -3,7 +3,9 @@
 // the created worker's supervisor. Its dispatcher stays here
 // so every composer reaches the same creation owner after its own write has committed.
 const SESSION_RE = /(?:^|\s)@([\p{L}\p{N}_-]+(?::[\p{L}\p{N}_.-]+)?)/gu
-const NODE_RE = /\[\[([^\]\s]+)\]\]/g
+// Node ids use the same vocabulary as the dashboard trigger. Qualifiers such as `file:` and `widget:` are
+// separate passive references, so the colon must keep them out of node inference.
+const NODE_RE = /\[\[(\.?[\p{L}\p{N}_-]+)\]\]/gu
 
 const uniq = (xs: string[]): string[] => [...new Set(xs)]
 
@@ -196,6 +198,16 @@ export function mentionDeliveryPrompt(threadId: string, node: string | null, rep
   const re = node ? ` (re: [[${node}]])` : ''
   return `${replier} sent you a reply from issue thread "${threadId}"${re}:\n\n  ${text.trim()}\n\n` +
     `Read the thread (\`spex issue show ${threadId}\`) and act on what concerns you; reply with \`spex issue reply ${threadId} --body -\`.`
+}
+
+// The New issue twin of mentionDeliveryPrompt: the selected session receives the durable issue's concern and
+// description, with wording that makes its creation event explicit. The browser never composes this message;
+// the backend calls it only after createIssue has persisted the issue.
+export function newIssueDeliveryPrompt(threadId: string, node: string | null, replier: string, concern: string, text: string): string {
+  const re = node ? ` (re: [[${node}]])` : ''
+  const description = text.trim() || '(no description)'
+  return `${replier} opened a new issue "${concern.trim()}"${re} (issue ${threadId}):\n\n  ${description}\n\n` +
+    `Read the new issue (\`spex issue show ${threadId}\`) and act on what concerns you; reply with \`spex issue reply ${threadId} --body -\`.`
 }
 
 export async function notifyOriginator(
