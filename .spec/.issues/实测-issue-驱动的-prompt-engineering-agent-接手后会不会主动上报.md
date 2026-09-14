@@ -1,9 +1,10 @@
 ---
 concern: 实测 issue 驱动的 prompt engineering：agent 接手后会不会主动上报、issue 关闭后会不会停止上报
 by: 2499a20b-ae58-4074-87de-3753e02fe63b
-status: open
+status: landed
 nodes: issue-driven-development, issue-binding, mentions
 created: 2026-09-14T13:18:23.009Z
+closedAt: 2026-09-14T14:53:26.228Z
 ---
 
 **为什么开这条**：issue 驱动这一整套（skill、`spex issue mine/assign` 的回执、assign/unassign 的通知文本、`@new` 派工的 prompt、`[[issue:<id>]]` 署名语法）是**纯 prompt engineering**，我们从来没有实测过一个 agent 拿到这些文字之后的**实际行为**。已知的可疑点：
