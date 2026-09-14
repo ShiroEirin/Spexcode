@@ -1,8 +1,9 @@
 ---
 concern: 清理一下那些没用管的，已经做完了的，以及一些无意义的 local issues
 by: human
-status: open
+status: landed
 created: 2026-09-14T01:21:43.708Z
+closedAt: 2026-09-14T02:20:48.364Z
 ---
 
 @new:codex
