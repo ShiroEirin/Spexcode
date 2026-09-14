@@ -793,6 +793,7 @@ export default {
     issuesSubCount: ({ closed, total }) => `${closed} of ${total} sub-issues closed`,
     issuesSubHideDone: 'Hide completed',
     issuesSubNew: 'Sub-issue',
+    issuesRootDrop: 'move to top level',
     issuesDuplicateOf: 'Duplicate of',
     inputPlaceholder: 'describe the work · @ session · [[ spec · / command · ⏎ to launch · ⇧⏎ newline',
     menuCommands: 'commands',
