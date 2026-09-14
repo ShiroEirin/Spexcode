@@ -5,7 +5,7 @@
 const SESSION_RE = /(?:^|\s)@([\p{L}\p{N}_-]+(?::[\p{L}\p{N}_.-]+)?)/gu
 // Node ids use the same vocabulary as the dashboard trigger. Qualifiers such as `file:` and `widget:` are
 // separate passive references, so the colon must keep them out of node inference.
-const NODE_RE = /\[\[(\.?[\p{L}\p{N}_-]+)\]\]/gu
+const NODE_RE = /\[\[(\.?[\p{L}\p{N}\p{M}_-]+)\]\]/gu
 
 const uniq = (xs: string[]): string[] => [...new Set(xs)]
 

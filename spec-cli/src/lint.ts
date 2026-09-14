@@ -290,24 +290,25 @@ async function specLintInLedger(root: string, regs: ReturnType<typeof extractors
   }
 
   // id-format: a node id (its leaf dir basename) passes an EXACT per-character whitelist — an ascii char
-  // must be [a-z0-9-]; a non-ascii char must be a unicode letter/number (judged on NFC, the mint's
+  // must be [a-z0-9-]; a non-ascii char must be a unicode letter/number/mark (judged on NFC, the mint's
   // canonical form) — and is UNIQUE tree-wide (ERROR). This is THE id vocabulary, defined once (the
   // spec-lint node's rule table) and referenced by [[mentions]] / [[id-url-safe]]: CJK and every other
-  // letter script is first-class, exactly what the script-agnostic resolve machinery already accepts.
+  // letter script, including scripts whose vowel signs are combining marks, is first-class, exactly what
+  // the script-agnostic resolve machinery already accepts.
   // Everything else is forbidden by construction, no heuristics — space, '/', uppercase Latin (lowercase
   // is the Latin norm), control chars, and '_' (reserved as the mint's parent-qualification join; a '_'
   // inside a basename would make that join ambiguous). One optional leading dot is allowed — the
   // reflexive plugin root `.plugins` is dot-prefixed by design. Uniqueness is what keeps the leaf THE id:
   // on a collision the mint must parent-qualify with `_`, so every surface suddenly speaks a longer id
   // than the dir name — legal to the machinery, illegible to people.
-  const ID_RE = /^\.?(?:[a-z0-9-]|(?![\x00-\x7F])[\p{L}\p{N}])+$/u
+  const ID_RE = /^\.?(?:[a-z0-9-]|(?![\x00-\x7F])[\p{L}\p{N}\p{M}])+$/u
   const leafOf = (p: string) => { const segs = p.split('/'); return segs[segs.length - 2] }
   const byLeaf = new Map<string, string[]>()
   for (const s of specs) {
     const leaf = leafOf(s.path)
     byLeaf.set(leaf, [...(byLeaf.get(leaf) ?? []), s.path])
     if (!ID_RE.test(leaf.normalize('NFC')))
-      out.push({ level: 'error', rule: 'id-format', spec: s.id, msg: `node dir '${leaf}' is not a valid id — each char is ascii [a-z0-9-] or a non-ascii unicode letter/number (one optional leading dot); space, '/', '_', uppercase Latin and control chars are forbidden; rename the directory` })
+      out.push({ level: 'error', rule: 'id-format', spec: s.id, msg: `node dir '${leaf}' is not a valid id — each char is ascii [a-z0-9-] or a non-ascii unicode letter/number/mark (one optional leading dot); space, '/', '_', uppercase Latin and control chars are forbidden; rename the directory` })
   }
   for (const [leaf, paths] of byLeaf) {
     if (paths.length > 1)

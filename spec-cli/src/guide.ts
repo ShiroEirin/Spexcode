@@ -124,7 +124,8 @@ WHAT lint CHECKS (spex spec lint; the pre-commit hook gates on errors):
   one-govern (error)  a node governs (code:) at most ONE file — keep the true subject, move the rest
                       to related:.
   living     (error)  no "## vN" changelog headings — the body is current-state.
-  id-format  (error)  each id char is ascii [a-z0-9-] or a non-ascii unicode letter/number (CJK ok; one
+  id-format  (error)  each id char is ascii [a-z0-9-] or a non-ascii unicode letter/number/mark (CJK and
+                      combining-mark scripts ok; one
                       optional leading dot; no space / '/' / '_' / uppercase Latin), and its leaf dir name
                       is unique tree-wide.
   mention    (error)  every [[node-id]] in prose names a real node (fenced/backticked samples exempt).

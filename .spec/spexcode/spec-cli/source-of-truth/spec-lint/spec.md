@@ -104,9 +104,9 @@ worktree state to inspect and continue with the immutable candidate tree.
   whitelist** and is **unique tree-wide**. This bullet is THE id vocabulary: defined once, here;
   [[mentions]] and [[id-url-safe]] reference it, never restate it. The table, judged on NFC (the
   mint's canonical form), deterministically and with no heuristics:
-  - **allowed**: ascii `[a-z0-9-]`; any **non-ascii unicode letter or number** — CJK and every other
-    letter script is a first-class id, exactly what the resolve machinery accepts; one optional
-    **leading dot** (the reflexive `.plugins` root).
+  - **allowed**: ascii `[a-z0-9-]`; any **non-ascii unicode letter, number, or combining mark** — CJK and
+    every other letter script, including scripts whose vowel signs are combining marks, are first-class
+    ids, exactly what the resolve machinery accepts; one optional **leading dot** (the reflexive `.plugins` root).
   - **forbidden** (by construction — anything off the whitelist): space, `/`, **uppercase Latin**
     (lowercase is the Latin norm), control characters, and `_` — reserved as the mint's
     parent-qualification join, which is also why a mention TOKEN accepts `_` while a dir name never
