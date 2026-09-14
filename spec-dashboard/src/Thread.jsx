@@ -232,12 +232,7 @@ export function ReplyComposer({ onSend, specs = [], sessions = [], focusId = nul
         <TriggerButton label={t('thread.mentionNode')} disabled={busy} onClick={() => insertTrigger('[[')}>[[</TriggerButton>
         {err && <span className="fv-error">{err}</span>}
         <div className="fv-actions-end">
-          {mentioned.map((s) => (
-            <button type="button" key={s.id} className="ds-action fv-send-to" disabled={busy || !sendable} data-tip={t('thread.sendToTitle', { to: s.id })}
-              onMouseDown={(e) => e.preventDefault()} onClick={() => send([s.id])}>
-              <Icon name="send" size={12} />{t('thread.sendTo', { to: sessionHeadline(s) })}
-            </button>
-          ))}
+          <SendToSessionActions sessions={mentioned} disabled={busy} sendable={sendable} onSend={(id) => send([id])} />
           {actionsEnd}
           <IconButton icon="send" size={14} className="fv-send" label={busy ? t('session.issuesSending') : t('session.issuesSend')}
             disabled={busy || !sendable} onMouseDown={(e) => e.preventDefault()} onClick={() => send()} />
@@ -247,4 +242,18 @@ export function ReplyComposer({ onSend, specs = [], sessions = [], focusId = nul
   return (
     <ComposerSurface className="fv-compose" preview={preview} editor={editor} footer={footer} />
   )
+}
+
+// The explicit delivery doors shared by the reply and New issue composers ([[issues-view]]). `@<session>`
+// remains passive; a door appears only for an exact retained session and its caller decides whether pressing it
+// replies or creates an issue before handing the text over.
+export function SendToSessionActions({ sessions = [], disabled = false, sendable = true, onSend }) {
+  const t = useT()
+  return sessions.map((s) => (
+    <button type="button" key={s.id} className="ds-action fv-send-to" disabled={disabled || !sendable}
+      data-tip={t('thread.sendToTitle', { to: s.id })}
+      onMouseDown={(e) => e.preventDefault()} onClick={() => onSend?.(s.id)}>
+      <Icon name="send" size={12} />{t('thread.sendTo', { to: sessionHeadline(s) })}
+    </button>
+  ))
 }

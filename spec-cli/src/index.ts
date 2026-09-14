@@ -10,7 +10,7 @@ import { closeIssue, createIssue, findIssue, issueRefs, mergedIssues, promote } 
 import { replyIssueWithLoopIn } from './loop-in.js'
 import { residentForgeState, refreshForgeNow } from '@spexcode/spec-forge/resident'
 import { resolveForgeHost } from '@spexcode/spec-forge/drivers'
-import { dispatchNewMentions, mentionDeliveryPrompt, summarizeDispatch, summarizeLoopIn } from './mentions.js'
+import { dispatchNewMentions, mentionDeliveryPrompt, newIssueDeliveryPrompt, summarizeDispatch, summarizeLoopIn } from './mentions.js'
 import { AssignError, assignIssueSession, summarizeAssign } from './issue-assign.js'
 import { resolveLayout, mainBranch } from '@spexcode/spec-core'
 import { getBoardJson } from './graphCache.js'
@@ -450,11 +450,22 @@ app.post('/api/issues', async (c) => {
   const parent = typeof body?.parent === 'string' && body.parent.trim() ? body.parent.trim() : undefined
   // typed evidence[] — content-addressed evidence hashes (the annotator's clip reference rides here, not prose)
   const evidence = Array.isArray(body?.evidence) ? (body.evidence as unknown[]).filter((h): h is string => typeof h === 'string' && /^[0-9a-f]{64}$/.test(h)) : []
+  // explicit Send to @x deliveries from the New issue composer; a bare @ reference never reaches this list
+  const deliverTo = Array.isArray(body?.deliverTo) ? [...new Set((body.deliverTo as unknown[]).filter((v): v is string => typeof v === 'string' && !!v.trim()))] : []
   try {
-    const r = await createIssue(concern, { store, nodes, body: postBody, evidence, parent, author: await claimedAuthor(body?.by) })
+    const author = await claimedAuthor(body?.by)
+    const r = await createIssue(concern, { store, nodes, body: postBody, evidence, parent, author })
     if (r.store !== 'local') await refreshForgeNow()
+    // The issue is durable before any explicit handoff. Each target gets one ordinary queued message; the harness
+    // drain is deferred so a slow or offline pane cannot hold the create response, and every result is visible.
+    const deliveries: string[] = []
+    for (const target of deliverTo) {
+      const sent = await sendText(target, newIssueDeliveryPrompt(r.id, r.nodes[0] || null, author, concern, postBody || ''), 'issues', { deferDrain: true })
+      if (sent.ok) void drainSession(target).catch((error) => console.error(`spex: new issue handoff deferred for ${target}: ${error instanceof Error ? error.message : String(error)}`))
+      deliveries.push(sent.ok ? `sent to @${target.slice(0, 8)}` : `@${target.slice(0, 8)} NOT sent (${sent.error})`)
+    }
     notifyBoardChanged('full')   // atomic with persistence — see the write-visibility note above the reply route
-    return c.json({ ok: true, id: r.id, store: r.store, nodes: r.nodes, parent: r.parent, url: r.url, outcomes: summarizeDispatch(r.outcomes) }, 201)
+    return c.json({ ok: true, id: r.id, store: r.store, nodes: r.nodes, parent: r.parent, url: r.url, outcomes: [summarizeDispatch(r.outcomes), ...deliveries].filter(Boolean).join('  |  ') }, 201)
   } catch (e) {
     return c.json({ error: String((e as Error).message || e) }, store === 'local' ? 500 : 502)
   }
