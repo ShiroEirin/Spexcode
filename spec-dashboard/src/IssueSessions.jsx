@@ -102,13 +102,26 @@ function Voice({ id, sessions, tags = [], onOpenSession }) {
   if (s) {
     const d = sessionDisplayState(s)
     return <SideValue text={sessionHeadline(s)} lead={<StatusDot s={s} />} trail={trail} tip={`${s.id} · ${t(`status.${d.status}`)}`} label={sessionHeadline(s)}
-      className="fv-originator alive openable" onClick={() => onOpenSession?.(s.id)} />
+      className="fv-originator alive openable" onClick={() => focusTrace(s.id, onOpenSession)} />
   }
   if (isSessionId) {
     const dot = <span className="fv-originator-dot" style={{ background: STATUS_COLOR.offline }} aria-hidden="true" />
-    return <SideValue text={archived || id.slice(0, 8)} lead={dot} trail={trail} tip={id} label={archived || id} className="fv-originator offline openable" onClick={() => onOpenSession?.(id)} />
+    return <SideValue text={archived || id.slice(0, 8)} lead={dot} trail={trail} tip={id} label={archived || id} className="fv-originator offline openable" onClick={() => focusTrace(id, onOpenSession)} />
   }
   return <SideValue text={id} trail={trail} dim />
+}
+
+// scroll a session's trace in the thread into view and mark it, so the rail READS AS NAVIGATION: it takes the human to
+// where that agent left its trace in the body, and the trace's own door is what leaves for the console
+// ([[issue-binding]]). A session with no trace yet (queued, nothing declared) falls back to its console, because
+// there is nothing here to point at.
+const focusTrace = (id, onOpenSession) => {
+  const rows = [...document.querySelectorAll(`[data-thread-session="${id}"]`)]
+  const row = rows[rows.length - 1]
+  if (!row) { onOpenSession?.(id); return }
+  row.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  for (const marked of document.querySelectorAll('.is-thread-focus')) marked.classList.remove('is-thread-focus')
+  row.classList.add('is-thread-focus')
 }
 
 export default function IssueSessions({ issue, sessions = [], onOpenSession, onWrite, onError, onCompose }) {
@@ -180,9 +193,9 @@ export default function IssueSessions({ issue, sessions = [], onOpenSession, onW
                   <div className="fv-fleet-row" data-sid={s.id}>
                     <SessionConsoleTreeRow item={item} activeId={null} onToggleFold={() => toggle(s.id)} rowProps={{
                       'data-tip': s.note ? `${status} · ${s.note}` : status,
-                      // a click FOCUSES the session — its console answers "what is it doing", while the rail answers
-                      // "who is on this, does it need me". ctrl/⌘ opens that console in a new tab ([[tab-strip]]).
-                      onClick: (e) => { if (isNewTabGesture(e)) openNewTab('sessions', s.id); else onOpenSession?.(s.id) },
+                      // a click FOCUSES this session's trace in the thread — the rail navigates, the body holds the
+                      // record, and the trace's own door leaves for the console. ctrl/⌘ still opens that console.
+                      onClick: (e) => { if (isNewTabGesture(e)) openNewTab('sessions', s.id); else focusTrace(s.id, onOpenSession) },
                       onContextMenu: (e) => { e.preventDefault(); e.stopPropagation(); setMenu({ x: e.clientX, y: e.clientY, session: s }) },
                     }} />
                     {s.id === issue.by && <span className="rl-tag fv-voice-tag">{t('fleet.opened')}</span>}
