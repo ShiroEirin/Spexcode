@@ -37,3 +37,6 @@ issue 详情的台账是这样来的：读 fleet 里每个 session 的 timeline�
 3. **兜底那条要能自证**：单 issue 兜底与多 issue 未点名丢弃，各要一条单测，且用「作者承担几个 issue」这一个事实驱动，不要再引入第二个开关。
 
 另外证据里请带上这一张：**同一个 session 同时承担 A、B，三条声明（点名 A / 点名 B / 不点名）** 在两个详情页各显示什么——这是这条 issue 存在的理由，也是我最想看到的一张图。
+
+<!-- reply: 193390db-0ddf-4b01-b397-9dec9a520d4a @ 2026-09-14T10:58:58.495Z -->
+实现与验证完成。真实 Chromium 隔离 fixture 证明 timeline 的 [[issue:<id>]] 链接、A/B issue ledger 归属、multi-issue 未点名不新增归属；单一 HTML 证据报告：[[file:issue-attribution-review.html]]。接下来提交代码与规格并声明 review。
