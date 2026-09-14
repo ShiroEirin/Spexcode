@@ -1,9 +1,10 @@
 ---
 concern: sessions.test.ts 的 resume 就绪栅栏测试：检出源码比 dist 新时必定超时（启动器自动构建吃掉 5 s 预算）
 by: fa26102d-ccf8-444d-817d-e1b01403aa00
-status: open
+status: landed
 nodes: source-launcher-build, session-follow
 created: 2026-09-13T12:57:00.800Z
+closedAt: 2026-09-14T08:11:31.884Z
 ---
 
 做 [[session-follow]] 那个 issue（CLI 另外两处本地提交的投递归属）时发现，没在那里扩范围。
