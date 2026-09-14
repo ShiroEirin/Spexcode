@@ -26,20 +26,18 @@ export type AssignOutcome = {
 // the message the assigned session receives: what it now owns, who handed it over, and how to read the thread.
 // Deliberately not the @new worker prompt — this session has its own task already and is being asked to take
 // this one on, so the text says so instead of pretending the thread is a fresh look.
-// @@@ every reference is to THIS id, never "the issue" - measured: told "read the thread and act on it" while
-// already carrying another issue, a real worker reported its progress on the OTHER thread and left this one
-// empty. So the id is repeated in place of every pronoun, and a session that now carries more than one is told
-// so, with the count, the ids, and the attribution reference the ledger reads ([[issue-binding]]) — derived
-// from the set the assign just wrote, so the text can never disagree with the record.
+// @@@ says only what the skill cannot - [[issue-driven-development]] is in the same context and already teaches
+// how to report, declare and attribute; repeating it here would be the same words twice in one prompt. So this
+// message carries the facts of THIS moment only: which id, who handed it over, and — derived from the set the
+// assign just wrote, so the text cannot disagree with the record — how many issues the session now carries.
+// Every reference is the id, never "the issue": measured, a worker told to "read the thread" while already
+// holding another one reported its progress on that other thread and left this one empty.
 export function assignPrompt(issue: Issue, by: string, carries: readonly string[] = [issue.id]): string {
-  const node = issue.nodes[0] ? `; the relevant node is [[${issue.nodes[0]}]]` : ''
+  const node = issue.nodes[0] ? `; the node is [[${issue.nodes[0]}]]` : ''
   const others = carries.filter((id) => id !== issue.id)
-  const scope = others.length
-    ? `\n\nYou now carry ${carries.length} issues: ${carries.join(', ')}. Run \`spex issue mine\` to see them all, and name the one you mean in EVERY reply and declaration note as [[issue:${issue.id}]] — an unqualified note appears on none of them, and a reply posted on another issue is not this issue's report.`
-    : `\n\nYour declarations (\`spex session done --propose merge\` / \`ask\` / \`park\`) are what this issue shows as your status; the thread carries the reasoning behind them.`
   return `You have been assigned issue "${issue.id}" by ${by}: ${issue.concern}\n\n` +
-    `Read that thread before you touch anything (\`spex issue show ${issue.id}\`) and act on it${node}. ` +
-    `Report progress on it with \`spex issue reply ${issue.id} --body -\` as you go.${scope}`
+    `Read it first: \`spex issue show ${issue.id}\`${node}. Report progress there: \`spex issue reply ${issue.id} --body -\`.` +
+    (others.length ? `\n\nYou now carry ${carries.length} issues: ${carries.join(', ')}.` : '')
 }
 
 export type AssignDeps = {
@@ -141,13 +139,9 @@ export const summarizeUnassign = (o: UnassignOutcome): string =>
 // session's own act, [[state]]) — it says the thread is landed and leaves both facts alone.
 export function closedPrompt(issue: Pick<Issue, 'id'> & { concern?: string }, by: string, others: readonly string[] = []): string {
   const what = issue.concern ? `: ${issue.concern}` : ''
-  const rest = others.length
-    ? ` You are still bound to ${others.length === 1 ? `issue "${others[0]}"` : `${others.length} other issues (${others.join(', ')})`} — carry on there, and name the issue in every reply and declaration note as [[issue:<id>]].`
-    : ''
   return `Issue "${issue.id}" was closed by ${by} — its thread is landed${what}\n\n` +
-    `Stop working for this issue and post no further replies on its thread unless it is assigned to you again.${rest}\n\n` +
-    `Closing the issue did not close you. If you still hold uncommitted work for it, commit or discard it, say so in one last reply, ` +
-    `and then declare your own end (\`spex session done --propose close --note "<why nothing to merge>"\`).`
+    `Stop work on it and post no more replies there.` +
+    (others.length ? ` Still yours: ${others.join(', ')} — continue there.` : '')
 }
 
 export type CloseNotice = { session: string; delivered: boolean; error?: string }

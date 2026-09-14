@@ -13,7 +13,7 @@ test('a session with one issue, or a note naming one of its own, is told nothing
 
 test('an unattributable declaration is told what it cost, and what to write instead', () => {
   const text = attributionNudge(['local#a', 'local#b'], 'fixed the fold count')
-  assert.match(text, /carries 2: local#a, local#b/)
+  assert.match(text, /you carry 2: local#a, local#b/)
   assert.match(text, /appears on NONE/)
   assert.match(text, /\[\[issue:local#a\]\]/, 'the example names one of the session\'s own issues')
   assert.equal(attributionNudge(['local#a', 'local#b'], null), attributionNudge(['local#a', 'local#b'], ''))
@@ -21,7 +21,7 @@ test('an unattributable declaration is told what it cost, and what to write inst
 
 test('a note naming an issue the session does not carry is named as the stray it is', () => {
   const text = attributionNudge(['local#a', 'local#b'], 'about [[issue:local#c]]')
-  assert.match(text, /names \[\[issue:local#c\]\], which is not one of them/)
+  assert.match(text, /It names \[\[issue:local#c\]\], which is not one of them/)
 })
 
 test('a quoted reference is inert here too, because the ledger reads it the same way', () => {

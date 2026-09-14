@@ -126,7 +126,7 @@ async function issueVerbs(args: string[]): Promise<number> {
     // worker can be told it carries more than one issue, because only here is the count known. Measured: workers
     // ran this first and still declared without naming an issue, so the rule is said here rather than only in the
     // skill. On stderr in both forms: an agent reads it, a `--json` consumer's parse never sees it.
-    if (bound.length > 1) console.error(`\nyou carry ${bound.length} issues — name the one you mean in every reply and declaration note as [[issue:<id>]] (e.g. [[issue:${bound[0]}]]). An unqualified declaration appears on none of them.`)
+    if (bound.length > 1) console.error(`\nyou carry ${bound.length} issues — name the issue in each declaration note, e.g. [[issue:${bound[0]}]].`)
     return 0
   }
   if (args[0] === 'links') {

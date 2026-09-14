@@ -176,6 +176,21 @@ The principles, in the maintainer's own framing:
     the rule is about *expectations*, not about outlawing constants — a fact with exactly one home is fine
     where it lives, the defect is the second place that restates it.
 
+24. **A prompt pays for every word twice, so say each thing once and only where it is read.** The maintainer's
+    framing: "prompt engineering 里的东西尽量不要重复，在一个 prompt 里出现过的内容尽量不要重复出现；要非常
+    的精简，以最少的字数去完成我们期望的那个 workflow". The unit is the CONTEXT, not the file: a skill, its own
+    `description`, the message a verb sends and the receipt a command prints all arrive in one window, so a rule
+    restated in the notice that the skill already teaches is the same words twice — and the second copy is worse
+    than wasted, because the two drift and the agent then has to guess which is current ([[taste]] 23's second
+    source of truth, wearing prose). The division that falls out is clean and is the rule to apply: a **message
+    or receipt carries only the facts of its moment** — which id, who acted, how many issues you now hold, what
+    this note failed to attribute — while the **skill carries every general rule**, because it is present on
+    every turn anyway. Measured on the surfaces this taste was stated about: the assignment notice, the close
+    notice, the declaration advisory and the `issue mine` footer each shrank to their local fact, and the skill
+    lost its closing verb table (a row per verb already taught in prose), its intro's restatement of its own
+    `description`, and 315 words, with no rule lost. The discipline is not brevity for its own sake: cut what is
+    said elsewhere in the same context, keep what is said nowhere.
+
 ## expanded spec
 
 This node is the seed. The de-drift campaign distills these into a sharper checklist (the "20 tastes" + the
