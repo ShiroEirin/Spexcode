@@ -37,6 +37,15 @@ import { SpecBody } from './NodeView.jsx'
 // block of overview over every plugin and left the body itself as raw markdown in a `<pre>`. A document
 // scrolls whole; the frame around it is what holds still.
 //
+// @@@what-it-has-actually-done - a plugin's declarations are the same on every load; what it has DONE is the
+// only thing on this page that moves, and it is exact rather than sampled because the dispatcher that writes
+// it is the thing that runs every hook ([[hook-ledger]]). It is drawn under the marks rule like everything
+// else: the ordinary case — it ran, nothing refused — puts NOTHING on the pill, because a count on all 27
+// pills is the badge farm again. Only the two exceptional readings reach the drawing: a hook that has never
+// fired in the whole window, and a refusal, which carries its tally on the mark that already exists. The
+// rest — runs, failures, median, last, the window itself — is in the detail beside the plugin's own text,
+// which is where a reader who wants a number has gone looking for one.
+//
 // @@@normal-is-not-drawable - a marker for the ORDINARY case must be unrepresentable, or nothing stands out
 // because everything is marked. An earlier version put order, refusal and a file count on every row and
 // read as a badge farm. So `Mark` returns null unless the thing it names is true, and `order` is drawn only
@@ -44,6 +53,15 @@ import { SpecBody } from './NodeView.jsx'
 // position already says it.
 
 const specHref = (name) => `#/spec/${encodeURIComponent(name)}`
+const ago = (ms, t) => {
+  const s = Math.max(0, (Date.now() - ms) / 1000)
+  if (s < 45) return t('time.justNow')
+  const m = s / 60, h = m / 60, d = h / 24
+  if (m < 45) return t('time.minutes', { n: Math.round(m) })
+  if (h < 22) return t('time.hours', { n: Math.round(h) })
+  if (d < 7) return t('time.days', { n: Math.round(d) })
+  return t('time.weeks', { n: Math.round(d / 7) })
+}
 const SURFACE_FILTERS = ['all', 'hook', 'system', 'invoked']
 
 // a mark exists only when it is TRUE; there is no neutral variant to render by accident
@@ -58,7 +76,7 @@ const langOf = (path) => {
   return ({ sh: 'sh', bash: 'sh', mjs: 'js', js: 'js', ts: 'ts', md: 'markdown', json: 'json' })[ext] || ext
 }
 
-function Detail({ name, row, profile, t }) {
+function Detail({ name, row, profile, activity, t }) {
   const [detail, setDetail] = useState(null)
   const [error, setError] = useState(null)
 
@@ -94,6 +112,20 @@ function Detail({ name, row, profile, t }) {
         {detail?.tools?.length > 0 && <span className="stat-chip">{t('plugins.factTools')} <b>{detail.tools.join(', ')}</b></span>}
         <a className="stat-back pg-detail-node" href={specHref(name)}>{t('plugins.openNode')} ↗</a>
       </div>
+      {activity.available && row?.surfaces?.includes('hook') && (() => {
+        const seen = activity.byHook[name]
+        return (
+          <dl className="pg-run" data-tip={t('plugins.runWindow', { since: activity.sinceDay, days: activity.days })}>
+            <dt>{t('plugins.runRuns')}</dt><dd>{seen ? seen.runs : t('plugins.runNever')}</dd>
+            {seen?.refusals > 0 && <><dt>{t('plugins.runRefused')}</dt><dd className="pg-run-refuse">{seen.refusals}</dd></>}
+            {seen?.failures > 0 && <><dt>{t('plugins.runFailed')}</dt><dd className="pg-run-refuse">{seen.failures}</dd></>}
+            {seen?.unfinished > 0 && <><dt>{t('plugins.runUnfinished')}</dt><dd>{seen.unfinished}</dd></>}
+            {seen?.medianMs != null && <><dt>{t('plugins.runMedian')}</dt><dd>{t('plugins.runMs', { n: seen.medianMs })}</dd></>}
+            {seen?.lastMs && <><dt>{t('plugins.runLast')}</dt><dd>{ago(seen.lastMs, t)}</dd></>}
+            {seen?.lastRefusal?.reason && <><dt>{t('plugins.runWhy')}</dt><dd className="pg-run-why">{seen.lastRefusal.reason}</dd></>}
+          </dl>
+        )
+      })()}
       {error && <p className="pg-error">{t('plugins.failed', { reason: error })}</p>}
       {!error && !detail && <div className="pane-loading"><span className="spinner" aria-label={t('plugins.loading')} /></div>}
       {detail && <>
@@ -127,7 +159,7 @@ const KNOWN_EVENTS = new Set(['SessionStart', 'UserPromptSubmit', 'PreToolUse', 
 // a station's aside: what the agent is doing there that no hook is — said once, where it happens
 const STATION_ASIDE = { PreToolUse: 'plugins.toolRuns', Notification: 'plugins.waiting', Stop: 'plugins.refusedBack' }
 
-function Pill({ row, name, selected, onSelect, dim, off, mark = null, order = null, small = false }) {
+function Pill({ row, name, selected, onSelect, dim, off, mark = null, order = null, small = false, cold = false, coldTip = null, coldLabel = null }) {
   const on = selected === name
   return (
     <button type="button"
@@ -136,11 +168,12 @@ function Pill({ row, name, selected, onSelect, dim, off, mark = null, order = nu
       onClick={() => onSelect(name)}>
       {mark}<span className="lc-pill-name">{name}</span>
       {order != null && <span className="pg-ord">{order}</span>}
+      {cold && <span className="lc-never" data-tip={coldTip}>{coldLabel}</span>}
     </button>
   )
 }
 
-function Station({ event, hooks, byName, keep, profile, selected, onSelect, t, children }) {
+function Station({ event, hooks, byName, keep, profile, activity, selected, onSelect, t, children }) {
   const many = hooks.length > 1
   return (
     <div className="lc-station">
@@ -152,9 +185,19 @@ function Station({ event, hooks, byName, keep, profile, selected, onSelect, t, c
           <div className="lc-hooks">
             {hooks.map((hook) => {
               const row = byName.get(hook.name)
+              const seen = activity.byHook[hook.name]
+              const refusals = seen?.refusals || 0
               return <Pill key={hook.name} row={row} name={hook.name} selected={selected} onSelect={onSelect}
                 dim={!keep(row)} off={profile.disables.includes(hook.name)}
-                mark={<Mark when={hook.block} glyph="⊘" tone="refuse" tip={t('plugins.blocksTip')} />}
+                cold={activity.available && !seen}
+                coldTip={t('plugins.neverTip', { since: activity.sinceDay })}
+                coldLabel={t('plugins.never')}
+                mark={hook.block
+                  ? <span className={`pg-mark pg-refuse${refusals > 0 ? ' has-count' : ''}`}
+                      data-tip={refusals > 0 ? t('plugins.refusedTip', { n: refusals }) : t('plugins.blocksTip')}>
+                      ⊘{refusals > 0 && <b>{refusals}</b>}
+                    </span>
+                  : null}
                 order={many ? hook.order : null} />
             })}
           </div>
@@ -186,6 +229,7 @@ export default function PluginsView() {
   const [selected, setSelected] = useState(null)
   const [query, setQuery] = useState('')
   const [surface, setSurface] = useState('all')
+  const [activity, setActivity] = useState({ available: false, sinceDay: null, days: 0, runs: 0, byHook: {} })
   const [width, onDragStart, resetWidth] = useResizable('spex.pluginsPanelWidth', 380, { min: 260, max: 640 })
 
   useEffect(() => {
@@ -194,6 +238,17 @@ export default function PluginsView() {
       .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
       .then((data) => { if (live) setView(data) })
       .catch((err) => { if (live) setError(err.message || String(err)) })
+    return () => { live = false }
+  }, [])
+
+  // the activity is a second, independent read: the inventory never changes between loads and this changes on
+  // every event, so a failure here leaves the drawing whole and simply says nothing about what has run.
+  useEffect(() => {
+    let live = true
+    fetch(apiUrl('/api/plugins/activity'))
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
+      .then((data) => { if (live) setActivity(data) })
+      .catch(() => {})
     return () => { live = false }
   }, [])
 
@@ -221,7 +276,7 @@ export default function PluginsView() {
   const invoked = rows.filter((row) => row.surfaces.includes('skill') || row.surfaces.includes('command'))
   const hooksOf = new Map(spine.map((slot) => [slot.event, slot.hooks]))
   const offSpine = spine.filter((slot) => !KNOWN_EVENTS.has(slot.event))
-  const ctx = { byName, keep, profile, selected, onSelect: setSelected, t }
+  const ctx = { byName, keep, profile, activity, selected, onSelect: setSelected, t }
 
   // one station of the lifecycle; the two clusters ride the station where their surface acts
   const drawStation = (event) => (
@@ -234,7 +289,10 @@ export default function PluginsView() {
   )
   // one repeating frame: its stations, the frame nested inside it, then the stations after that
   const drawFrame = (frame) => (
-      <div className={`lc-frame lc-frame-${frame.key}`} data-label={t(`plugins.frame.${frame.key}`)}>
+      // a frame draws its own spine only when it has two stations of its own to join; one station and a
+      // nested loop have nothing to connect, and a line running past the loop to nowhere is a dangling stroke
+      <div className={`lc-frame lc-frame-${frame.key}${frame.events.length + frame.after.length > 1 ? ' lc-frame-spined' : ''}`}
+        data-label={t(`plugins.frame.${frame.key}`)}>
         <span className="lc-loop" aria-hidden="true" title={t('plugins.repeats')}>↺</span>
         {frame.events.map(drawStation)}
         {frame.inner && drawFrame(frame.inner)}
@@ -251,6 +309,9 @@ export default function PluginsView() {
           aria-label={t('plugins.searchHint')} onChange={(e) => setQuery(e.target.value)} />
         <Segmented label={t('plugins.surfaceFilter')} value={surface} onPick={setSurface}
           options={SURFACE_FILTERS.map((value) => ({ value, label: t(`plugins.filter.${value}`) }))} />
+        {activity.available && <span className="pg-ledger" data-tip={t('plugins.runWindow', { since: activity.sinceDay, days: activity.days })}>
+          {t('plugins.ledger', { runs: activity.runs, since: activity.sinceDay })}
+        </span>}
         <span className="pg-profile">
           <span className="pg-profile-k">{t('plugins.profileLabel')}</span>
           <code>{profile.name}</code>
@@ -272,7 +333,7 @@ export default function PluginsView() {
           </div>}
         </nav>
         <div className="pg-resize" onMouseDown={onDragStart} onDoubleClick={resetWidth} aria-hidden="true" />
-        <Detail name={selected} row={byName.get(selected)} profile={profile} t={t} />
+        <Detail name={selected} row={byName.get(selected)} profile={profile} activity={activity} t={t} />
       </div>
     </div>
   )

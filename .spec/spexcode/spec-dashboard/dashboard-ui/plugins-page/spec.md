@@ -16,6 +16,7 @@ related:
   - spec-dashboard/src/i18n/en.js
   - spec-dashboard/src/i18n/zh.js
   - spec-cli/src/plugins-view.ts
+  - spec-cli/src/hook-ledger.ts
 ---
 
 # plugins-page
@@ -38,7 +39,9 @@ the harness's own hooks reference draws it and the way Vue's lifecycle diagram h
 readers to read one: a spine down the pane with one station per event in the order they fire, frames only
 around what REPEATS — each turn, and each tool call inside it — and every hook a pill tied to the station it
 fires on. A repeating frame wears a loop glyph in its corner, and the spine runs on beside it so the eye
-reads that the session continues after the turn and the turn after the tool call. The session itself is
+reads that the session continues after the turn. A frame draws a spine of its own only when it holds two
+stations to join: the turn frame holds one station and the tool loop, and a line running past that loop to
+nowhere is a dangling stroke, so it draws none. The session itself is
 not framed: it is the page, and a box around everything is a box that says nothing.
 
 The other two surfaces are not two more headings. They take their real place in the picture: always-on
@@ -137,16 +140,34 @@ running. It is shown as the state it is — which profile is active, how many ho
 off, with a disabled hook greyed in place rather than hidden. The board does not write it: the profile is an
 environment variable of the process an agent launches under, not a project setting this page owns.
 
-## the board says what the automation IS, never how a branch is doing
+## the board draws what the automation HAS DONE, and only what it can count exactly
 
-The rows here are declarations: which surface a node plugs into, which event it binds, whether it may
-refuse. None of that changes between one session and the next, so a number that DOES change belongs to a
-board about work, not to this one. An earlier draft carried a health bar counting live worktrees against
-declared contracts, and its denominator was wrong three times running — dormant directories, then live
-sessions, then, on inspection, branch age — because the quantity it wanted did not exist on this surface to
-be counted correctly. That is the general rule, not an anecdote about one bar: a figure this page cannot
-derive from the plugin definitions it reads is a figure this page must not draw, and the reader who wants
-the fleet's state has [[sessions-view]] for it.
+The declarations here — which surface a node plugs into, which event it binds, whether it may refuse — are
+the same on every load. What moves is what the automation has actually done, and that is now on the page,
+because [[hook-ledger]] makes it countable: the dispatcher that writes it is the thing that runs every hook,
+so a count is a fact about execution rather than an estimate of it.
+
+This does not reopen the door the health bar walked through. That bar counted live worktrees against declared
+contracts and its denominator was wrong three times running — dormant directories, then live sessions, then
+branch age — because the quantity it wanted did not exist on this surface to be counted correctly. The rule
+it taught stands unchanged: a figure this page cannot derive exactly is a figure it must not draw. The
+difference is that this one has a real denominator and a stated window, and the window is drawn with it, so a
+count is never read as all-time. The reader who wants the fleet's state still has [[sessions-view]].
+
+The activity is a SECOND read, independent of the inventory: the inventory is a function of the declarations
+and identical between two loads, the activity changes on every event. So a slow or absent ledger leaves the
+drawing whole and the page simply says nothing about what has run, which is the honest failure for a fact
+nobody has yet.
+
+Two readings earn a place in the drawing itself, under the same marks rule as everything else. A hook that is
+installed and has NEVER been dispatched in the whole window says so in words on its pill — that is the fact
+the count exists to surface, and it was true of one hook here for a month with nothing on any surface saying
+so. And a refusal carries its tally on the mark that already names the capability, because how many times it
+refused and that it may refuse are one reading. Everything else the ledger knows — how many dispatches, how
+many failed, how many were killed mid-run, the median cost, when it last ran, and why it last refused —
+belongs in the detail beside the plugin's own text, one rung quieter than the declarations, because a
+declaration is true forever and a count is only true of a window. A number on all twenty-seven pills would be
+the badge farm the marks rule exists to prevent.
 
 ## a board is a frame, not a document
 

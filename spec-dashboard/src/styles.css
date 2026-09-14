@@ -4084,9 +4084,9 @@ body.is-session-dragging .si-pill.archive:hover {
   background: var(--panel); color: var(--muted); font-size: var(--type-caption); }
 .lc-frame-turn, .lc-frame-tool { margin-top: var(--space-6); margin-bottom: var(--space-4); }
 .lc-frame-turn { margin-left: var(--space-5); } .lc-frame-tool { margin-left: var(--space-5); }
-/* the spine: ONE line down each frame from its first station, stations as ticks on it; a nested frame sits
-   beside the line, so the outer loop visibly carries on past the inner one */
-.lc-frame::after { content: ''; position: absolute; left: calc(var(--space-3) + 4px); top: calc(var(--space-5) + 14px);
+/* the spine: ONE line down the pane from its first station, stations as ticks on it; a frame draws its own
+   only when it holds two stations to join — one station beside a nested loop has nothing to connect */
+.lc-frame-spined::after { content: ''; position: absolute; left: calc(var(--space-3) + 4px); top: calc(var(--space-5) + 14px);
   bottom: calc(var(--space-3) + 6px); border-left: 1px solid var(--line); }
 .lc-station { position: relative; display: flex; gap: var(--space-3); padding: var(--space-2) 0; }
 .lc-loop { position: absolute; right: 10px; bottom: 2px; color: var(--muted); font-size: var(--type-meta); }
@@ -4104,6 +4104,14 @@ body.is-session-dragging .si-pill.archive:hover {
   font: var(--type-meta) var(--ui-font); cursor: pointer; }
 .lc-pill:hover { border-color: color-mix(in srgb, var(--ink) 30%, var(--line)); color: var(--ink2); }
 .lc-pill.on { background: var(--wash-selected); border-color: var(--blue); color: var(--ink2); }
+/* THE TWO READINGS THE LEDGER EARNS A PLACE FOR ([[hook-ledger]]). A hook installed that has never once been
+   dispatched is the fact the whole count exists to surface, so it is a word on the pill, not a tooltip; a
+   refusal tally rides the mark that already carries the refusal, because the count and the capability are one
+   reading. Everything else the ledger knows is in the detail — a number on all 27 pills is the badge farm the
+   marks rule exists to prevent. */
+.lc-never { flex: none; color: var(--muted); font-size: var(--type-caption); font-style: italic; }
+.pg-mark.has-count { display: inline-flex; align-items: center; gap: 1px; }
+.pg-mark.has-count b { font-weight: var(--weight-medium); font-variant-numeric: tabular-nums; }
 .lc-pill.is-dim { opacity: .35; } .lc-pill.is-off .lc-pill-name { color: var(--muted); text-decoration: line-through; }
 .lc-pill .pg-mark { font-size: var(--type-meta); }
 .lc-pill .pg-ord { margin-left: 2px; }
@@ -4133,6 +4141,17 @@ body.is-session-dragging .si-pill.archive:hover {
   background: color-mix(in srgb, var(--orange) 12%, transparent); }
 .pg-chip-off { color: var(--muted); background: none; border-color: var(--line); }
 .pg-detail-node { margin-left: auto; }
+/* what this hook has DONE, in the property row's own voice, one rung quieter: it sits under the declarations
+   because a declaration is true forever and this is only true of a stated window */
+.pg-run { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-1) var(--space-4);
+  margin: 0 0 var(--space-5); padding: 0 0 var(--space-4); border-bottom: var(--divider-rule);
+  font-size: var(--type-caption); }
+.pg-run dt { color: var(--muted); }
+.pg-run dd { margin: 0; color: var(--ink); font-variant-numeric: tabular-nums; }
+.pg-run-refuse { color: var(--orange); }
+.pg-run-why { font-family: var(--mono); color: var(--ink2); overflow-wrap: anywhere; }
+/* the bar's one live number: the ledger's whole window, so the counts in the detail are never read as all-time */
+.pg-ledger { color: var(--muted); font-size: var(--type-meta); font-variant-numeric: tabular-nums; }
 /* the script is the document's own code block; its heading names the file in the prose heading voice */
 .pg-file { margin-top: var(--space-7); }
 .pg-file-name { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--space-3);
