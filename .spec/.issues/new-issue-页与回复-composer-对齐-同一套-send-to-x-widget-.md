@@ -24,3 +24,6 @@ created: 2026-09-14T02:32:53.291Z
 
 <!-- reply: fafd3df8-4a5f-43e9-8b40-1f7a0108e077 @ 2026-09-14T04:20:31.325Z -->
 已读完线程与 [[issues-view]]、[[reply-thread]]、[[composer]]、[[mentions]] 契约。基线已有回复侧 Send to @x 与 @new/[[file:]] 解析，New 页缺共享发送动作、创建接口投递和规格表更新；接下来补齐并做隔离 API/Chromium 验证。
+
+<!-- reply: 53f823f9-0a65-408a-9756-e9e18656619a @ 2026-09-14T04:21:32.383Z -->
+New-page alignment work starts from the thread and current contracts. I’m tracing the shared composer actions, create API, and existing mention delivery before editing; the spec table and New-page delivery contract will be updated with the code.
