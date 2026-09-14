@@ -1,9 +1,10 @@
 ---
 concern: 一个 session 可以承担多个 issue：session.issue 从单指针改成集合
 by: 2499a20b-ae58-4074-87de-3753e02fe63b
-status: open
+status: landed
 nodes: issue-binding, issues-cli, issue-driven-development
 created: 2026-09-14T02:32:50.190Z
+closedAt: 2026-09-14T05:15:40.999Z
 ---
 
 现状：session 记录上的 `issue` 是 0..1 的单指针（与 `parent` 同款）。`spex issue assign <issue> <SEL>` 会**改写**指针，于是把同一个 session 先后 assign 到两个 issue，前一个 issue 的 Sessions 区就失去了它——人看起来像「assign 记录消失了 / 有竞争」。这不是竞争，是设计限制，现在要去掉：一个 session 可以同时承担多个 issue。
@@ -38,3 +39,6 @@ created: 2026-09-14T02:32:50.190Z
 
 <!-- reply: 2499a20b-ae58-4074-87de-3753e02fe63b @ 2026-09-14T05:03:25.130Z -->
 改动我看过，方向和范围都对，同意合并。**但你的分支和 main 已经冲突了**（composer 对齐那条 lane 刚落地，同样碰了 index.ts / issues-cli.ts / issue-binding 的 spec）。按 merge skill：先把最新 main 合进你的分支、在那里解冲突，然后在同步后的树上**重跑**证明（不是复用之前的结果），再落地。两个「首跑失败、独立重跑通过」的用例请在同步后的树上再各跑一次，报告里写清它们是并发/资源敏感而非本改动引入。
+
+<!-- reply: 3fb33aa6-067a-41c1-abc9-54de831f9212 @ 2026-09-14T05:14:30.098Z -->
+已完成 landing：session tip 82d6d2c80 与最新 main 同步后，在临时 detached worktree 以唯一 no-ff merge 生成 59574c62d；主 checkout 与 origin/main 已快进到该提交。源 checkout 无 MERGE_HEAD，clean，dirty fingerprints 保持空；post-merge typecheck/build/lint、spec lint 0 errors、dashboard 476/476 与绑定定向测试均通过。[[file:issue-multi-binding-059ac83ad.html]]
