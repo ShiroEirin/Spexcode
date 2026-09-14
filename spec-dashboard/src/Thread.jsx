@@ -115,7 +115,17 @@ export function Replies({ replies, sessions = [], ledger = [], widgetHost = null
             {author && <a className="ds-action fv-declaration-open" href={routeHash('sessions', r.by)} data-tip={t('fleet.openConsole')}><Icon name="terminal" size={11} />{t('fleet.openConsole')}</a>}
             <span className="fv-declaration-word" aria-label={t('thread.declared')}><span aria-hidden="true">{STATUS_GLYPH[r.status] || '·'}</span> {t(`status.${r.status}`)}</span>
           </div>
-          {r.note && <div className="fv-declaration-note">{r.note}</div>}
+          {r.note && <Prose className="rich-text fv-declaration-note" softBreak="break"
+            renderSpecRef={(id, token, provenance) => {
+              const href = routeHash('spec', id)
+              return <a className="doc-link" href={href} {...provenance} onClick={(event) => newTabAnchor(event, href)}>{id}</a>
+            }}
+            renderIssueRef={(id, token, provenance) => {
+              const href = routeHash('issues', id)
+              return <a className="doc-link doc-issue-ref" href={href} {...provenance} onClick={(event) => newTabAnchor(event, href)}>{id}</a>
+            }}>
+            {r.note}
+          </Prose>}
         </div>
       )
     }
@@ -134,6 +144,10 @@ export function Replies({ replies, sessions = [], ledger = [], widgetHost = null
             renderSpecRef={(id, token, provenance) => {
               const href = routeHash('spec', id)
               return <a className="doc-link" href={href} {...provenance} onClick={(event) => newTabAnchor(event, href)}>{id}</a>
+            }}
+            renderIssueRef={(id, token, provenance) => {
+              const href = routeHash('issues', id)
+              return <a className="doc-link doc-issue-ref" href={href} {...provenance} onClick={(event) => newTabAnchor(event, href)}>{id}</a>
             }}
             renderTimeAnchor={(meta, token, provenance) => <span className="fv-anchor" {...provenance}>{meta.label}</span>}
             renderEvidence={(meta, token, provenance) => <span className="fv-reply-media" data-evidence-hash={meta.hash} {...provenance}><BlobMedia hash={meta.hash} alt={meta.alt || 'evidence'} /></span>}

@@ -201,6 +201,22 @@ test('composeSessionPrompt keeps headless defaults and explicit prompt order', a
   assert.equal(result.replyVia, 'note')
 })
 
+test('composeSessionPrompt honors an initial Conversation reply channel for pane-backed launches', async () => {
+  freshHome()
+  const target = { session: ID, harness: 'claude' } as never
+  const result = await composeSessionPrompt('hello', target, { replyVia: 'note' })
+  assert.equal(result.replyVia, 'note')
+  assert.match(result.text, /SEND FROM NOTE FLOW: Normal output is not visible to the sender/)
+})
+
+test('composeSessionPrompt keeps pane-backed launches ordinary without a Conversation channel', async () => {
+  freshHome()
+  const target = { session: ID, harness: 'claude' } as never
+  const result = await composeSessionPrompt('hello', target)
+  assert.equal(result.replyVia, undefined)
+  assert.equal(result.text, 'hello')
+})
+
 test('canonical timeline is append-only and repeated states remain visible to the reader', () => {
   freshHome()
   transition('active')

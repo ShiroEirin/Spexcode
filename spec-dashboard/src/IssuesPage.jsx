@@ -19,7 +19,7 @@ import { Icon, IconButton } from './icons.jsx'
 import IssueLabels from './IssueLabels.jsx'
 import IssueSessions, { FleetStrip, FleetWorkState } from './IssueSessions.jsx'
 import IssueCloseDialog from './IssueCloseDialog.jsx'
-import { issueFleet, mentionedSessions } from './session.js'
+import { issueFleet, mentionedSessions, sessionIssues } from './session.js'
 import { useLaunchers } from './launch.js'
 import { useReportDocumentName } from './documentActions.jsx'
 import { usePaneActive } from './workspace.jsx'
@@ -328,17 +328,19 @@ export function IssuesListPage({ data, loading, error, query, onQueryText, sessi
 // the fleet's declaration ledger ([[issue-binding]]): one timeline read per fleet session, re-read when a fleet
 // row's status or note moves on the board (the same push the rail repaints on). Read-time only — the issue
 // stores nothing — and a failed read is an empty ledger for that session, never a broken thread.
-function useFleetLedger(fleet, since) {
+function useFleetLedger(fleet, since, issueId) {
   const [ledger, setLedger] = useState([])
-  const key = fleet.map((s) => `${s.id}:${s.status}:${s.note || ''}`).join('|')
+  const key = fleet.map((s) => `${s.id}:${s.status}:${s.note || ''}:${sessionIssues(s).join(',')}`).join('|')
   useEffect(() => {
     let live = true
     if (!fleet.length) { setLedger([]); return undefined }
-    Promise.all(fleet.map((s) => loadSessionTimeline(s.id, { limit: 60 }).then((w) => ledgerFromTimeline(s.id, w?.events)).catch(() => [])))
+    Promise.all(fleet.map((s) => loadSessionTimeline(s.id, { limit: 60 })
+      .then((w) => ledgerFromTimeline(s.id, w?.events, issueId, sessionIssues(s)))
+      .catch(() => [])))
       .then((all) => { if (live) setLedger(latestPerSession(ledgerSince(all.flat(), since))) })
     return () => { live = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, since])
+  }, [key, since, issueId])
   return ledger
 }
 
@@ -441,7 +443,7 @@ export function IssueDetailPage({ issue: th, specs, sessions, onOpenSession, onW
   const replies = Array.isArray(th.replies) ? th.replies : []
   const status = th.status || 'open'
   const { fleet } = issueFleet(th, sessions)
-  const ledger = useFleetLedger(fleet, th.created)
+  const ledger = useFleetLedger(fleet, th.created, th.id)
   // every issue the hierarchy links is titled from the read's own `refs` ([[issues]]) — one read, no request per link
   const refs = th.refs || {}
   const kids = (th.children || []).map((id) => refs[id]).filter(Boolean)

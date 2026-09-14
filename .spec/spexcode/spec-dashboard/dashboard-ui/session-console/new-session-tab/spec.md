@@ -53,7 +53,8 @@ session name and shows the shared tab spinner while creation readiness catches u
 
 Beneath the box a launcher **pop-out picker** is the ONLY launch choice ([[launcher-select]]). A
 launcher names both the harness ([[harness-adapter]] — Claude vs Codex) and the command/auth profile, so the
-launch `POST /api/sessions` carries only `launcher`; the backend derives `harness` from that selected profile.
+launch `POST /api/sessions` carries the selected `launcher` and, for a Conversation-facing launch, its explicit
+`initialReplyVia:"note"` intent; the backend derives `harness` from that selected profile.
 The picker is a clean pill **button** wearing the selected launcher's harness vendor mark + name — no caret,
 no label; its tooltip points at `.spec/spexcode.json` / `.spec/spexcode.local.json` as the one place launchers change.
 It opens a **centred pop-out card** — a viewport-centred dialog over a light backdrop, deliberately
@@ -75,5 +76,7 @@ and hover treatment stay identical to other icon-only controls.
 The launch **substance** — that grammar's composition, the launcher fetch/default/remembered-pick, and the
 one `POST /api/sessions` — is shared with the phone's composer ([[mobile-ui]]): both send the raw grammar
 through `launch.js`, while [[launch]]'s backend owner performs the command-plugin invocation for every caller,
-including CLI and direct API use. This tab owns only the desktop chrome around it (menus, focus discipline,
-background fire) and never expands a plugin body itself.
+including CLI and direct API use. When the resulting document opens on the Conversation base surface, the
+client also sends the create request's explicit `initialReplyVia:"note"` intent so the first agent turn uses the same
+note-flow guidance as later Conversation messages. This tab owns only the desktop chrome around it (menus, focus
+discipline, background fire) and never expands a plugin body itself.

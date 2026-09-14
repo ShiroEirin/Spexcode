@@ -95,6 +95,12 @@ It is typed like `name` and `base` (a non-string is refused before the transacti
 idempotency payload, and copied onto the record as provenance beside `parent`. Nothing here resolves it against
 an issue store — the boundary records what the caller said, and the Issues page's read-time join gives it meaning.
 
+**A create may choose the initial reply channel.** The optional `initialReplyVia` request field currently accepts only
+`"note"`. A creator whose new document opens on the terminal-free Conversation passes that value through the
+same prompt-composition seam used by later input, so a pane-backed launcher receives the full note-flow guidance
+on its first turn. It is part of the normalized idempotency payload; omitting it preserves the ordinary terminal
+launch text, while a headless launcher still defaults to note through the target capability.
+
 **A node branch never tracks the base branch.** Creation passes `--no-track` when forking from any start point,
 including a remote-tracking ref, because landing explicitly merges the base and the node has no business upstream.
 This keeps concurrent creates from contending on `.git/config` while Git writes branch upstream metadata.

@@ -19,6 +19,16 @@ test('parseMentions: qualified file and widget references stay out of node infer
   assert.deepEqual(parseMentions('see [[file:report.md]] and [[widget:plan]] plus [[issues-view]]').nodes, ['issues-view'])
 })
 
+test('parseMentions: issue references are qualified, deduped, and stay out of node inference', () => {
+  const parsed = parseMentions('see [[issue:local#one]] and [[issue:हिन्दी]] then [[issue:local#one]] plus [[issue-view]]')
+  assert.deepEqual(parsed.issues, ['local#one', 'हिन्दी'])
+  assert.deepEqual(parsed.nodes, ['issue-view'])
+})
+
+test('parseMentions: issue references in code are shown text, not attribution', () => {
+  assert.deepEqual(parseMentions('`[[issue:local#one]]` and [[issue:local#two]]').issues, ['local#two'])
+})
+
 test('parseMentions: combining-mark script ids stay one token', () => {
   assert.deepEqual(parseMentions('see [[हिन्दी]] and [[ไทย]]').nodes, ['हिन्दी', 'ไทย'])
 })

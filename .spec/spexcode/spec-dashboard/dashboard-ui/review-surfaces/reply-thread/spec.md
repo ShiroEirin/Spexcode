@@ -35,7 +35,7 @@ one governing home, and the two pages reference it instead of re-describing it.
   to post through, whose node leads the mention list); it never supplies a variant of the thread.
 - **A reply's marks live IN the reply.** A reply is `{ by, at, body }` and may carry a time anchor
   (`▶m:ss · step`) and evidence blobs. Those are rendered from the reply's own text by the one shared
-  [[prose-renderer]] — node references, time anchors and evidence are its semantic tokens, and this node
+  [[prose-renderer]] — node references, issue references, time anchors and evidence are its semantic tokens, and this node
   supplies only what each token DOES in a thread (navigate, show) — so every home that shows a thread
   shows them. A time anchor is one such mark: no home supplies a clip to seek, so it renders as a static
   chip rather than being hidden, and the composer offers no stamp for it. A reply
@@ -43,8 +43,9 @@ one governing home, and the two pages reference it instead of re-describing it.
   composer's action row, never a reply.
 - **A home may add read-time rows to the one time line.** Beside the replies, the list takes a home's ledger rows and
   merges them oldest first, a reply before a row at the same instant: a fleet session's declaration ([[issue-binding]])
-  and a sub-issue's opening or close ([[issues-view]]). Both wear the reply row's own shape, and neither is stored on the
-  thread.
+  and a sub-issue's opening or close ([[issues-view]]). Declaration notes are prose too: their passive
+  `[[issue:<id>]]` references render through the same issue-detail address as timeline notes. Both wear the reply row's
+  own shape, and neither is stored on the thread.
 - **A reply's session references resolve against its AUTHOR.** A `[[file:<name>]]` and a `[[widget:<name>]]` are
   a session's own vocabulary ([[files]], [[widgets]]), so a reply written by a board session resolves them against
   that session's posted files and widgets, through the SAME file-reference and widget components the conversation

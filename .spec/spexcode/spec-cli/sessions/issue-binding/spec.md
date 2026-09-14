@@ -123,6 +123,9 @@ with one visible fleet per issue, and close/retire/children/acceptance reachable
   `active`, `idle` and `queued` stay off it. Nothing is written to the issue: the worker's `done --propose merge`
   IS its report of readiness, which is why the skill forbids typing a status into a reply. A timeline that cannot
   be read contributes nothing, never a broken thread; the ledger re-reads when a fleet row's status or note moves.
+  A note containing `[[issue:<id>]]` is attributed only to that named issue; an unqualified note falls back to the
+  session's sole assigned issue, while a session assigned to multiple issues contributes no unqualified row. The
+  reference is passive and renders as the same issue-detail link in the session timeline and this thread.
   **One line per session, and the ledger starts where the issue starts.** The thread keeps only each session's LATEST
   declaration, with a door into that session's console beside it: the issue page answers "who is on this and what state
   is it in", the session's own console answers "what is it doing", and copying its whole message stream here answered

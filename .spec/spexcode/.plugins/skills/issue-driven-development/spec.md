@@ -65,7 +65,9 @@ board's own colours, with your note as the tooltip:
 
 So: **do not write "status: done" in a reply**, and do not open a second issue to say you finished. The
 declaration IS the status; the thread carries the reasoning behind it. A reply that says "I am blocked on X"
-without an `ask` declaration is invisible to the board — the human sees a working row.
+without an `ask` declaration is invisible to the board — the human sees a working row. When a session carries
+multiple issues, put `[[issue:<id>]]` in the declaration note to say which issue the declaration belongs to; an
+unqualified note is attributed only when the session carries exactly one issue.
 
 ## 5. split, hand over, escalate
 
@@ -103,6 +105,7 @@ without an `ask` declaration is invisible to the board — the human sees a work
 | report | `spex issue reply <id> --body -` | the thread, the originator's inbox |
 | shape | `spex session widget put <name> <file>` + `[[widget:<name>]]` in a reply | the thread, in place |
 | evidence | `spex session files add <path>` + `[[file:<name>]]` | the rail's card, the thread |
+| issue attribution | `[[issue:<id>]]` in a declaration note | the named issue's ledger; passive link in the timeline |
 | status | `spex session done|ask|park …` | the row's colour, action and tooltip |
 | split | `spex issue open "…" --parent <id>`, then `@new` in a reply on it | the sub-issue's thread, the parent's fleet |
 | a new concern | `spex issue open "…" --node <id>` | the Issues list |

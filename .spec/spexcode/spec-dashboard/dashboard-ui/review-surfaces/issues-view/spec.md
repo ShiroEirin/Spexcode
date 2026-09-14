@@ -209,7 +209,9 @@ theatre is invented for a model that has none. An actually empty issue store say
   and posted files ([[reply-thread]]), and the widget is live: its draft joins this composer's preview, and the send
   answers the session that drew it ([[issue-binding]]); the
   fleet's declarations (review / asking / parked / error, with their notes) ride the same thread as read-time ledger
-  rows between the replies, never stored on the issue; a `▶m:ss · step` first line is a time anchor; attached blobs render through the one shared evidence
+  rows between the replies, never stored on the issue. A declaration note names its issue with the passive
+  `[[issue:<id>]]` reference; an unqualified note is kept only for a session carrying one issue, and is omitted for
+  a multi-issue session. The same token is a link to the issue detail in the session timeline. A `▶m:ss · step` first line is a time anchor; attached blobs render through the one shared evidence
   renderer. An `@session` in any composer is a passive [[mentions]] reference retained in the posted prose;
   an exact `@new` dispatches a fresh worker after the write is durable and flashes its creation outcome through
   [[transient-notices]]. A draft that names a retained session by exact `@<id>` grows one explicit **Send to @x**
