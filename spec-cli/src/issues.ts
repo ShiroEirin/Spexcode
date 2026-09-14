@@ -4,6 +4,7 @@ import { FORGE_DRIVERS, forgeDriverFor, forgeIssueStores, resolveForgeHost } fro
 import { closeLocalIssue, loadLocalIssues, loadOne, postLocalIssue, reply, replyLocalIssue } from './localIssues.js'
 import { dispatchNewMentions, parseMentions, type DispatchOutcome } from './mentions.js'
 import { envSessionId } from '@spexcode/spec-core'
+import type { CloseNotice } from './issue-assign.js'
 // A Reply is a plain thread post — author, instant, prose — the ONE shape a local thread's replies and a
 // forge issue's comments both take, so nothing downstream renders two kinds of discussion.
 export type Reply = {
@@ -288,16 +289,35 @@ export async function replyIssue(
   return { store: forge[1], url, author, outcomes: await dispatchNewMentions(body, { threadId: id, node: opts.node ?? null, author }) }
 }
 
+// the close is also where the issue's fleet learns the thread has landed ([[issue-binding]]'s close notice): the
+// sessions bound to it hold a pointer that says this thread is their work, and after the close that is no longer
+// true. Advisory by construction — a store write that landed is never undone because a queue was unreachable, so a
+// failed notice is reported beside the close and nothing else. A repeat close tells nobody: it changed nothing.
+async function tellFleetClosed(id: string, concern: string | undefined, by: string | undefined) {
+  try {
+    const { notifyIssueClosed } = await import('./issue-assign.js')
+    return await notifyIssueClosed({ id, concern }, by || 'human')
+  } catch (e) {
+    console.error(`spex: issue ${id} closed, but its sessions were not told: ${e instanceof Error ? e.message : e}`)
+    return []
+  }
+}
+
 // `duplicateOf` closes a local issue AS a duplicate of its canonical — the relation is written in the same store
 // write as the close, so there is no state enum beyond the existing closed reading. A forge issue has nowhere to hold it.
-export async function closeIssue(id: string, opts: { duplicateOf?: string } = {}): Promise<{ store: string; status: string; url?: string }> {
+export async function closeIssue(id: string, opts: { duplicateOf?: string; by?: string } = {}): Promise<{ store: string; status: string; url?: string; notified: CloseNotice[] }> {
   const forge = /^([A-Za-z0-9-]+)#(\d+)$/.exec(id)
-  if (!forge) return { store: 'local', status: closeLocalIssue(id, opts).status }
+  if (!forge) {
+    // the concern is read before the write so the notice can say WHICH task ended, in the issue's own words
+    const concern = (() => { try { return loadOne(id).concern } catch { return undefined } })()
+    const closed = closeLocalIssue(id, opts)
+    return { store: 'local', status: closed.status, notified: closed.already ? [] : await tellFleetClosed(id, concern, opts.by) }
+  }
   if (opts.duplicateOf) throw new Error(`'${id}' is a forge issue — relations live in the local store, so only a local issue closes as a duplicate`)
   const driver = forgeDriverFor(forge[1])
   if (!driver) throw new Error(`unknown forge host '${forge[1]}' — known: ${FORGE_DRIVERS.map((d) => d.host).join(', ')}`)
   const { url } = await driver.closeIssue({ number: parseInt(forge[2], 10) })
-  return { store: forge[1], status: 'closed', url }
+  return { store: forge[1], status: 'closed', url, notified: await tellFleetClosed(id, undefined, opts.by) }
 }
 
 // ───────────────────────── CLI ─────────────────────────

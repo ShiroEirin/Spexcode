@@ -507,10 +507,19 @@ export function nudge(node: string): string {
 // open — never a forced close.
 export function closeoutNudge(sessionId: string | null | undefined): string {
   if (!sessionId || sessionId === 'unknown' || !issuesEnabled()) return ''
-  const mine = loadLocalIssues().filter((t) =>
-    t.status === 'open' && (t.by === sessionId || t.replies.some((r) => r.by === sessionId)))
-  if (!mine.length) return ''
-  return `\n\nIssue closeout — ${mine.length} still-open local issue(s) you touched (opened or replied): ${mine.map((t) => t.id).join(', ')}. For each, close it now if its work is finished (\`spex issue close <id>\`), or reply why it should stay open past this session (\`spex issue reply <id> --body "<why>"\`). Some issues rightly outlive their session — this is a reminder to sweep, not a gate.`
+  const open = loadLocalIssues().filter((t) => t.status === 'open')
+  // @@@ the sweep is split by AUTHORSHIP - a concern this session filed itself is its own to retire; a thread
+  // someone else stated is theirs to accept, and closing it would be the worker deciding it was satisfied
+  // ([[issue-driven-development]]: you declare, the human closes). Told as one ask each way, the two halves
+  // agree with the skill instead of contradicting it — the old single ask said "close it now" about both.
+  const mine = open.filter((t) => t.by === sessionId)
+  const theirs = open.filter((t) => t.by !== sessionId && t.replies.some((r) => r.by === sessionId))
+  if (!mine.length && !theirs.length) return ''
+  const lines = ['\n\nIssue closeout — still-open local issues you touched:']
+  if (mine.length) lines.push(`  ${mine.length} you opened (${mine.map((t) => t.id).join(', ')}): close each whose work is finished (\`spex issue close <id>\`), or reply why it should stay open past this session (\`spex issue reply <id> --body "<why>"\`).`)
+  if (theirs.length) lines.push(`  ${theirs.length} opened by someone else (${theirs.map((t) => t.id).join(', ')}): do NOT close these — closing is the opener's act. Reply with where each stands, so whoever owns it can close it.`)
+  lines.push('  Some issues rightly outlive their session — this is a reminder to sweep, not a gate.')
+  return lines.join('\n')
 }
 
 // ───────────────────────── CLI ─────────────────────────

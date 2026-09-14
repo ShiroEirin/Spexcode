@@ -2,11 +2,12 @@
 title: declaration
 status: active
 hue: 280
-desc: The worker's declaration commands — what a declaration echoes, how its note is stored in full and its table cut taught once, how a declaration that cannot find its record diagnoses itself, and the advisory reminders a propose-close carries.
+desc: The worker's declaration commands — what a declaration echoes, how its note is stored in full and its table cut taught once, how a declaration that cannot find its record diagnoses itself, and the advisory reminders a declaration carries — resource cleanup and issue closeout on a propose-close, and on every declaration whether the note names an issue that can read it.
 code:
   - spec-cli/src/session-declarations.ts
 related:
   - spec-cli/src/cli.ts
+  - spec-cli/src/issue-attribution.ts
   - spec-cli/src/hook-prompts.ts
   - spec-cli/src/follow-cli.api.test.ts
   - spec-cli/src/sessions.ts
@@ -63,3 +64,12 @@ resource reminder the same declaration appends a **data-driven issue closeout** 
 listed by id, with the ask to resolve each or say why it outlives the session — silent when the session owes
 nothing or the issues feature is off, and equally a nudge, never a gate (a failure in the store check is
 reported loud but the declaration still lands).
+
+**Every** declaration — done, park, ask alike — carries one further advisory, and it is about whether what was
+just written can be READ: a session bound to more than one issue attributes a declaration to an issue by the
+`[[issue:<id>]]` reference in its note ([[issue-binding]]), so an unqualified note from such a session appears on
+no issue page at all. That silence is spoken here, at the moment of the write, naming the issues the session
+carries and the reference to add (`issue-attribution`'s `attributionNudge`, the same grammar reading the same
+note). One session, one issue, or a note that names one of its issues → nothing is printed. Like its siblings it
+is advisory and rides only the SUCCESS branch: the state write is never held up, refused, or altered by whether
+an issue page will show it, because the session's own timeline is a declaration's first home.

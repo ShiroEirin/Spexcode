@@ -20,14 +20,21 @@ returns one, or the human asks you to take an issue. When none of that is true �
 — do the work: do not bring up issues, do not open one to house the task, and do not steer the conversation into
 this workflow. An issue is the human's way of stating a task, not a form you make them fill.
 
-## 1. find your issue
+## 1. find your issue — the first thing you run, before you read any code
 
 - `spex issue mine` prints every issue your session is bound to (the ones a thread's `@new` or `--issue`
-  created you for, or that a human assigned you), with each thread. `--json` returns an array.
+  created you for, or that a human assigned you), with each thread. `--json` returns an array. Run it on your
+  first turn, before opening a file: the prompt that named your task is not the same fact as the pointer the
+  board reads, and it can be one issue behind (a second issue may have been assigned to you since).
 - No issue bound and your prompt names one? Bind yourself: `spex issue assign <issue-id> .` — the Issues page
   can only show you on the issue if the pointer exists. A worker that silently works an issue is invisible.
 - Read the whole thread before any code: `spex issue show <id>`. The concern is the task; the replies are
   the decisions already made; the `[[node]]` links are the specs you work under ([[spec-first]]).
+- **More than one issue back from `mine`? Then you have no "the issue" any more, and neither does anything you
+  write.** Every reply goes on the thread of the issue it is about — a report posted on your other issue is not
+  this issue's report, it is silence on this one plus noise on that one. And every declaration note names its
+  issue as `[[issue:<id>]]`, or it is attributed to none of them (§4). Say which issue you are working on before
+  you switch, and say it in the note.
 
 ## 2. work under the issue's nodes
 
@@ -67,6 +74,17 @@ So: **do not write "status: done" in a reply**, and do not open a second issue t
 declaration IS the status; the thread carries the reasoning behind it. A reply that says "I am blocked on X"
 without an `ask` declaration is invisible to the board — the human sees a working row.
 
+**Which issue a declaration is about is something you say, not something inferred.** Put `[[issue:<id>]]` in the
+note. An unqualified note is attributed only when you carry exactly one issue; carrying two or more, an
+unqualified note appears on NEITHER issue page, so the human waiting on your `ask` sees a working row and no
+question. `spex session done|ask|park` tells you when it could not attribute what you just wrote — re-declare
+with the issue named rather than leaving the row unread.
+
+**A closed issue is over for you.** When a human closes an issue you are bound to, you are told: its thread is
+landed. Stop working it and stop replying to it, even mid-task — closing is the human's judgment that it is
+done, not a race for you to finish. It does not close YOU: if you hold uncommitted work for it, commit or
+discard it, say so in one last reply, then declare your own end. If you carry other issues, carry on there.
+
 ## 5. split, hand over, escalate
 
 - **Split:** a sub-task is a **sub-issue**. Open it under yours — `spex issue open "<sub-task>" --parent <your-issue>
@@ -85,8 +103,10 @@ without an `ask` declaration is invisible to the board — the human sees a work
 
 ## 6. what you never do
 
-- Never write to the issue's own state (`close`, `promote`) as a worker. Closing is the human's act after
-  merge; you declare, they close.
+- Never write to the state of an issue **someone else opened** (`close`, `promote`). Closing it is their
+  judgment that it is satisfied, taken after your merge lands; you declare, they close. The one exception is a
+  concern **you filed yourself** (§5's new issue) — that thread is yours to retire when its work is finished, and
+  the close-time sweep asks you to. Authorship is the whole test: `spex issue show <id>` names the opener.
 - Never mint a status vocabulary of your own in prose ("DONE", "WIP", emoji). The board has one.
 - Never `@new` on a thread from inside a worker unless you mean to spawn a worker for that thread — it is a real
   creation, bound to that thread's issue. On your own issue that is a sibling; on a sub-issue you opened, it is the split.
@@ -103,6 +123,7 @@ without an `ask` declaration is invisible to the board — the human sees a work
 | report | `spex issue reply <id> --body -` | the thread, the originator's inbox |
 | shape | `spex session widget put <name> <file>` + `[[widget:<name>]]` in a reply | the thread, in place |
 | evidence | `spex session files add <path>` + `[[file:<name>]]` | the rail's card, the thread |
+| issue attribution | `[[issue:<id>]]` in a declaration note | the named issue's ledger; passive link in the timeline |
 | status | `spex session done|ask|park …` | the row's colour, action and tooltip |
 | split | `spex issue open "…" --parent <id>`, then `@new` in a reply on it | the sub-issue's thread, the parent's fleet |
 | a new concern | `spex issue open "…" --node <id>` | the Issues list |

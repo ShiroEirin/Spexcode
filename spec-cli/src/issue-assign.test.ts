@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { AssignError, assignIssueSession, assignPrompt, summarizeAssign, summarizeUnassign, unassignIssueSession, type AssignDeps } from './issue-assign.js'
+import { AssignError, assignIssueSession, assignPrompt, closedPrompt, notifyIssueClosed, summarizeAssign, summarizeCloseNotices, summarizeUnassign, unassignIssueSession, type AssignDeps } from './issue-assign.js'
 import type { Issue } from './issues.js'
 import type { Session } from './sessions.js'
 
@@ -55,4 +55,38 @@ test('assign is idempotent and unassign removes only the requested issue', async
   assert.equal(repeatRemoval.removed, false)
   assert.equal(sent, 2, 'only the real removal sends a notification')
   assert.match(summarizeUnassign(removed), /unassigned aaaa-111 from local#fold/)
+})
+
+test('the assignment message repeats the issue id and, for a session that now carries several, says which to name', () => {
+  const alone = assignPrompt(issue, 'human', ['local#fold'])
+  assert.match(alone, /Read that thread before you touch anything \(`spex issue show local#fold`\)/)
+  assert.doesNotMatch(alone, /You now carry/)
+  const many = assignPrompt(issue, 'human', ['local#old', 'local#fold'])
+  assert.match(many, /You now carry 2 issues: local#old, local#fold/)
+  assert.match(many, /\[\[issue:local#fold\]\]/)
+  assert.match(many, /spex issue mine/)
+})
+
+test('a close tells every session whose own set names the issue, and leaves ending them to them', async () => {
+  const bound = { ...row('aaaa-1111', 'node/x-1'), issues: ['local#fold'], issue: 'local#fold' }
+  const twoIssues = { ...row('bbbb-2222', 'node/x-2'), issues: ['local#fold', 'local#other'], issue: 'local#fold' }
+  const gone = { ...row('cccc-3333', 'node/x-3'), issues: ['local#fold'], archived: true }
+  const elsewhere = { ...row('dddd-4444', 'node/x-4'), issues: ['local#other'], issue: 'local#other' }
+  const sent: Array<{ to: string; text: string }> = []
+  const notices = await notifyIssueClosed(issue, 'human', {
+    listSessions: async () => [bound, twoIssues, gone, elsewhere],
+    sendText: async (id, text) => { sent.push({ to: id, text }); return id === 'bbbb-2222' ? { ok: false, error: 'offline' } : { ok: true } },
+  })
+  assert.deepEqual(sent.map((s) => s.to), ['aaaa-1111', 'bbbb-2222'], 'archived rows and other issues are not told')
+  assert.match(sent[0].text, /was closed by human — its thread is landed: fold count reads 0/)
+  assert.match(sent[0].text, /Closing the issue did not close you/)
+  assert.doesNotMatch(sent[0].text, /still bound to/)
+  assert.match(sent[1].text, /still bound to issue "local#other"/, 'a session with work left is pointed at it')
+  assert.deepEqual(notices, [{ session: 'aaaa-1111', delivered: true }, { session: 'bbbb-2222', delivered: false, error: 'offline' }])
+  assert.equal(summarizeCloseNotices(notices), 'told 1/2 bound session(s); NOT told: bbbb-222 (offline)')
+  assert.equal(summarizeCloseNotices([]), '', 'an issue with no fleet says nothing')
+})
+
+test('the close notice works from an id alone, when the store cannot say what the concern was', () => {
+  assert.match(closedPrompt({ id: 'github#12' }, 'human'), /^Issue "github#12" was closed by human — its thread is landed\n/)
 })
