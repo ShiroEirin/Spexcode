@@ -5,7 +5,7 @@ import { Readable } from 'node:stream'
 import { installConnectionReaper } from './reaper.js'
 import { daemonRuntime } from './daemon-runtime.js'
 import { loadSpecs, loadSpecsLite, specContent, specHistory, specDiffAt, specAt, loadConfig, runtimeRoot } from '@spexcode/spec-core'
-import { issuesEnabled } from './localIssues.js'
+import { issuesEnabled, reparentLocalIssue } from './localIssues.js'
 import { closeIssue, createIssue, findIssue, issueRefs, mergedIssues, promote } from './issues.js'
 import { replyIssueWithLoopIn } from './loop-in.js'
 import { residentForgeState, refreshForgeNow } from '@spexcode/spec-forge/resident'
@@ -421,6 +421,27 @@ app.post('/api/issues/:id/assign', async (c) => {
   } catch (e) {
     if (e instanceof AssignError) return c.json({ ok: false, error: e.message }, e.status as 400)
     return c.json({ ok: false, error: String((e as Error).message || e) }, 500)
+  }
+})
+// move a local issue in the hierarchy ([[issues-view]] / [[local-issues]]): the dashboard's drag gesture is
+// only a thin caller. Validation, cycle refusal and the stored pointer all live in the CLI's one reparent verb,
+// so a browser drop and `spex issue reparent` cannot disagree. Forge issues never own hierarchy facts.
+app.post('/api/issues/:id/reparent', async (c) => {
+  if (!issuesEnabled()) return c.json({ error: 'issues workflow is off' }, 403)
+  const id = c.req.param('id')
+  if (id.includes('#')) return c.json({ ok: false, error: 'only a local issue can be reparented' }, 400)
+  const body = await c.req.json().catch(() => ({}))
+  const parent = body && Object.prototype.hasOwnProperty.call(body, 'parent')
+    ? body.parent === null ? null : typeof body.parent === 'string' && body.parent.trim() ? body.parent.trim() : undefined
+    : undefined
+  if (parent === undefined) return c.json({ ok: false, error: 'reparent parent must be a local issue id or null' }, 400)
+  try {
+    const issue = reparentLocalIssue(id, parent)
+    notifyBoardChanged('full')
+    return c.json({ ok: true, id: issue.id, parent: issue.parent })
+  } catch (e) {
+    const msg = String((e as Error).message || e)
+    return c.json({ ok: false, error: msg }, /^no local issue/.test(msg) ? 404 : 400)
   }
 })
 // remove an existing issue binding. The same selector and notification contract applies; repeated removals are no-ops.

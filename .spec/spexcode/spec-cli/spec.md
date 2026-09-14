@@ -113,8 +113,10 @@ Issue routes follow the same thin-port rule: `GET /api/issues` returns the merge
 writable stores (`local` and configured forge drivers), `GET /api/issues/:id` is the single-thread detail
 (the same `findIssue` read behind `spex issue show`; unknown ids 404), and `POST /api/issues`
 opens a new issue in the
-chosen store. Local writes hit the git-native local store; forge writes call the driver and force a resident
-read-back before the dashboard reloads. An explicit `deliverTo` list (the New issue composer’s Send to @x action,
+chosen store. `POST /api/issues/:id/reparent` is the local hierarchy write: it accepts `{ parent: <local-id>|null }`
+and delegates validation and persistence to the same `reparentLocalIssue` path as the CLI; forge ids are refused.
+Local writes hit the git-native local store; forge writes call the driver and force a resident read-back before the
+dashboard reloads. An explicit `deliverTo` list (the New issue composer's Send to @x action,
 [[mentions]] / [[issues-view]]) is handled only after the issue is durable: each exact target receives one ordinary
 session message and its success or failure is included in `outcomes`; omitting the list performs no delivery.
 Evidence bytes ride `/api/evidence` (`POST` = content-addressed put,

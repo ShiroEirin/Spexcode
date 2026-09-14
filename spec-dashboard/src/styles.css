@@ -4163,6 +4163,14 @@ body.is-session-dragging .si-pill.archive:hover {
 .fv-progress > span { display: block; height: 100%; background: var(--magenta); }
 .fv-subissues-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
 .fv-subissues-rows { border: 1px solid var(--line); border-radius: var(--radius); }
+/* Issue rows use the session forest's movement vocabulary ([[session-forest]]): the source dims, a valid
+   receiving row takes the blue wash, and the nested-row escape sits after the rows so it never shifts a target. */
+.lp-row.fv-issue-dragging { opacity: .28; }
+.lp-row.fv-issue-drop-target { z-index: 51; background: color-mix(in srgb, var(--blue) 28%, var(--panel2)); box-shadow: inset 0 0 0 1px var(--blue); }
+.fv-issue-root-drop { height: 30px; margin: 5px 10px 2px; display: flex; align-items: center; justify-content: center; gap: 6px; border: 1px dashed color-mix(in srgb, var(--muted) 60%, transparent); border-radius: var(--radius); color: var(--muted); }
+.fv-issue-root-drop.on { position: relative; z-index: 51; background: color-mix(in srgb, var(--green) 12%, var(--panel2)); border-color: var(--green); color: var(--green); }
+.fv-issue-drag-ghost { overflow: hidden; }
+.fv-issue-drag-ghost, .fv-issue-drag-ghost * { pointer-events: none !important; }
 .ds-action[aria-pressed='true'] { color: var(--ink); background: var(--wash-selected); border-color: color-mix(in srgb, var(--blue) 45%, var(--line)); }
 .fv-rel-key { flex: none; min-width: 64px; }
 .fv-rel-blockedBy { background: var(--orange); }

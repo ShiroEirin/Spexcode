@@ -133,7 +133,9 @@ domain-only behavior stays in its page. No empty abstraction or page-local near-
   a visual cursor and row-context `Enter` opens its href. Inputs/textareas/selects yield no list keys;
   buttons keep native Enter/Space while allowing `j`/`k`; a focused anchor's Enter follows its OWN href,
   not the cursor. Blind rows stay inert. One shared empty state distinguishes a vacant dataset from a
-  non-empty dataset whose current view matches nothing.
+  non-empty dataset whose current view matches nothing. `ReviewRows` may receive row-owned interaction attributes
+  (including pointer handlers and data hooks) without changing the anchor/content sibling grammar; its navigable
+  anchors suppress native HTML drag so a surface using [[drag-gesture]] retains the window-level pointer release.
 - **A row obeys the workspace's slot semantics, and stays a real anchor doing it.** A plain click is left
   entirely to the anchor: the browser writes the hash, and the current slot takes the detail — so clicking
   row after row reads them one after another in one tab instead of filling the strip ([[tab-strip]]). The
