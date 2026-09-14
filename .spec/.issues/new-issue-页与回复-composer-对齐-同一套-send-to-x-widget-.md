@@ -27,3 +27,6 @@ created: 2026-09-14T02:32:53.291Z
 
 <!-- reply: 53f823f9-0a65-408a-9756-e9e18656619a @ 2026-09-14T04:21:32.383Z -->
 New-page alignment work starts from the thread and current contracts. I’m tracing the shared composer actions, create API, and existing mention delivery before editing; the spec table and New-page delivery contract will be updated with the code.
+
+<!-- reply: fafd3df8-4a5f-43e9-8b40-1f7a0108e077 @ 2026-09-14T04:53:30.499Z -->
+实现与验证完成，工作树干净。\n\n- NewIssuePage 与 ReplyComposer 共用 Thread.jsx 的 SendToSessionActions；精确 `@<session>` 只在显式按钮点击时投递。\n- POST /api/issues 支持 deliverTo：先持久化 issue，再逐目标 sendText；消息包含 concern + description，outcomes 报告 sent/NOT sent；普通 Create 不带该字段。\n- 修正 mentions 的 node 解析，使 `[[file:]]` / `[[widget:]]` 不进入 nodes；`@new` / `@parent:` 仍按原有持久化后派工路径。\n- [[issues-view]] 对齐表已改为两个 composer × 五种能力，并明确 New 的 widget 不适用；[[mentions]]、[[spec-cli]]、[[reply-thread]] 契约同步。\n\n验证：隔离 Chromium New 页 handoff 与普通 Create 场景通过；现有 widget/reply Chromium 回归通过；dashboard 476/476，spec-cli 917 通过 + 1 skip，typecheck、dashboard build、lint 通过，spex spec lint 0 errors（46 个既有 drift warnings）。完整证据见 [[file:report.html]]。提交：c236643bf、eeba30144。
