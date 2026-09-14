@@ -116,18 +116,18 @@ function Detail({ name, row, profile, t }) {
 // The harness's lifecycle vocabulary, in the order an agent meets it and the loop each event belongs to.
 // [[plugins-view]] says which events carry hooks; this says where each sits in the picture. An event the
 // reader carries that is not named here is drawn after the session frame rather than dropped.
-const FRAMES = [
-  { key: 'session', events: ['SessionStart'], inner: {
-    key: 'turn', events: ['UserPromptSubmit'], inner: {
-      key: 'tool', events: ['PreToolUse', 'PostToolUse'], inner: null, after: [],
-    }, after: ['Notification', 'Stop', 'StopFailure'] },
-    after: [] },
-]
+// The session itself is not drawn as a frame: it is the page, and a box around everything is a box that
+// says nothing. What repeats is framed — each turn, and each tool call inside it.
+const LIFECYCLE = {
+  before: ['SessionStart'],
+  loop: { key: 'turn', events: ['UserPromptSubmit'], inner: { key: 'tool', events: ['PreToolUse', 'PostToolUse'], inner: null, after: [] }, after: [] },
+  after: ['Notification', 'Stop', 'StopFailure'],
+}
 const KNOWN_EVENTS = new Set(['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Notification', 'Stop', 'StopFailure'])
 // a station's aside: what the agent is doing there that no hook is — said once, where it happens
 const STATION_ASIDE = { PreToolUse: 'plugins.toolRuns', Notification: 'plugins.waiting', Stop: 'plugins.refusedBack' }
 
-function Pill({ row, name, selected, onSelect, dim, off, mark = null, order = null, trail = null, small = false }) {
+function Pill({ row, name, selected, onSelect, dim, off, mark = null, order = null, small = false }) {
   const on = selected === name
   return (
     <button type="button"
@@ -135,7 +135,7 @@ function Pill({ row, name, selected, onSelect, dim, off, mark = null, order = nu
       aria-current={on ? 'true' : undefined} data-tip={row?.desc || undefined}
       onClick={() => onSelect(name)}>
       {mark}<span className="lc-pill-name">{name}</span>
-      {order != null && <span className="pg-ord">{order}</span>}{trail}
+      {order != null && <span className="pg-ord">{order}</span>}
     </button>
   )
 }
@@ -166,14 +166,14 @@ function Station({ event, hooks, byName, keep, profile, selected, onSelect, t, c
   )
 }
 
-function Cluster({ label, rows, keep, selected, onSelect, meta }) {
+function Cluster({ label, rows, keep, selected, onSelect }) {
   if (rows.length === 0) return null
   return (
     <div className="lc-cluster">
       <span className="lc-cluster-label">{label}</span>
       <div className="lc-cluster-pills">
         {rows.map((row) => <Pill key={row.name} row={row} name={row.name} selected={selected} onSelect={onSelect}
-          dim={!keep(row)} small trail={meta ? meta(row) : null} />)}
+          dim={!keep(row)} small />)}
       </div>
     </div>
   )
@@ -222,23 +222,23 @@ export default function PluginsView() {
   const hooksOf = new Map(spine.map((slot) => [slot.event, slot.hooks]))
   const offSpine = spine.filter((slot) => !KNOWN_EVENTS.has(slot.event))
   const ctx = { byName, keep, profile, selected, onSelect: setSelected, t }
-  const surfaceMark = (row) => (row.surfaces.includes('skill') && row.surfaces.includes('command')
-    ? <span className="pg-surf is-both">{t('plugins.bothSurfaces')}</span> : null)
 
-  // one frame of the lifecycle: its stations, the frame nested inside it, then the stations after that
+  // one station of the lifecycle; the two clusters ride the station where their surface acts
+  const drawStation = (event) => (
+    <Station key={event} event={event} hooks={hooksOf.get(event) || []} {...ctx}>
+      {event === 'SessionStart' && <Cluster label={t('plugins.foldedIn')} rows={system} keep={keep}
+        selected={selected} onSelect={setSelected} />}
+      {event === 'PreToolUse' && <Cluster label={t('plugins.mayInvoke')} rows={invoked} keep={keep}
+        selected={selected} onSelect={setSelected} />}
+    </Station>
+  )
+  // one repeating frame: its stations, the frame nested inside it, then the stations after that
   const drawFrame = (frame) => (
       <div className={`lc-frame lc-frame-${frame.key}`} data-label={t(`plugins.frame.${frame.key}`)}>
-        {frame.key !== 'session' && <span className="lc-loop" aria-hidden="true" title={t('plugins.repeats')}>↺</span>}
-        {frame.events.map((event) => (
-          <Station key={event} event={event} hooks={hooksOf.get(event) || []} {...ctx}>
-            {event === 'SessionStart' && <Cluster label={t('plugins.foldedIn')} rows={system} keep={keep}
-              selected={selected} onSelect={setSelected} />}
-            {event === 'PreToolUse' && <Cluster label={t('plugins.mayInvoke')} rows={invoked} keep={keep}
-              selected={selected} onSelect={setSelected} meta={surfaceMark} />}
-          </Station>
-        ))}
+        <span className="lc-loop" aria-hidden="true" title={t('plugins.repeats')}>↺</span>
+        {frame.events.map(drawStation)}
         {frame.inner && drawFrame(frame.inner)}
-        {frame.after.map((event) => <Station key={event} event={event} hooks={hooksOf.get(event) || []} {...ctx} />)}
+        {frame.after.map(drawStation)}
       </div>
   )
 
@@ -262,7 +262,11 @@ export default function PluginsView() {
 
       <div className="pg-split" style={{ '--pg-panel': `${width}px` }}>
         <nav className="pg-list lc" aria-label={t('plugins.listLabel')}>
-          {drawFrame(FRAMES[0])}
+          <div className="lc-root">
+            {LIFECYCLE.before.map(drawStation)}
+            {drawFrame(LIFECYCLE.loop)}
+            {LIFECYCLE.after.map(drawStation)}
+          </div>
           {offSpine.length > 0 && <div className="lc-frame lc-frame-else" data-label={t('plugins.frameElse')}>
             {offSpine.map((slot) => <Station key={slot.event} event={slot.event} hooks={slot.hooks} {...ctx} />)}
           </div>}
