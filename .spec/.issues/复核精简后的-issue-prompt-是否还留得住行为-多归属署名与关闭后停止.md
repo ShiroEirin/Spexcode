@@ -13,3 +13,6 @@ created: 2026-09-14T17:15:52.552Z
 要点：`[[issue:<id>]]` 这个 token 现在在 skill 里只出现一次（§4），另外两处出现在需要时才打印的提示里（`issue mine` 的尾行、声明无法归属时的回执），都带填好的真实 id。要测的就是这样够不够。
 
 Spec: issue-driven-development, taste
+
+<!-- reply: 7691ea8f-f507-4a05-940d-5f9ff4f49879 @ 2026-09-14T18:11:45.910Z -->
+Rechecked the two requested behaviors against main at f64066f6a58722352713da77878ad2996b71640a. Multi-issue: one codex-headless subject held m1-normalize-separator-bug-fix and m2-normalize-helper-refactor after real issue assign; both open threads received one human reply, both had real src/transform.js work, and the two review declarations carried matching [[issue:<id>]] links. Close-stop: a second subject posted a baseline reply, its issue was closed with a told 1/1 notice, then the thread stayed at two replies and the subject declared close-pending with no post-close reply. Full self-contained evidence: [[file:issue-prompt-trim-recheck-report.html]].
