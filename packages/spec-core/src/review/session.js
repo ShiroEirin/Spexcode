@@ -12,9 +12,15 @@ export const sessionHandle = (session) =>
 
 export const sessionTitle = sessionHeadline
 
+// The compatibility bridge for old board payloads. New payloads always carry `issues`; `issue` is only the
+// first member for consumers that have not migrated yet and is never authoritative.
+export const sessionIssues = (session) => Array.isArray(session?.issues)
+  ? session.issues
+  : (session?.issue ? [session.issue] : [])
+
 // @@@ issue fleet - the ONE issue->session join ([[issue-binding]]), shared by the browser (the Issues page's
 // strip, band and rail) and the server (the review adapter's `fleet:` facet) so neither can grow its own idea of
-// "who is on this issue". A session carries `issue`, the id of the issue it was created for or assigned to, the
+// "who is on this issue". A session carries `issues`, the ids of the issues it was created for or assigned to, the
 // way it carries `parent`. `assigned` are the unarchived rows pointing at the issue OR at any issue below it — the
 // read-time issue tree's `descendants` ([[issues]]), so a parent issue's fleet holds every sub-issue's workers; `fleet`
 // adds every descendant of those rows through the same parent pointers the forest is drawn from — a worker's children
@@ -23,7 +29,10 @@ export const issueFleet = (issue, sessions = []) => {
   if (!issue?.id) return { assigned: [], fleet: [] }
   const ids = new Set([issue.id, ...(issue.descendants || [])])
   const board = (sessions || []).filter((s) => s?.id && !s.archived)
-  const assigned = board.filter((s) => ids.has(s.issue))
+  const assigned = board.filter((s) => {
+    const issues = sessionIssues(s)
+    return issues.some((id) => ids.has(id))
+  })
   const childrenOf = new Map()
   for (const s of board) {
     if (!s.parent || s.parent === s.id) continue
