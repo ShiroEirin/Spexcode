@@ -310,7 +310,7 @@ export default function ProseActions({ node, hostRef, codeSelection = null, onCo
       setBusy(true)
       setError(null)
       const res = await createSession(prompt, launcher, {
-        replyVia: getDefaultSessionSurface() === SESSION_SURFACE_CONVERSATION ? 'note' : undefined,
+        initialReplyVia: getDefaultSessionSurface() === SESSION_SURFACE_CONVERSATION ? 'note' : undefined,
       })
       setBusy(false)
       if (!res.ok) { setError(res.error || t('proseActions.sendFailed')); return }

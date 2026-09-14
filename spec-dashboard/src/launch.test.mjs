@@ -43,11 +43,11 @@ test('Conversation launch carries the explicit initial note reply channel', asyn
   }
 
   try {
-    await createSession('open this in Conversation', 'claude-local', { replyVia: 'note' })
+    await createSession('open this in Conversation', 'claude-local', { initialReplyVia: 'note' })
     assert.deepEqual(JSON.parse(request.init.body), {
       prompt: 'open this in Conversation',
       launcher: 'claude-local',
-      replyVia: 'note',
+      initialReplyVia: 'note',
     })
   } finally {
     globalThis.fetch = originalFetch

@@ -376,8 +376,8 @@ test('session-create API rejects stale fields before entering the transaction', 
   const removedNode = await sessionCreateRequest({ node: 'launcher-select', prompt: 'probe', launcher: 'claude' })
   assert.deepEqual(removedNode, { status: 400, error: 'unknown session-create field: node' })
 
-  const invalidReplyChannel = await sessionCreateRequest({ prompt: 'probe', launcher: 'claude', replyVia: 'terminal' })
-  assert.deepEqual(invalidReplyChannel, { status: 400, error: 'session-create replyVia must be "note"' })
+  const invalidReplyChannel = await sessionCreateRequest({ prompt: 'probe', launcher: 'claude', initialReplyVia: 'terminal' })
+  assert.deepEqual(invalidReplyChannel, { status: 400, error: 'session-create initialReplyVia must be "note"' })
 })
 
 // @@@ the @parent: directive is refused, not swallowed - a create that quietly landed at top level would

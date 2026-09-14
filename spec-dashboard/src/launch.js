@@ -20,10 +20,10 @@ export const pendingSessionFor = (id) => pendingSessions.get(id) || null
 export async function createSession(prompt, launcher, options = {}) {
   try {
     const requestKey = globalThis.crypto?.randomUUID?.() || `session-create-${Date.now()}-${Math.random().toString(16).slice(2)}`
-    const replyVia = options && typeof options === 'object' && options.replyVia === 'note' ? 'note' : undefined
+    const initialReplyVia = options && typeof options === 'object' && options.initialReplyVia === 'note' ? 'note' : undefined
     const res = await fetch(apiUrl('/api/sessions'), {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': requestKey },
-      body: JSON.stringify({ prompt, ...(launcher ? { launcher } : {}), ...(replyVia ? { replyVia } : {}) }),
+      body: JSON.stringify({ prompt, ...(launcher ? { launcher } : {}), ...(initialReplyVia ? { initialReplyVia } : {}) }),
     })
     const body = await res.json().catch(() => null)
     const result = { ok: res.ok, error: body?.error }

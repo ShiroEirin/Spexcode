@@ -126,7 +126,7 @@ When its create response publishes a session id, the address is marked for a new
 appends a fresh workspace tab and cannot replace the session tab the reader was on.
 The picker has no configuration or add action; its pop-out exposes a settings link, and launcher profiles are
 owned by the routed Settings page.
-The default Conversation launch also carries `replyVia:"note"` in the create request, so a pane-backed launcher
+The default Conversation launch also carries `initialReplyVia:"note"` in the create request, so a pane-backed launcher
 receives the first-turn note-flow guidance before the timeline can show its reply; a launch whose resolved base
 surface is Terminal leaves that field absent and keeps ordinary terminal output.
 

@@ -271,7 +271,7 @@ exec ${JSON.stringify(fakeLauncher)} "$@"
 
     await waitFor(() => fetch(`${base}/health`).then((r) => r.ok).catch(() => false), 'backend health', 30_000)
     const created = await fetch(`${base}/api/sessions`, {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ prompt: 'delivery probe', launcher: 'fake', replyVia: 'note' }),
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ prompt: 'delivery probe', launcher: 'fake', initialReplyVia: 'note' }),
     })
     const createdText = await created.text()
     assert.equal(created.status, 201, createdText)

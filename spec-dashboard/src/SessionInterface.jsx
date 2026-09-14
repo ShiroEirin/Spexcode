@@ -845,7 +845,7 @@ export default function SessionInterface({ sessions, specs = [], focusNode, open
     setPrompt('')
     setCodeSelections([])
     createSession(raw, launcher, {
-      replyVia: getDefaultSessionSurface() === SESSION_SURFACE_CONVERSATION ? 'note' : undefined,
+      initialReplyVia: getDefaultSessionSurface() === SESSION_SURFACE_CONVERSATION ? 'note' : undefined,
     }).then((result) => {
       if (result.ok && result.id) {
         setPendingSession({
