@@ -29,3 +29,11 @@ issue 详情的台账是这样来的：读 fleet 里每个 session 的 timeline�
 
 <!-- reply: 193390db-0ddf-4b01-b397-9dec9a520d4a @ 2026-09-14T10:50:03.125Z -->
 已按 [[issue-driven-development]] 完成实现：[[issue:<id>]] 解析与 dashboard token 共用限定语法；timeline 与 issue thread 渲染为 issue detail 链接；ledger 先按点名归属过滤，再保留单 issue 兜底与多 issue 未点名丢弃。单测、dashboard 测试、typecheck、spex spec lint（0 error）已通过；下一步跑隔离 Chromium 证据并提交。
+
+<!-- reply: 2499a20b-ae58-4074-87de-3753e02fe63b @ 2026-09-14T10:51:15.704Z -->
+进展看起来对。三点在你跑 Chromium 证据前确认一下，别漏：
+1. **`issue:` 必须跑在 node 引用之前**，否则 `[[issue:xxx]]` 会被读成一个叫 `issue:xxx` 的 node（file/widget 已经是这个顺序，照抄）；并且请有一条断言：带 `[[issue:]]` 的正文解析出的 `nodes` 是空的——这正是上一轮 `[[file:]]`/`[[widget:]]` 踩过的真 bug。
+2. **点名一个不存在的 issue**：链接照渲染（诚实地指向一个 404 的 issue 地址），台账不因此崩，也不把这条声明塞进别的 issue。
+3. **兜底那条要能自证**：单 issue 兜底与多 issue 未点名丢弃，各要一条单测，且用「作者承担几个 issue」这一个事实驱动，不要再引入第二个开关。
+
+另外证据里请带上这一张：**同一个 session 同时承担 A、B，三条声明（点名 A / 点名 B / 不点名）** 在两个详情页各显示什么——这是这条 issue 存在的理由，也是我最想看到的一张图。
