@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { ledgerFromChildren, ledgerFromTimeline, ledgerSince, mergeThread } from './issueLedger.js'
+import { latestPerSession, ledgerFromChildren, ledgerFromTimeline, ledgerSince, mergeThread } from './issueLedger.js'
 
 test('a session timeline yields only the declarations a human reads, in the board\'s own words', () => {
   const events = [
@@ -46,4 +46,19 @@ test('the ledger starts where the issue starts: earlier declarations are cut, un
   const rows = [row('2026-09-13T01:00:00Z', 'yesterday'), row('2026-09-14T02:30:00Z', 'today'), row('not-a-date', null)]
   assert.deepEqual(ledgerSince(rows, '2026-09-14T02:25:58Z').map((r) => r.note), ['today', null])
   assert.equal(ledgerSince(rows, undefined).length, 3, 'no floor, no cut')
+})
+
+test('only each session\'s latest declaration survives; sub-issue events are never thinned', () => {
+  const decl = (by, at) => ({ kind: 'declaration', by, at, status: 'review', note: at })
+  const rows = [
+    decl('s1', '2026-09-14T01:00:00Z'),
+    { kind: 'sub-issue', id: 'kid', event: 'opened', at: '2026-09-14T01:30:00Z' },
+    decl('s1', '2026-09-14T02:00:00Z'),
+    decl('s2', '2026-09-14T00:30:00Z'),
+    { kind: 'sub-issue', id: 'kid', event: 'closed', at: '2026-09-14T03:00:00Z' },
+  ]
+  const kept = latestPerSession(rows)
+  assert.deepEqual(kept.filter((r) => r.kind === 'declaration').map((r) => `${r.by}@${r.at.slice(11, 16)}`), ['s1@02:00', 's2@00:30'])
+  assert.equal(kept.filter((r) => r.kind === 'sub-issue').length, 2)
+  assert.deepEqual(latestPerSession([]), [])
 })

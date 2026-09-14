@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { loadIssue, loadSessionTimeline, postIssueClose, postIssuePromote, postIssueReply, postIssueReparent, postIssueThread } from './data.js'
-import { ledgerFromChildren, ledgerFromTimeline, ledgerSince } from './issueLedger.js'
+import { latestPerSession, ledgerFromChildren, ledgerFromTimeline, ledgerSince } from './issueLedger.js'
 import { MENTION_RE, TriggerButton, typeTrigger, useMentionAutocomplete } from './mentions.jsx'
 import { ComposerSurface, ComposerTextarea, composingKey } from './Composer.jsx'
 import { SpecBody } from './NodeView.jsx'
@@ -334,7 +334,7 @@ function useFleetLedger(fleet, since) {
     let live = true
     if (!fleet.length) { setLedger([]); return undefined }
     Promise.all(fleet.map((s) => loadSessionTimeline(s.id, { limit: 60 }).then((w) => ledgerFromTimeline(s.id, w?.events)).catch(() => [])))
-      .then((all) => { if (live) setLedger(ledgerSince(all.flat(), since)) })
+      .then((all) => { if (live) setLedger(latestPerSession(ledgerSince(all.flat(), since))) })
     return () => { live = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, since])

@@ -4188,3 +4188,5 @@ body.is-session-dragging .si-pill.archive:hover {
 /* a thread voice's tag in the rail ([[issue-binding]]): `opened` / `closed`, the row-aside tag primitive at caption size. */
 .fv-voice-tag { flex: none; font-size: var(--type-caption); padding: 0 5px; }
 .fv-voices { display: flex; flex-direction: column; gap: 3px; align-self: stretch; margin-top: 4px; padding-top: 6px; border-top: 1px solid color-mix(in srgb, var(--line) 55%, transparent); }
+/* the declaration row's door into its session ([[issue-binding]]): the rail control at caption size, pushed to the end. */
+.fv-declaration-open { margin-left: auto; min-height: 20px; padding: 1px 7px; font-size: var(--type-caption); }

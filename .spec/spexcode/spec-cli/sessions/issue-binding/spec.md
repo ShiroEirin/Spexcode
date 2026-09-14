@@ -82,11 +82,11 @@ with one visible fleet per issue, and close/retire/children/acceptance reachable
   detach, close — the menu offers its select row only to a host that owns a selectable list), and at most
   ONE state-gated action button per row on the same facts the console toolbar gates on: `review` → Merge
   (POST `/api/sessions/:id/merge`, the only declaration that offers a clickable merge — [[state]]),
-  `retired` → Close (the menu's own confirm), liveness `offline` and not `queued` → Relaunch. A plain click on a
-  row opens its **card** in place (a second click closes it): the session's status word and declaration note,
-  every other issue it works when that is not this issue, its branch, and its posted files / web services / widgets as REAL anchors into the console surface that shows
-  each ([[resource-tabs]]' address grammar) — every fact already on the wire, no second viewer — plus an **Open
-  console** anchor, the door a plain click used to be; ctrl/⌘-click still opens the console in a new tab. The
+  `retired` → Close (the menu's own confirm), liveness `offline` and not `queued` → Relaunch.
+  A plain click on a row **focuses** that session: it opens the session's console, where its branch, the other issues
+  it works, and its posted files / web services / widgets already live; ctrl/⌘-click opens that console in a new tab.
+  The rail draws no card of its own — it answers who is on the issue and whether anyone needs the human, and hands
+  every detail to the console.
   section's **New worker** door does not dispatch: it types the grammar's `@new:` trigger into the reply composer —
   the launcher menu opens there as it does for a hand — and the human's send is the act. Every write on the page
   leaves through the composer's send; a door only prepares it ([[mentions]], [[composer]]). The **Assign…** door opens the ONE session picker
@@ -120,7 +120,11 @@ with one visible fleet per issue, and close/retire/children/acceptance reachable
   `active`, `idle` and `queued` stay off it. Nothing is written to the issue: the worker's `done --propose merge`
   IS its report of readiness, which is why the skill forbids typing a status into a reply. A timeline that cannot
   be read contributes nothing, never a broken thread; the ledger re-reads when a fleet row's status or note moves.
-  **The ledger starts where the issue starts**: declarations dated before the issue's own `created` instant are cut —
+  **One line per session, and the ledger starts where the issue starts.** The thread keeps only each session's LATEST
+  declaration, with a door into that session's console beside it: the issue page answers "who is on this and what state
+  is it in", the session's own console answers "what is it doing", and copying its whole message stream here answered
+  the second question badly. Sub-issue events are the issue's own history and are never thinned. Declarations dated
+  before the issue's own `created` instant are cut: declarations dated before the issue's own `created` instant are cut —
   a session bound to an issue later in its life brings its earlier day with it, and none of it was about this issue
   (the binding instant is not recorded; `created` is the honest floor). A row without a parseable instant is kept.
 - **Issue writes go backend-first, except into a disposable store.** `spex issue reply` / `open` post to the reachable
