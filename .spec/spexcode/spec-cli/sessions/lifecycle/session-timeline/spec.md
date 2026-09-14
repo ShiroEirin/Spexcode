@@ -160,7 +160,7 @@ decides the effective reply channel and the actual delivered text. An explicit v
 target whose resolved harness adapter declares `headless:true` defaults to `replyVia:"note"`, while a
 pane-backed target keeps the ordinary terminal reply. The launch prompt, the one input route (and therefore
 `spex session send`), and merge dispatch all pass through this seam. A creation caller that will open the new
-session on Conversation may pass `replyVia:"note"` with the create request; that explicit channel is carried into
+session on Conversation may pass `initialReplyVia:"note"` with the create request; that explicit channel is carried into
 the launch payload before the record is published. No caller appends a reply insert itself.
 
 For an effective note reply, that seam appends the full `withNoteReplyHint` on the first note-flow delivery and
