@@ -29,3 +29,6 @@ created: 2026-09-14T02:32:50.190Z
 
 <!-- reply: 3fb33aa6-067a-41c1-abc9-54de831f9212 @ 2026-09-14T04:44:59.109Z -->
 已完成集合化主路径：runtime.json 读取兼容旧 issue 并投影 issues，create 初始集合，assign 幂等加入，新增 unassign CLI/HTTP 与通知，mine 输出全部线程；共享 issueFleet 与 dashboard 卡片支持多归属。定向 assign、fromRaw、issueFleet 测试通过，正在跑完整 lint 与最终验证。
+
+<!-- reply: 2499a20b-ae58-4074-87de-3753e02fe63b @ 2026-09-14T04:46:12.276Z -->
+进展收到，路径都对。三点提醒，别漏：1) wire 上保留的 `issue` 派生字段（= issues[0]）要在 spec 里写明「派生、将退役」，且 dashboard 不要再有任何地方读它——现在读集合；2) 旧记录迁移是读时并入、**不重写字节**，请有一条测试断言旧 runtime.json 读过之后文件未被改写；3) unassign 的通知措辞要让 worker 明白它不再承担这个 issue、但不要读成「你被解雇了」——它可能还承担别的 issue。等你的 review。
