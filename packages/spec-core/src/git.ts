@@ -25,13 +25,18 @@ export function gitBinary(env: NodeJS.ProcessEnv = process.env): string {
   if (known) {
     try { accessSync(known, constants.X_OK); return known } catch {}
   }
+  const names = process.platform === 'win32'
+    ? ['git', ...(env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean).map((extension) => `git${extension}`)]
+    : ['git']
   for (const dir of path.split(delimiter)) {
-    const candidate = resolve(dir || '.', 'git')
-    try {
-      accessSync(candidate, constants.X_OK)
-      gitByPath.set(path, candidate)
-      return candidate
-    } catch {}
+    for (const name of names) {
+      const candidate = resolve(dir || '.', name)
+      try {
+        accessSync(candidate, constants.X_OK)
+        gitByPath.set(path, candidate)
+        return candidate
+      } catch {}
+    }
   }
   throw new Error('git executable not found on PATH')
 }

@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, chmodSync, exist
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
-import { driftFor, ancestorsOf, primeAncestorClosures, inAncestors, mergeBaseDiff, worktreeSpecDelta, worktreeSpecDeltas, driftIndex, historyIndex, sourceIndexes, sourceIndexesFull, rowsFor, pathRangeEvents, historyCacheStats, pruneHistoryCaches, resetHistoryCachesForTests, historyEventCachePathForTests, withGitAbortSignal, git, gitA, batchRevisionOids, batchBlobTexts, combinedDiffOwnedChanges, unionTopology, GitWorkspaceError, type DriftIndex } from '@spexcode/spec-core'
+import { driftFor, ancestorsOf, primeAncestorClosures, inAncestors, mergeBaseDiff, worktreeSpecDelta, worktreeSpecDeltas, driftIndex, historyIndex, sourceIndexes, sourceIndexesFull, rowsFor, pathRangeEvents, historyCacheStats, pruneHistoryCaches, resetHistoryCachesForTests, historyEventCachePathForTests, withGitAbortSignal, git, gitA, gitBinary, batchRevisionOids, batchBlobTexts, combinedDiffOwnedChanges, unionTopology, GitWorkspaceError, type DriftIndex } from '@spexcode/spec-core'
 import { loadSpecs } from '@spexcode/spec-core'
 
 // build a DriftIndex by hand from DAG edges: `parents` maps each commit to its parent hashes —
@@ -25,6 +25,17 @@ function idx(parents: Record<string, string[]>, parts: TestIndexParts = {}): Dri
   return { ord, parents: p, fileEvents, lineageEvents: fileEvents, lineageKeys: (path) => [path], acks: new Map(), specNodes: new Map(), anc: new Map(), ...rest }
 }
 const LINEAR = { TIP: ['B'], B: ['A'], A: ['VER'], VER: [] } // TIP -> B -> A -> VER
+
+test('gitBinary resolves Git for Windows through PATHEXT', { skip: process.platform !== 'win32' }, () => {
+  const bin = mkdtempSync(join(tmpdir(), 'spex-git-binary-'))
+  const executable = join(bin, 'git.exe')
+  writeFileSync(executable, '')
+  try {
+    assert.equal(gitBinary({ PATH: bin, PATHEXT: '.COM;.EXE;.BAT;.CMD' }).toLowerCase(), executable.toLowerCase())
+  } finally {
+    rmSync(bin, { recursive: true, force: true })
+  }
+})
 
 test('every history entrance gives a non-Git workspace the same actionable precondition', async () => {
   const root = mkdtempSync(join(tmpdir(), 'spex-nongit-history-'))
