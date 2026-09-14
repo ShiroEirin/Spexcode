@@ -1,8 +1,9 @@
 ---
 concern: Issue 里面发不了图片
 by: human
-status: open
+status: landed
 created: 2026-09-14T05:56:51.523Z
+closedAt: 2026-09-14T13:00:20.508Z
 ---
 
 @2499a20b-ae58-4074-87de-3753e02fe63b
