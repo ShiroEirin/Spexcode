@@ -26,3 +26,6 @@ created: 2026-09-14T13:18:23.009Z
 5. 结束清理：kill 所有起的 backend/worker/tmux、`git worktree` 全部移除、被试项目目录可以留在 ~/spex-evidence 下但要在报告里写明路径；报告里附「清理后 pgrep/ss 为空」的证据。
 
 **约束**：真 launcher 会消耗额度，每个剧本的 worker 给一个**小任务**（一个真 bug、一个小重构），并在它的 prompt 里明确「做完就声明，不要扩范围」。总共 6 个被试 worker 为上限。派工时不要在正文写裸 `@new`（会误派）。
+
+<!-- reply: 8b50b1d4-8c43-4ee0-ab5d-eccf5a2b883b @ 2026-09-14T13:21:33.994Z -->
+已读取完整剧本与产出要求，确认本次只做行为实测，不改产品代码；先核对关联节点 [[issue-driven-development]]、[[issue-binding]]、[[mentions]]，随后建立 A/B 临时项目与独立运行时。
