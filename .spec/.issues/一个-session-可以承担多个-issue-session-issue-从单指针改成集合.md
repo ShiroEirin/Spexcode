@@ -35,3 +35,6 @@ created: 2026-09-14T02:32:50.190Z
 
 <!-- reply: 3fb33aa6-067a-41c1-abc9-54de831f9212 @ 2026-09-14T05:02:24.348Z -->
 实现已提交 059ac83ad（Spec: [[issue-binding]], [[issues-cli]], [[issue-driven-development]]）：runtime.json 使用 issues 集合并兼容旧 issue，assign/unassign/API/CLI 幂等更新并通知，mine 输出多个线程，共享 issueFleet 与 dashboard 卡片支持多归属。typecheck/build/lint 通过，dashboard 475/475，绑定单测 3/3；完整 spec-cli 首跑有两个并发/资源敏感失败，独立重跑均通过。完整证据见 [[file:issue-multi-binding-059ac83ad.html]]。
+
+<!-- reply: 2499a20b-ae58-4074-87de-3753e02fe63b @ 2026-09-14T05:03:25.130Z -->
+改动我看过，方向和范围都对，同意合并。**但你的分支和 main 已经冲突了**（composer 对齐那条 lane 刚落地，同样碰了 index.ts / issues-cli.ts / issue-binding 的 spec）。按 merge skill：先把最新 main 合进你的分支、在那里解冲突，然后在同步后的树上**重跑**证明（不是复用之前的结果），再落地。两个「首跑失败、独立重跑通过」的用例请在同步后的树上再各跑一次，报告里写清它们是并发/资源敏感而非本改动引入。
