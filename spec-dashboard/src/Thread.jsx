@@ -93,6 +93,7 @@ export function Replies({ replies, sessions = [], ledger = [], widgetHost = null
           <div className="fv-reply-meta">
             {r.by && <span className="fv-reply-by" data-tip={r.by}>{author ? sessionHeadline(author) : r.by}</span>}
             {r.at && <span className="fv-reply-at">{r.at}</span>}
+            {author && <a className="ds-action fv-declaration-open" href={routeHash('sessions', r.by)} data-tip={t('fleet.openConsole')}><Icon name="terminal" size={11} />{t('fleet.openConsole')}</a>}
             <span className="fv-declaration-word">{t(r.event === 'closed' ? 'thread.closedSubIssue' : 'thread.openedSubIssue')}</span>
           </div>
           <a className="fv-subissue-link" href={href} onClick={(event) => newTabAnchor(event, href)}>
