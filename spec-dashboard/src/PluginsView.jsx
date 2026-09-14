@@ -3,6 +3,7 @@ import { apiUrl } from './project.js'
 import { useT } from './i18n/index.jsx'
 import { Segmented } from './Segmented.jsx'
 import { useResizable } from './useResizable.js'
+import { SpecBody } from './NodeView.jsx'
 
 // THE AUTOMATION, AS A PLACE YOU WORK RATHER THAN A PAGE YOU READ. Every plugin here is already a spec node
 // and already in the graph, so this board is not about making them exist on screen — it is about reading
@@ -22,6 +23,13 @@ import { useResizable } from './useResizable.js'
 // The LIFECYCLE SPINE survives the change of shape and gets better from it: the seven events are the list's
 // sticky group headings now, so the event a hook runs on stays overhead while its siblings scroll under it,
 // instead of being a label you have already scrolled past.
+//
+// @@@the-detail-is-a-spec-reading - the selected plugin IS a spec node, so its detail is drawn in the node
+// page's own grammar ([[spec-view]]: title, one-line description, a property row under a hairline, then the
+// body as rendered prose) with the plugin's script under it as the document's own code block. Nothing in it
+// is pinned: the first build held the description and a facts grid fixed above a scrolling body, which put a
+// block of overview over every plugin and left the body itself as raw markdown in a `<pre>`. A document
+// scrolls whole; the frame around it is what holds still.
 //
 // @@@normal-is-not-drawable - a marker for the ORDINARY case must be unrepresentable, or nothing stands out
 // because everything is marked. An earlier version put order, refusal and a file count on every row and
@@ -54,7 +62,12 @@ function Row({ row, selected, onSelect, mark = null, meta = null, dim = false })
 
 // The detail is the one thing the old page could not do: say what the plugin DOES. Its text is fetched per
 // selection ([[plugins-view]]), so this pane owns a small load of its own and says so rather than blanking.
-function Detail({ name, row, t }) {
+const langOf = (path) => {
+  const ext = path.split('.').pop()
+  return ({ sh: 'sh', bash: 'sh', mjs: 'js', js: 'js', ts: 'ts', md: 'markdown', json: 'json' })[ext] || ext
+}
+
+function Detail({ name, row, profile, t }) {
   const [detail, setDetail] = useState(null)
   const [error, setError] = useState(null)
 
@@ -72,38 +85,39 @@ function Detail({ name, row, t }) {
 
   if (!name) return <div className="pg-detail pg-detail-empty">{t('plugins.pickOne')}</div>
 
+  const hook = row?.surfaces?.includes('hook')
+  const off = profile.disables.includes(name)
+  // the property row follows the marks rule: a chip exists only for a fact that is TRUE of this plugin
   return (
-    <div className="pg-detail">
-      <header className="pg-detail-head">
-        <h2 className="pg-detail-name">{name}</h2>
-        <span className="pg-detail-surfaces">{(row?.surfaces || []).join(' · ')}</span>
-        <a className="pg-detail-node" href={specHref(name)}>{t('plugins.openNode')}</a>
-      </header>
-      {row?.desc && <p className="pg-detail-desc">{row.desc}</p>}
-      <dl className="pg-facts">
-        {row?.events?.length > 0 && <><dt>{t('plugins.factEvents')}</dt><dd>{row.events.join(', ')}</dd></>}
-        {row?.surfaces?.includes('hook') && <><dt>{t('plugins.factOrder')}</dt><dd>{row.order}</dd></>}
-        {row?.surfaces?.includes('hook') && <><dt>{t('plugins.factBlock')}</dt>
-          <dd>{t(row.block ? 'plugins.factBlockYes' : 'plugins.factBlockNo')}</dd></>}
-        {detail?.tools?.length > 0 && <><dt>{t('plugins.factTools')}</dt><dd>{detail.tools.join(', ')}</dd></>}
-      </dl>
-      <div className="pg-detail-body">
-        {error && <p className="pg-error">{t('plugins.failed', { reason: error })}</p>}
-        {!error && !detail && <p className="pg-detail-wait">{t('plugins.loading')}</p>}
-        {detail && <>
-          <pre className="pg-text pg-prose">{detail.body}</pre>
-          {detail.files.map((file) => (
-            <section className="pg-file" key={file.path}>
-              <h3 className="pg-file-name">{file.path.split('/').pop()}
-                <span className="pg-file-path">{file.path}</span>
-              </h3>
-              <pre className="pg-text">{file.text}</pre>
-              {file.truncated && <p className="pg-file-cut">{t('plugins.truncated', { bytes: file.bytes })}</p>}
-            </section>
-          ))}
-        </>}
+    <article className="pane-doc pg-detail" key={name}>
+      <h1 className="doc-title">{name}</h1>
+      {row?.desc && <blockquote className="doc-desc">{row.desc}</blockquote>}
+      <div className="doc-stat">
+        {(row?.surfaces || []).map((surface) => (
+          <span className={`stat-status pg-surface pg-surface-${surface}`} key={surface}><i className="stat-dot" />{surface}</span>
+        ))}
+        {hook && row.events?.length > 0 && <span className="stat-chip">{t('plugins.factEvents')} <b>{row.events.join(', ')}</b></span>}
+        {hook && <span className="stat-chip">{t('plugins.factOrder')} <b>{row.order}</b></span>}
+        {hook && row.block && <span className="stat-chip pg-chip-refuse" data-tip={t('plugins.blocksTip')}>{t('plugins.factBlock')}</span>}
+        {off && <span className="stat-chip pg-chip-off">{t('plugins.factOff', { profile: profile.name })}</span>}
+        {detail?.tools?.length > 0 && <span className="stat-chip">{t('plugins.factTools')} <b>{detail.tools.join(', ')}</b></span>}
+        <a className="stat-back pg-detail-node" href={specHref(name)}>{t('plugins.openNode')} ↗</a>
       </div>
-    </div>
+      {error && <p className="pg-error">{t('plugins.failed', { reason: error })}</p>}
+      {!error && !detail && <div className="pane-loading"><span className="spinner" aria-label={t('plugins.loading')} /></div>}
+      {detail && <>
+        <SpecBody body={detail.body} />
+        {detail.files.map((file) => (
+          <section className="pg-file" key={file.path}>
+            <h2 className="pg-file-name">{file.path.split('/').pop()}
+              <span className="pg-file-path">{file.path}</span>
+            </h2>
+            <pre className="doc-pre pg-script"><code className={`language-${langOf(file.path)}`}>{file.text}</code></pre>
+            {file.truncated && <p className="pg-file-cut">{t('plugins.truncated', { bytes: file.bytes })}</p>}
+          </section>
+        ))}
+      </>}
+    </article>
   )
 }
 
@@ -210,7 +224,7 @@ export default function PluginsView() {
           {shown.length === 0 && <p className="pg-none">{t('plugins.noMatch')}</p>}
         </nav>
         <div className="pg-resize" onMouseDown={onDragStart} onDoubleClick={resetWidth} aria-hidden="true" />
-        <Detail name={selected} row={byName.get(selected)} t={t} />
+        <Detail name={selected} row={byName.get(selected)} profile={profile} t={t} />
       </div>
     </div>
   )
