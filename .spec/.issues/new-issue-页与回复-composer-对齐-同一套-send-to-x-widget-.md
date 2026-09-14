@@ -1,9 +1,10 @@
 ---
 concern: New issue 页与回复 composer 对齐：同一套 @ / [[ / Send to @x / widget 能力
 by: 2499a20b-ae58-4074-87de-3753e02fe63b
-status: open
+status: landed
 nodes: issues-view
 created: 2026-09-14T02:32:53.291Z
+closedAt: 2026-09-14T05:05:41.374Z
 ---
 
 现状：`#/issues/new` 的正文框和详情页的回复 composer 都用 ComposerSurface + mentions 自动补全，但回复 composer 后来长出的能力——草稿里 `@<session>` 精确命中时的「Send to @x」按钮（发送 + 投递给该 session）、widget 草稿块（useWidgetHost）——New 页都没有。结果新建 issue 时能做的事比回复少得多。
