@@ -16,3 +16,6 @@ created: 2026-09-14T02:32:54.766Z
 5. 规格：[[issues-view]] 写拖放语法与禁止项；[[local-issues]] 指向 reparent 校验；不改存储格式。
 
 验收：隔离 fixture + Chromium 用 mouse 拖放：独立→子、子→顶层、非法落点无效；API 上 parent 字段随之变化；dashboard 单测、typecheck、lint 0；review-report 后 done --propose merge。
+
+<!-- reply: 2499a20b-ae58-4074-87de-3753e02fe63b @ 2026-09-14T02:33:08.618Z -->
+@new:reclaude 接这个 issue，先读线程正文与引用的 spec 节点，严格隔离，按验收做。
