@@ -38,6 +38,17 @@ COLLECTED and emitted once, as [[output-fold]] defines, rather than written thro
 Zero or one structured document is passed through byte for byte, so the ordinary dispatch is unchanged and
 boots nothing; only a genuine second speaker reaches the fold.
 
+**EVERY HANDLER RUN IS RECORDED.** Before a handler runs the dispatcher appends a `start` line to this
+project's hook ledger and after it returns a `done` line carrying the exit code, whether the run refused the
+event, its wall-clock duration, and a refusal's reason — the format and the reader are [[hook-ledger]]'s. The
+dispatcher is the only place that sees every hook run, which is what makes those counts exact rather than
+sampled. Recording is a side effect and never a participant: an unwritable ledger is named once on stderr and
+the dispatch proceeds unchanged, and `SPEX_HOOK_LEDGER=off` disables it. Its session column is the id the payload
+names, taken with the shell mirror's own field read and never resolved to a record: resolving means store
+lookups, and each one spawns git — two per dispatch on the hottest path in the product, on every tool call,
+for a column no count needs. The value is filled on the first handler, so an event with no bound handlers
+pays nothing for the ledger at all.
+
 **A HANDLER THAT FAILS SAYS SO, whether or not it may block.** A non-blocking handler's exit code was dropped
 and its captured stderr was overwritten by the next handler and deleted on exit, so a lifecycle hook that could
 not do its job left no trace anywhere: the board simply kept whatever state it last held, and nobody could tell a
