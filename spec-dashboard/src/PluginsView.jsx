@@ -312,13 +312,15 @@ export default function PluginsView() {
         {activity.available && <span className="pg-ledger" data-tip={t('plugins.runWindow', { since: activity.sinceDay, days: activity.days })}>
           {t('plugins.ledger', { runs: activity.runs, since: activity.sinceDay })}
         </span>}
-        <span className="pg-profile">
-          <span className="pg-profile-k">{t('plugins.profileLabel')}</span>
-          <code>{profile.name}</code>
-          {profile.disables.length === 0
-            ? t('plugins.profileAll', { n: profile.retains.length })
-            : t('plugins.profileSome', { kept: profile.retains.length, off: profile.disables.join(', ') })}
-        </span>
+        {/* THE PROFILE IS ONLY NEWS WHEN IT SUBTRACTS. A profile that retains everything was drawn as a
+            sentence saying so, which is the ordinary case wearing a label — the same thing the marks rule
+            forbids on a pill. When nothing is disabled the drawing already says it: every hook is there,
+            none struck through. When something IS disabled the strikes say WHICH, and the only fact left
+            for the bar is which profile did it. */}
+        {profile.disables.length > 0 && <span className="pg-profile"
+          data-tip={t('plugins.profileTip', { off: profile.disables.join(', ') })}>
+          {t('plugins.profileOff', { name: profile.name, n: profile.disables.length })}
+        </span>}
       </header>
 
       <div className="pg-split" style={{ '--pg-panel': `${width}px` }}>

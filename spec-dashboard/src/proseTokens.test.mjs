@@ -28,19 +28,29 @@ test('prose token adapter keeps source maps and promotes SpexCode marks', () => 
   assert.deepEqual(evidence?.map, [4, 5])
 })
 
+test('issue references have their own token before node references', () => {
+  const tokens = parseProseTokens('A [[issue:local#one]] and [[issue:हिन्दी]] plus [[issues-view]].')
+  const inline = tokens.find((token) => token.type === 'inline')
+  const refs = inline?.children.filter((token) => token.type === 'prose_issue_ref') || []
+  assert.deepEqual(refs.map((token) => token.meta.id), ['local#one', 'हिन्दी'])
+  assert.equal(inline?.children.find((token) => token.type === 'prose_spec_ref')?.meta.id, 'issues-view')
+})
+
 test('the mapper renders semantic marks in place through caller handlers', () => {
-  const source = '▶0:07 · inspect\n\nReply [[node-a]] ![frame](/api/evidence/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa).'
+  const source = '▶0:07 · inspect\n\nReply [[node-a]] [[issue:local#one]] ![frame](/api/evidence/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa).'
   const seen = []
   const h = (type, props, ...children) => ({ type, props: props || {}, children })
   const output = renderProseTokens(parseProseTokens(source), {
     h,
     renderTimeAnchor: (meta) => { seen.push(['time', meta.tMs]); return h('button', {}, meta.label) },
     renderSpecRef: (id) => { seen.push(['ref', id]); return h('a', {}, id) },
+    renderIssueRef: (id) => { seen.push(['issue', id]); return h('a', {}, id) },
     renderEvidence: (meta) => { seen.push(['evidence', meta.hash]); return h('span', {}, meta.alt) },
   })
   assert.deepEqual(seen, [
     ['time', 7_000],
     ['ref', 'node-a'],
+    ['issue', 'local#one'],
     ['evidence', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'],
   ])
   assert.equal(output[0].type, 'button')

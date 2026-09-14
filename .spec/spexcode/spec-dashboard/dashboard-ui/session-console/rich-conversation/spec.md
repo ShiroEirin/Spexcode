@@ -35,7 +35,8 @@ its note plain text held to that line, so it never passes through this door.
 Markdown FILE, whose authoring wraps are typography rather than speech, so the one newline decision travels
 with the surface instead of living here: `TimelineChat` declares that the transcript keeps its soft line
 breaks, because the transcript is the one place a newline was typed mid-conversation and means what it says.
-[[prose-renderer]] holds that contract for every prose surface, this one included.
+[[prose-renderer]] holds that contract for every prose surface, this one included. Its `[[issue:<id>]]` semantic
+mark remains passive and is rendered by the timeline as a link to the addressed issue detail.
 
 The language and its safety envelope are [[prose-renderer]]'s contract, stated once there: compact agent
 Markdown (headings, emphasis, links and images including remote URLs, blockquotes, lists, fenced and inline code,
