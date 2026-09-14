@@ -723,3 +723,20 @@ export async function postIssueThread({ concern, body, evidence, store, parent, 
   })
   return res.json()
 }
+
+// the two session acts the Issues page needs when an issue closes ([[issue-binding]]'s close dialog): close one
+// session through the same route the console's menu uses, and ask one to wrap up through the same input route every
+// send uses. Neither invents a verb: the page only reaches for what the session surfaces already do.
+export async function postSessionClose(id) {
+  const res = await apiFetch(`/api/sessions/${encodeURIComponent(id)}/close`, { method: 'POST' })
+  const body = await res.json().catch(() => null)
+  return res.ok && body?.ok !== false ? { ok: true } : { ok: false, error: body?.error || `HTTP ${res.status}` }
+}
+export async function postSessionText(id, text) {
+  const res = await apiFetch(`/api/sessions/${encodeURIComponent(id)}/input`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ kind: 'text', text }),
+  })
+  const body = await res.json().catch(() => null)
+  return res.ok && body?.ok !== false ? { ok: true } : { ok: false, error: body?.error || `HTTP ${res.status}` }
+}
