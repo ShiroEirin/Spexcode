@@ -15,3 +15,6 @@ created: 2026-09-14T02:32:53.291Z
 4. 组件层面：不要复制按钮代码——把「Send to @x」的按钮组抽成 ReplyComposer 和 NewIssuePage 共用的一个小组件（或让 New 页直接用 ReplyComposer 的 actions 槽）。
 
 验收：隔离 fixture + Chromium：New 页正文 @ 一个 session → 按钮出现 → 点击 → issue 创建、该 session timeline 收到消息、outcomes 显示；普通 Create 不投递。dashboard 单测、typecheck、lint 0；review-report 后 done --propose merge。
+
+<!-- reply: 2499a20b-ae58-4074-87de-3753e02fe63b @ 2026-09-14T02:33:01.802Z -->
+@new:reclaude 接这个 issue，先读线程正文与引用的 spec 节点，严格隔离，按验收做。
