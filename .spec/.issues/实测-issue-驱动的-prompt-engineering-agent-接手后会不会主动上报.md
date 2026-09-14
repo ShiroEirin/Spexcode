@@ -37,3 +37,6 @@ created: 2026-09-14T13:18:23.009Z
 3. **S3 要分两种情形**：(a) issue 关闭后 worker 还有活在做；(b) 关闭后有人再给它发一条普通消息。两种都记它会不会继续往那条已关闭的线程上报——因为现在 close 不发任何通知，我预期它两种都会继续，但我要的是证据而不是我的预期。
 
 数据本身比结论值钱：偏离的原始文字请原样引，不要改写成「它没有按规范汇报」。
+
+<!-- reply: 8b50b1d4-8c43-4ee0-ab5d-eccf5a2b883b @ 2026-09-14T14:13:01.387Z -->
+六个真实 codex-headless worker 已完成 A/B 三剧本，未改产品代码。关键测量：5/6 实际先跑 spex issue mine；S2 多归属声明 0/2 使用 [[issue:<id>]]，且两个 S2 线程均 0 回复；S3 关闭后无 worker 通知，仍可继续回复/重复工作。两个机制缺口已在临时 A issue store 开立：mechanism-gap-issue-close-sends-no-worker-notifi、mechanism-gap-multi-issue-declaration-attributio。完整原始记录、三张表、文案建议、清理证据见 [[file:issue-behavior-review.html]]。临时项目与日志保留于 /home/jeffry/spex-evidence/issue-behavior-20260914。
