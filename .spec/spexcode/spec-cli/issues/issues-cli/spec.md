@@ -50,13 +50,19 @@ really asking, not a reason to widen a store module's exports.
 **`mine` is the worker's first read.** `spex issue mine [--json]` prints every issue the caller's session record
 points at ([[issue-binding]]), through the same merged read `show` uses; human output renders each thread in order and
 JSON returns an array. No session identity, or a session bound to no issue, is said plainly with the way to bind one
-(`spex issue assign <id> .`), never guessed from prompt text.
+(`spex issue assign <id> .`), never guessed from prompt text. More than one issue back is the ONE moment the
+count is known, so it is also where the attribution rule is said ([[issue-binding]]): a trailing line names the
+`[[issue:<id>]]` reference every reply and declaration note then owes. It goes to **stderr** in both forms — an
+agent reads it either way, and a `--json` consumer's parse never sees it.
 
 **The hierarchy verbs render the store's forward facts.** `spex issue open --parent <id>` passes the parent through
 `open`'s ordinary backend-first path; `spex issue reparent <id> --to <parent-id|none>`, `spex issue relate <id>
 blocks|related|duplicate <other-id>` and `spex issue close <id> --duplicate-of <canonical-id>` commit to the local
 store directly, the way `close` does, and `relate … duplicate` is spelled as that same close. The store's refusal —
-a missing or closed parent, a cycle, a self-edge — is printed as `spex issue <verb>: <message>` with exit 1. `show`
+a missing or closed parent, a cycle, a self-edge — is printed as `spex issue <verb>: <message>` with exit 1.
+`close` reports what the close DID, which now includes the fleet notice it sent ([[issue-binding]]): `· told
+<n>/<m> bound session(s)`, naming any queue it could not reach, and nothing at all when the issue had no bound
+session or the close changed nothing. `show`
 and `mine` print the read-time projection under the header — parent, sub-issues with their closed count, blocks,
 blocked by, related (both directions), duplicate of, duplicated by — each line only when it has an id; `ls --json`
 carries the same fields on every row with no rendering of its own.

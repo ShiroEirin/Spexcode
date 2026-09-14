@@ -10,6 +10,10 @@ related:
   - spec-cli/src/sessions.ts
   - spec-cli/src/mentions.ts
   - spec-cli/src/issue-assign.ts
+  - spec-cli/src/issue-attribution.ts
+  - spec-cli/src/issue-attribution.test.ts
+  - spec-cli/src/issues.ts
+  - spec-cli/src/session-declarations.ts
   - spec-cli/src/issues-cli.ts
   - spec-cli/src/index.ts
   - spec-cli/src/cli.ts
@@ -59,7 +63,23 @@ with one visible fleet per issue, and close/retire/children/acceptance reachable
   ordinary send path with an assignment message that says it is taking this thread on beside its own task. `spex issue
   unassign <issue> <SEL>` and `POST /api/issues/:id/unassign {session}` remove one member and tell the session that it
   no longer owns the thread; repeated removals are no-ops. Both halves are one verb: a binding nobody told the worker
-  about is a lie on the board, and a message without the binding leaves the Issues page blind.
+  about is a lie on the board, and a message without the binding leaves the Issues page blind. The assignment message
+  names the issue's id in place of every pronoun and DERIVES its scope clause from the set the assign just wrote: a
+  session that now carries several is told the count, the ids, and that each reply belongs on its own thread while
+  each declaration note names its issue — measured, a worker told only to "read the thread and act on it" while
+  already holding another issue reported its progress on the OTHER thread and left this one empty.
+- **A close is the third message of the binding.** Closing an issue ([[issues]]) tells every session whose own
+  `issues` set names it that the thread is landed, through the same one send path assign uses: stop working it,
+  post no more replies on it, and — if other issues remain in the set — carry on there, naming the issue in what
+  you write. It deliberately does neither of the two things a reader might expect: it does not UNBIND (the pointer
+  is provenance, and the closed issue's page still shows who worked it) and it does not END the session (that is
+  the session's own act, [[state]]) — so the notice says the thread is landed and asks the session to declare its
+  own end if it holds unlanded work. Only the pointer holders are told, exactly who assign speaks to: a descendant
+  working through its parent's pointer received the work from its parent and hears from it. The notice is advisory
+  around a durable write — a close is never undone because a queue was unreachable, its per-session outcome is
+  reported beside the close, and a repeat close tells nobody because it changed nothing. Measured before it
+  existed: a closed issue reached its fleet as nothing at all, and its workers went on replying to it and
+  repeating work.
 - **Joined at read, descendants inherited.** The dashboard's `issueFleet(issue, sessions)` is the ONE
   issue→session join: `assigned` are the unarchived board rows whose `issues` contains this issue or any issue below it (the
   read-time tree's `descendants`, [[issues]]) — a parent issue's fleet is its own plus every sub-issue's, so splitting
@@ -125,7 +145,11 @@ with one visible fleet per issue, and close/retire/children/acceptance reachable
   be read contributes nothing, never a broken thread; the ledger re-reads when a fleet row's status or note moves.
   A note containing `[[issue:<id>]]` is attributed only to that named issue; an unqualified note falls back to the
   session's sole assigned issue, while a session assigned to multiple issues contributes no unqualified row. The
-  reference is passive and renders as the same issue-detail link in the session timeline and this thread.
+  reference is passive and renders as the same issue-detail link in the session timeline and this thread. Because
+  that rule makes an unattributable declaration reach NO reader, it is spoken at the write: `spex session
+  done|ask|park` from a session carrying several issues whose note names none of them prints what it just cost
+  ([[declaration]]), and `spex issue mine` says the rule at the one moment the count is known. Both are advisories
+  around the same one grammar — nothing is stored twice, and no verb gains an issue flag beside the reference.
   **One line per session, and the ledger starts where the issue starts.** The thread keeps only each session's LATEST
   declaration, with a door into that session's console beside it: the issue page answers "who is on this and what state
   is it in", the session's own console answers "what is it doing", and copying its whole message stream here answered

@@ -466,8 +466,12 @@ app.post('/api/issues/:id/unassign', async (c) => {
 app.post('/api/issues/:id/close', async (c) => {
   if (!issuesEnabled()) return c.json({ error: 'issues workflow is off' }, 403)
   const id = c.req.param('id')
+  const body = await c.req.json().catch(() => ({}))
   try {
-    const r = await closeIssue(id)
+    // the closer's name rides into the fleet notice ([[issue-binding]]): the Close issue button posts no `by`, so
+    // it reads `human`. The notice itself is sent from THIS process, the one that owns delivery, and its
+    // per-session outcome comes back on the response.
+    const r = await closeIssue(id, { by: await claimedAuthor(body?.by) })
     if (r.store !== 'local') await refreshForgeNow()
     notifyBoardChanged('full')   // atomic with persistence — see the write-visibility note above the reply route
     return c.json({ ok: true, ...r })
