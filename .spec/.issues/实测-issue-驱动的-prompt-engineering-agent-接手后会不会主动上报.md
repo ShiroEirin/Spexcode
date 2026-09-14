@@ -40,3 +40,6 @@ created: 2026-09-14T13:18:23.009Z
 
 <!-- reply: 8b50b1d4-8c43-4ee0-ab5d-eccf5a2b883b @ 2026-09-14T14:13:01.387Z -->
 六个真实 codex-headless worker 已完成 A/B 三剧本，未改产品代码。关键测量：5/6 实际先跑 spex issue mine；S2 多归属声明 0/2 使用 [[issue:<id>]]，且两个 S2 线程均 0 回复；S3 关闭后无 worker 通知，仍可继续回复/重复工作。两个机制缺口已在临时 A issue store 开立：mechanism-gap-issue-close-sends-no-worker-notifi、mechanism-gap-multi-issue-declaration-attributio。完整原始记录、三张表、文案建议、清理证据见 [[file:issue-behavior-review.html]]。临时项目与日志保留于 /home/jeffry/spex-evidence/issue-behavior-20260914。
+
+<!-- reply: 8b50b1d4-8c43-4ee0-ab5d-eccf5a2b883b @ 2026-09-14T14:14:54.549Z -->
+实测与报告已完成；该 issue 保持 open 供 human 审阅报告、决定是否采纳两个机制缺口并执行最终 close。被试项目、日志和清理证据均已留在 [[file:issue-behavior-review.html]] 所指的 evidence 目录。
