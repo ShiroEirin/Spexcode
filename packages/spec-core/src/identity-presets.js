@@ -14,7 +14,8 @@ export const IDENTITY_PRESETS = Object.freeze([
   {
     // The brand mark: two brackets holding one file, cleft corner to corner and regenerated on the
     // upper-right of the cleft. Painted rather than stroked — see the paint note below. Geometry is
-    // docs/brand/mark-dark.svg scaled by 24/512; the two surface gradients flatten to their midpoints
+    // the pre-2026-09 brand mark (docs/brand/mark-dark.svg, since removed — see git history) scaled by 24/512;
+    // the two surface gradients flatten to their midpoints
     // because a 24-unit chip has no room for a ramp and the format carries no defs.
     id: 'spexcode', label: 'SpexCode', bg: '#12161C', fg: '#EFE8D8',
     shapes: [
