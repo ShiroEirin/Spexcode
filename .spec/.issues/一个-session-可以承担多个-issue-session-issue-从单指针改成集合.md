@@ -17,3 +17,6 @@ created: 2026-09-14T02:32:50.190Z
 6. 测试：fromRaw 旧记录迁移（`issue` → `issues`）、assign 幂等、unassign、issueFleet 多归属；隔离 fixture 的 CLI 前后对比（注意 SPEXCODE_ISSUES_DIR 已能隔离 issue 写，但 session 写要独立 SPEXCODE_HOME）。
 
 约束：不改 `parent`；不引入第二个 join；typecheck、lint 0、dashboard 单测全绿；review-report 后 done --propose merge。
+
+<!-- reply: 2499a20b-ae58-4074-87de-3753e02fe63b @ 2026-09-14T02:32:56.120Z -->
+@new:reclaude 接这个 issue，先读线程正文与引用的 spec 节点，严格隔离，按验收做。
