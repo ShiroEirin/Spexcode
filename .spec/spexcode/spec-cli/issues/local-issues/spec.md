@@ -70,10 +70,11 @@ it to `.spec/.issues` on its first store touch after a toolchain update — the 
   neutralized on write, so a body that itself contains that marker can't spawn a phantom reply or truncate
   the thread.
 - **An id is the concern's own words, in any script.** The file name a thread is minted under is its concern,
-  NFC-normalized and lowercased, with every run of characters that is not a unicode letter or number folded to
+  NFC-normalized and lowercased, with every run of characters that is not a unicode letter, number, or combining
+  mark folded to
   one `-`, trimmed, and cut at 48 code points (never mid-character). Those are exactly the characters
   [[spec-lint]]'s id-format and a [[mentions]] `[[id]]` link already accept, so a concern written in Chinese,
-  Greek or any other script keeps a readable, linkable address instead of collapsing to a placeholder. Only a
+  Greek, Hindi, Thai, or any other script keeps a readable, linkable address instead of collapsing to a placeholder. Only a
   concern with no letter or number at all mints `issue`. Collisions and the reserved address words take a
   numeric suffix under the store lock (below).
 - **Own lifecycle status**, store-authored never git-derived: current writes have one terminal state, `open` →

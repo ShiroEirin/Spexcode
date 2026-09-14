@@ -56,7 +56,7 @@ export const withNoteReplyContinuationHint = (text: string): string =>
 export const slugify = (s: string | null) =>
   (s || 'session').normalize('NFC').replace(/[^\p{L}\p{N}_-]+/gu, '-').replace(/-+/g, '-').replace(/^-+|-+$/g, '') || 'session'
 
-const MENTION = /\[\[(\.?[\p{L}\p{N}_-]+)\]\]/u
+const MENTION = /\[\[(\.?[\p{L}\p{N}\p{M}_-]+)\]\]/u
 export const nodeFromPrompt = (prompt: string): string | null => prompt.match(MENTION)?.[1] ?? null
 
 type CommandPreset = Pick<ConfigPreset, 'name' | 'body'>

@@ -56,7 +56,7 @@ Because the mint guarantees it, every RESOLVE site is uniform and needs no speci
   URL: it `encodeURIComponent`s the id and appends the fixed route words. No call site hand-rolls the
   string, so none can reintroduce a broken URL for an awkward id.
 - **[[mentions]]** — a `[[id]]` token whose chars lie within the wikilink charset (any unicode
-  letter/number plus `-_.` — script-agnostic, so a CJK id mentions like an ASCII one).
+  letter/number/combining mark plus `-_.` — script-agnostic, so a CJK or combining-mark id mentions like an ASCII one).
 - **corpus / search / DOM keys** — the id is used verbatim as a plain string; a single token is safe.
 
 Before this, `reId` joined colliding suffixes with `/`, minting ids like `.plugins/spec-scout`. The tree

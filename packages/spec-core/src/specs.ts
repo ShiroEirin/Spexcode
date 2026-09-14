@@ -76,7 +76,7 @@ function parseParts(body: string): SpecParts | null {
 // about the node the reader has open ([[context-dock]]). Prose only: a fenced block or an inline
 // `code span` is sample text (`[[node]]`, `[[<id>]]` placeholders live there), not a reference. Distinct,
 // in first-appearance order; whether a name resolves to a real node is the caller's judgement.
-const MENTION_RE = /\[\[(\.?[\p{L}\p{N}_-]+)\]\]/gu
+const MENTION_RE = /\[\[(\.?[\p{L}\p{N}\p{M}_-]+)\]\]/gu
 export function bodyMentions(body: string): string[] {
   const out = new Set<string>()
   let inFence = false
