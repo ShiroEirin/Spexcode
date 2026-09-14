@@ -80,6 +80,9 @@ grammar it wears a reserved qualified token, so reading a draft tells you which 
   it out of the node vocabulary — `:` is no id character — so it never resolves or expands as a node. It resolves
   only against the posted list of the session whose text holds it, and in the dashboard it opens that file wherever
   a `[[node]]` would open its node, the live terminal pane included.
+- **`[[issue:<id>]]` is a passive reference to an issue.** The `issue:` qualifier keeps it out of node inference,
+  while the id uses the same unicode letter/number/combining-mark vocabulary (and the store `#` separator) as
+  issue addresses. It has no dispatch or lifecycle side effect; the dashboard renders it as a link to `#/issues/<id>`.
 - **The grammar is script-agnostic.** A reference token speaks the id vocabulary defined once in
   [[spec-lint]]'s id-format rule (unicode letters/numbers/combining marks, `-`, optional leading dot) plus `_`, which occurs
   in minted parent-qualified ids. The parser and the autocomplete trigger scan use that same vocabulary, so
