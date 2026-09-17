@@ -104,6 +104,42 @@ test('canonical lifecycle always wins over stale JSON status bytes', () => {
   assert.equal(projected.proposal, null, 'closing clears the pre-close proposal')
 })
 
+test('queue projection excludes settled archive history but admits a pending archived resume', serial, async () => {
+  const previousHome = process.env.SPEXCODE_HOME
+  const home = mkdtempSync(join(tmpdir(), 'spex-queue-archive-projection-'))
+  const id = `queue-archive-projection-${process.pid}`
+  process.env.SPEXCODE_HOME = home
+  assertIsolatedResumeStore(home, id)
+  try {
+    writeResumeFixtureRecord(id, process.cwd(), 'true', {
+      status: 'archived', archived: true, stopped: true, closed_at: '2026-09-17T00:00:00.000Z',
+    })
+    assert.equal((await listSessions(false)).some((row) => row.id === id), false, 'settled archive history is outside the working projection')
+    assert.equal((await listSessions(false, true)).some((row) => row.id === id), false, 'settled archive history is outside queue admission too')
+
+    const raw = JSON.parse(readFileSync(sessionRecordPath(id), 'utf8')) as Record<string, unknown>
+    fsWriteFileSync(sessionRecordPath(id), `${JSON.stringify({
+      ...raw,
+      status: 'active', archived: false, stopped: true, closed_at: null,
+      launch_readiness_pending: {
+        version: 1, startedAt: Date.now(), original: {
+          status: 'archived', proposal: null, note: raw.note ?? null, stopped: true, archived: true,
+          closed_at: '2026-09-17T00:00:00.000Z', cold_proof: null, adapter_recovery: null,
+        },
+      },
+    }, null, 2)}\n`)
+    assert.equal((await listSessions(false)).some((row) => row.id === id), false, 'pending archive remains frozen out of ordinary public work')
+    const admitted = (await listSessions(false, true)).find((row) => row.id === id)
+    assert.ok(admitted, 'queue projection admits the pending archived transaction')
+    assert.equal(admitted?.archived, true)
+    assert.equal(admitted?.lifecycle, 'archived')
+  } finally {
+    if (previousHome === undefined) delete process.env.SPEXCODE_HOME
+    else process.env.SPEXCODE_HOME = previousHome
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
 test('backend restart does not re-arm readiness for a witnessed active session', serial, async () => {
   const previousHome = process.env.SPEXCODE_HOME
   const originalLaunchReady = (claudeHarness as any).launchReady

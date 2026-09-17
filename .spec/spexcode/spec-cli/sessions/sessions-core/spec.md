@@ -48,6 +48,10 @@ also reserved, independent of a successful global host snapshot. Pending resume 
 reserve capacity even while their frozen public projection is offline. Diagnostics name each excluded record and
 are emitted once per unchanged failure, rearming when the record recovers. Unclassified I/O or global runtime-probe
 failure still fails or pauses the pass loudly; per-record isolation is not permission to overlaunch or hide faults.
+The drainer's input is the working projection plus only those archived rows whose public projection is a pending
+resume fence; settled archive history never enters queue admission. Capacity is derived from the current pass's
+typed read result, while the process-local diagnostic deduplicator is logging-only. This keeps both the work set and
+the policy source bounded by runnable or in-flight work rather than by retained history.
 Creation authority is checked before any fresh-project canonical store is initialized: rejected, abandoned, fenced,
 or ambiguous requests leave no SQLite, migration marker, or fence behind. Only a successfully admitted fresh create
 may initialize the empty canonical store; an existing legacy store is opened only through the one-time importer.

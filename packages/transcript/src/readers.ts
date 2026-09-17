@@ -3,7 +3,7 @@ import { closeSync, openSync, readFileSync, readSync, readdirSync, statSync } fr
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { TranscriptReadError, type TranscriptRead, type TranscriptReader , type TranscriptRange } from './turns.js'
-import { IntervalCollector, claudeEvent, codexEvent, geminiEvent, hermesEvents, openclawEvent, opencodeEvents, piEvent, type Parse, type ParsedEvent } from './parsers.js'
+import { IntervalCollector, claudeEvent, codexRolloutEvent, geminiEvent, hermesEvents, openclawEvent, opencodeEvents, piEvent, type Parse, type ParsedEvent } from './parsers.js'
 
 // THE NATIVE-THREAD READERS. Each harness keeps its conversation somewhere private — Claude's project JSONL,
 // Codex's rollout, pi's session JSONL, OpenCode's store behind `opencode export` — and this module is the only
@@ -203,23 +203,36 @@ class LineFileCursor {
   }
 }
 
-function lineFileReader(harness: string, locate: (threadId: string) => string | null, parse: Parse): TranscriptReader {
+function fileHeader(path: string): unknown {
+  const fd = openSync(path, 'r')
+  let header: unknown
+  try {
+    scanLines(fd, { position: 0, carry: Buffer.alloc(0) }, (value) => { header = value; return true }, () => {})
+  } finally { closeSync(fd) }
+  return header
+}
+
+function lineFileReader(harness: string, locate: (threadId: string) => string | null, parser: (path: string) => Parse): TranscriptReader {
   const find = (threadId: string): string => {
     const path = locate(threadId)
     if (!path) throw new TranscriptReadError('missing', `${harness} transcript for ${threadId} is unavailable: file was not found`)
     return path
   }
+  const cursor = (threadId: string, from: number): LineFileCursor => {
+    const path = find(threadId)
+    return new LineFileCursor(harness, path, parser(path), from)
+  }
   return {
     revision: (threadId) => { const path = locate(threadId); return path ? fileRevision(path) : null },
     // after passing `to`, a one-shot read scans a fixed lookahead window for timestamp disorder before stopping
-    read: async (threadId, range) => new LineFileCursor(harness, find(threadId), parse, range.from).advance(range.to, POST_RANGE_LOOKAHEAD_LINES),
+    read: async (threadId, range) => cursor(threadId, range.from).advance(range.to, POST_RANGE_LOOKAHEAD_LINES),
     tail: (threadId, from) => {
-      let cursor: LineFileCursor | null = null
+      let current: LineFileCursor | null = null
       return {
         // the file is located on the first advance, so a tail opened before the thread exists fails as `missing`
         // there rather than at construction
-        advance: async (to) => (cursor ??= new LineFileCursor(harness, find(threadId), parse, from)).advance(to),
-        close: () => { cursor = null },
+        advance: async (to) => (current ??= cursor(threadId, from)).advance(to),
+        close: () => { current = null },
       }
     },
   }
@@ -229,11 +242,11 @@ function lineFileReader(harness: string, locate: (threadId: string) => string | 
 // readers exposed it, so anything wanting a second pi root — a producer under an isolated agent dir, a test —
 // had no way to ask. Passing nothing keeps the old behaviour exactly: the locator's own default is evaluated
 // per call, so a late `CLAUDE_CONFIG_DIR` is still picked up.
-export const claudeTranscriptReader = (root?: string): TranscriptReader => lineFileReader('claude', (threadId) => claudeTranscriptPath(threadId, root ?? projectTranscriptRoot()), claudeEvent)
-export const codexTranscriptReader = (root?: string): TranscriptReader => lineFileReader('codex', (threadId) => codexRolloutPath(threadId, root ?? codexSessionsDir()), codexEvent)
-export const piTranscriptReader = (root?: string): TranscriptReader => lineFileReader('pi', (threadId) => piSessionPath(threadId, root ?? piSessionsRoot()), piEvent)
-export const geminiTranscriptReader = (root?: string): TranscriptReader => lineFileReader('gemini', (threadId) => geminiTranscriptPath(threadId, root ?? geminiRoot()), geminiEvent)
-export const openclawTranscriptReader = (root?: string): TranscriptReader => lineFileReader('openclaw', (threadId) => openclawTranscriptPath(threadId, root ?? openclawRoot()), openclawEvent)
+export const claudeTranscriptReader = (root?: string): TranscriptReader => lineFileReader('claude', (threadId) => claudeTranscriptPath(threadId, root ?? projectTranscriptRoot()), () => claudeEvent)
+export const codexTranscriptReader = (root?: string): TranscriptReader => lineFileReader('codex', (threadId) => codexRolloutPath(threadId, root ?? codexSessionsDir()), (path) => codexRolloutEvent(fileHeader(path)))
+export const piTranscriptReader = (root?: string): TranscriptReader => lineFileReader('pi', (threadId) => piSessionPath(threadId, root ?? piSessionsRoot()), () => piEvent)
+export const geminiTranscriptReader = (root?: string): TranscriptReader => lineFileReader('gemini', (threadId) => geminiTranscriptPath(threadId, root ?? geminiRoot()), () => geminiEvent)
+export const openclawTranscriptReader = (root?: string): TranscriptReader => lineFileReader('openclaw', (threadId) => openclawTranscriptPath(threadId, root ?? openclawRoot()), () => openclawEvent)
 
 export const claudeTranscript: TranscriptReader = claudeTranscriptReader()
 export const codexTranscript: TranscriptReader = codexTranscriptReader()

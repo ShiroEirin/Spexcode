@@ -19,7 +19,9 @@ original using [[session-state-model]]'s complete product lifecycle, including t
 marker. A work-state declaration domain is narrower and is never reused to validate retained product history.
 
 Every public record read projects the frozen lifecycle, proposal, note, stopped/archive/close metadata and
-offline liveness until the restore owner clears the fence. Raw candidate bytes stay available only to internal
+offline liveness until the restore owner clears the fence. The public entry also carries a non-lifecycle `pending`
+marker for internal consumers that must distinguish this frozen projection from settled archive history; it does
+not expose candidate bytes or change the public lifecycle. Raw candidate bytes stay available only to internal
 runtime verification. Structurally incomplete or semantically unknown pending bytes remain a present corrupt
 entry with unknown liveness; absence, corruption and a valid frozen original are distinct outcomes.
 

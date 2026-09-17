@@ -419,7 +419,7 @@ export type RecordEntry =
   | { kind: 'corrupt'; path: string; error: string }
 
 export type PublicRecordEntry =
-  | { kind: 'ok'; raw: RawRecord; liveness: 'offline' | null }
+  | { kind: 'ok'; raw: RawRecord; liveness: 'offline' | null; pending?: boolean }
   | { kind: 'absent' }
   | { kind: 'corrupt'; sessionId: string; governed: boolean | null; path: string; error: string; liveness: 'unknown' }
 
@@ -463,6 +463,7 @@ export function projectPublicRecordEntry(id: string, entry: RecordEntry): Public
         launch_readiness_pending: '',
       },
       liveness: 'offline',
+      pending: true,
     }
   } catch (error) {
     return {

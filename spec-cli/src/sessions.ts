@@ -577,7 +577,7 @@ const lastKnownSession = new Map<string, Session>()
 // full text: it is a receipt for one ask the caller just made, not a row in a list of many.
 const boardRow = (s: Session): Session => { s.prompt = null; return s }
 
-export async function listSessions(includeArchived = false): Promise<Session[]> {
+export async function listSessions(includeArchived = false, includePendingArchived = false): Promise<Session[]> {
   // ONE store enumeration + ONE tmux snapshot (windows + pane pids + titles, merged) for the whole list, then
   // every session reconciles by a pure set lookup + one existsSync — no per-session tmux spawn.
   const [ids, snap] = await Promise.all([
@@ -620,6 +620,7 @@ export async function listSessions(includeArchived = false): Promise<Session[]> 
       if (current.kind !== 'ok' || before?.kind !== 'ok' || JSON.stringify(current.raw) !== JSON.stringify(before.raw)) changedDuringCensus.add(rec.session)
     } catch { changedDuringCensus.add(rec.session) }
   }
+  const pendingArchivedIds = new Set<string>()
   const rows = ids.map((id) => guardSession(id, () => {
     // a record we cannot READ still has a row: it is a session that exists and whose state is unknowable, which
     // is a thing to act on, not a thing to hide. It carries its own status and names the file, so the human can
@@ -633,6 +634,7 @@ export async function listSessions(includeArchived = false): Promise<Session[]> 
     if (entry.kind === 'corrupt') { const c = corruptSession(id, entry); lastKnownSession.set(id, c); return c }
     const rec = snapshot.rec
     if (!rec || !rec.governed) { lastKnownSession.delete(id); return null }   // no record, or a self-launched (non-board) one
+    if (entry.kind === 'ok' && entry.pending && rec.archived) pendingArchivedIds.add(id)
     const projectedRecord = entry.kind === 'ok' && entry.liveness === 'offline' ? rec : canonicalRecordProjection(rec, canonicalStates.get(id))
     // A forced public liveness comes only from the shared record projection. Do not let live process/thread
     // evidence punch through it (including archive hazard repair).
@@ -696,7 +698,7 @@ export async function listSessions(includeArchived = false): Promise<Session[]> 
   // prune last-known entries for ids that no longer appear at all (genuinely removed), keeping it bounded.
   const liveIds = new Set(ids)
   for (const k of [...lastKnownSession.keys()]) if (!liveIds.has(k)) lastKnownSession.delete(k)
-  return rows.filter((s): s is Session => s != null && (includeArchived || !s.archived))
+  return rows.filter((s): s is Session => s != null && (includeArchived || !s.archived || (includePendingArchived && pendingArchivedIds.has(s.id))))
     .sort((a, b) => (a.sortKey ?? a.created) - (b.sortKey ?? b.created) || a.id.localeCompare(b.id))
 }
 
@@ -1185,17 +1187,17 @@ async function startQueuedUnlocked(id: string): Promise<QueuedStartResult> {
 }
 const startQueued = (id: string): Promise<QueuedStartResult> => withSessionTransition(id, () => withRecordLock(id, () => startQueuedUnlocked(id)))
 
-const queueRecordFailures = new Map<string, string>()
+const queueRecordLogReasons = new Map<string, string>()
 function readQueueRecord(id: string): SessRec | null {
   try {
     const rec = readRecord(id)
-    queueRecordFailures.delete(id)
+    queueRecordLogReasons.delete(id)
     return rec
   } catch (error) {
     if (!(error instanceof SessionRecordUnusable)) throw error
-    if (queueRecordFailures.get(id) !== error.message) {
+    if (queueRecordLogReasons.get(id) !== error.message) {
       console.error(`spex: launch queue excluded ${id}; capacity reserved: ${error.message}`)
-      queueRecordFailures.set(id, error.message)
+      queueRecordLogReasons.set(id, error.message)
     }
     return null
   }
@@ -1207,12 +1209,12 @@ async function drainQueueUnlocked(): Promise<void> {
   try {
     const cap = maxActive()   // read once per drain pass (.spec/spexcode.json → env → default); won't shift mid-burst
     for (;;) {
-      const [sessions, snap] = await Promise.all([listSessions(true), liveSnapshot()])
+      const [sessions, snap] = await Promise.all([listSessions(false, true), liveSnapshot()])
       const records = new Map(sessions.map((session) => [session.id, readQueueRecord(session.id)]))
       const reservations = new Set(sessions.filter((session) => session.status === 'corrupt' || session.liveness === 'unknown'
-        || queueRecordFailures.has(session.id) || records.get(session.id)?.launchReadinessPending).map((session) => session.id))
+        || !records.get(session.id) || records.get(session.id)?.launchReadinessPending).map((session) => session.id))
       const present = new Set(sessions.map((session) => session.id))
-      for (const id of queueRecordFailures.keys()) if (!present.has(id)) queueRecordFailures.delete(id)
+      for (const id of queueRecordLogReasons.keys()) if (!present.has(id)) queueRecordLogReasons.delete(id)
       for (const session of sessions) {
         const rec = records.get(session.id)
         if (!rec || rec.launchReadinessPending || launching.has(session.id)) continue
@@ -1247,10 +1249,12 @@ async function drainQueueUnlocked(): Promise<void> {
           if (!live) {
             let startedAt = Date.now()
             try { startedAt = statSync(sessionArtifactPath(session.id, 'launch')).mtimeMs } catch { /* race: observer below will fail loud */ }
-            writeRecord({ ...rec, launchReadinessStartedAt: startedAt })
+            const updated = { ...rec, launchReadinessStartedAt: startedAt }
+            writeRecord(updated)
+            records.set(session.id, updated)
           }
         }
-        const refreshed = readQueueRecord(session.id)
+        const refreshed = records.get(session.id)
         if (!refreshed || refreshed.launchReadinessPending) { reservations.add(session.id); continue }
         if (refreshed.launchReadinessStartedAt && !refreshed.stopped && !refreshed.archived) {
           const harness = harnessById(refreshed.harness || defaultHarness.id)

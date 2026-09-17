@@ -390,3 +390,19 @@ test('a Codex 0.146 rollout: the person once, never as JSON blocks; the agent on
     assert.match(said[0] || '', /four-day work week/)
   }).finally(() => rmSync(root, { recursive: true, force: true }))
 })
+
+test('a current Codex rollout reads final prose from response_item once', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'spex-transcript-'))
+  await withEnv('CODEX_HOME', root, async () => {
+    const dir = join(root, 'sessions', '2026', '09', '17')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'rollout-current-thread.jsonl'), [
+      line({ timestamp: '2026-09-17T00:00:00.000Z', type: 'session_meta', payload: { cli_version: '0.153.4' } }),
+      line({ timestamp: '2026-09-17T00:00:01.000Z', type: 'event_msg', payload: { type: 'user_message', message: 'say ready' } }),
+      line({ timestamp: '2026-09-17T00:00:02.000Z', type: 'response_item', payload: { type: 'message', id: 'assistant-current', role: 'assistant', phase: 'final_answer', content: [{ type: 'output_text', text: 'CURRENT_CODEX_READY' }] } }),
+      line({ timestamp: '2026-09-17T00:00:03.000Z', type: 'event_msg', payload: { type: 'task_complete' } }),
+    ].join(''))
+    const read = await codexTranscript.read('current-thread', { from: 0, to: Date.parse('2026-09-18T00:00:00Z') })
+    assert.deepEqual(read.turns.filter((turn) => turn.role === 'assistant').map((turn) => turn.text), ['CURRENT_CODEX_READY'])
+  }).finally(() => rmSync(root, { recursive: true, force: true }))
+})

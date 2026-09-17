@@ -147,6 +147,13 @@ or closed session holds no binding, so its debt is kept but not polled: retrying
 be work that grows with every such session and delivers nothing, and the resume that binds it hands the debt over.
 Neither is privileged — the lock, not the process, is the guarantee.
 
+The launch drainer uses the working projection, not the archive index. A settled archived row is historical
+data and never enters queue admission; the only terminal row admitted to this pass is one carrying an archived
+`launch_readiness_pending` original, because that durable resume transaction still owns a capacity slot. Queue
+capacity is derived from the current pass's typed record outcomes (`corrupt`, `unknown`, or pending), while
+diagnostic deduplication is separate logging state. This keeps the queue's work set bounded by runnable or
+in-flight work rather than by the lifetime of archived history.
+
 **Delivery has exactly one shape: an ordinary prompt.** The agent receives a message the same way it receives
 anything else a human types, through the harness adapter's control channel. There is no second injection path
 and specifically no hook-injected mail: a turn-boundary hook reports freshness ([[mark-active]]) and never
