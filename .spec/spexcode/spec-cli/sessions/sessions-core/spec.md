@@ -25,7 +25,8 @@ related:
 
 The session subsystem's features — lifecycle state, launch, dispatch, comms, the live graph, selectors,
 the spec-pointer — all compose one shared session layer, with record I/O in `session-record.ts` and the remaining
-plumbing in `sessions.ts`. It is shared substrate with no single
+plumbing in `sessions.ts`. [[session-state-model]] owns the product vocabulary independently of the
+adopter-neutral application's status strings. It is shared substrate with no single
 feature as its owner, so per-feature drift on it fanned the same change across a dozen nodes. Give it a
 foundation owner: the features govern their own surfaces and REFERENCE this module via `related:`.
 
@@ -40,6 +41,13 @@ auto-discovery, see [[harness-delivery]]), the shared resolution of a raw `surfa
 the prompt that [[launch]] or [[dispatch]] delivers, and the launch queue's drain loop.
 Lifecycle writes have one typed entry point, `markState`; the retired `markError` convenience export is not part of
 the module surface, so callers name the state transition they are making instead of adding a second error mechanism.
+The launch queue isolates known per-record integrity failures rather than letting one unreadable envelope abort
+the fleet pass. Such a row stays corrupt/unknown and is never a launch candidate; it conservatively reserves one
+capacity slot because an unreadable envelope cannot prove its runtime absent. Per-session unknown liveness is
+also reserved, independent of a successful global host snapshot. Pending resume transactions also
+reserve capacity even while their frozen public projection is offline. Diagnostics name each excluded record and
+are emitted once per unchanged failure, rearming when the record recovers. Unclassified I/O or global runtime-probe
+failure still fails or pauses the pass loudly; per-record isolation is not permission to overlaunch or hide faults.
 Creation authority is checked before any fresh-project canonical store is initialized: rejected, abandoned, fenced,
 or ambiguous requests leave no SQLite, migration marker, or fence behind. Only a successfully admitted fresh create
 may initialize the empty canonical store; an existing legacy store is opened only through the one-time importer.

@@ -75,6 +75,10 @@ refuses, cannot reach, or that throws ENDS the loop with the entry still queued,
 behind it — order is a property of a conversation, so a message is never skipped to deliver a later one. A loop
 that ends on a held head logs the adapter's reason once per message and reason, so owed debt is never silent and
 a retried refusal does not repeat.
+An attached runtime that is still inside [[stop-resume]]'s pending publication transaction is not yet admitted
+for ordinary input. Both the drain entry and each claimed head recheck the same fence, retaining debt until
+readiness publication completes. A binding alone cannot bypass that ordering boundary; interrupted recovery
+settles the transaction before handing over the messages owed during restore.
 
 The lock spans one insert deliberately, never a whole queue, and it is NOT the record lock: the record lock cannot
 span an adapter call (a native turn runs lifecycle hooks that re-enter the record writer, which is a deadlock),

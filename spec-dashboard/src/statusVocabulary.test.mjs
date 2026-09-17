@@ -28,7 +28,7 @@ const walk = (root) => {
 const lineOf = (source, index) => source.slice(0, index).split('\n').length
 const escapedVocabulary = displayStatus.map((word) => word.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\$&')).join('|')
 const quotedVocabulary = new RegExp(`['"](?:${escapedVocabulary})['"]`, 'g')
-const keyedVocabulary = new RegExp(`(?:^|[,\\{])\\s*(${escapedVocabulary})\\s*:`, 'gm')
+const keyedVocabulary = new RegExp(`(?:^|[,\\{])\\s*(${escapedVocabulary})\\s*:\\s*['"]`, 'gm')
 
 // A small balanced-literal reader is enough for this guard: it sees arrays/objects/Set arguments while
 // ignoring function blocks, then reports the opening line so a new hand-written vocabulary is actionable.
@@ -64,8 +64,8 @@ function literals(source) {
   return out
 }
 
-test('DisplayStatus is the only lifecycle vocabulary and both dictionaries cover it', () => {
-  assert.equal(displayStatus.length, 14, 'canonical DisplayStatus declaration should remain closed and readable')
+test('DisplayStatus is the dashboard presentation vocabulary and both dictionaries cover it', () => {
+  assert.equal(vocabulary.size, displayStatus.length, 'canonical DisplayStatus declaration contains no duplicate words')
   for (const word of vocabulary) {
     assert.ok(typeof en.status[word] === 'string' && en.status[word], `English status.${word} is missing`)
     assert.ok(typeof zh.status[word] === 'string' && zh.status[word], `Chinese status.${word} is missing`)

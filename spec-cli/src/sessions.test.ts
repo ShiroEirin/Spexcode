@@ -663,7 +663,21 @@ exec sleep 30
     const stored = JSON.parse(readFileSync(sessionRecordPath(id), 'utf8'))
     assert.equal(stored.harness_session_id, 'thread-recovered')
 
-    assert.deepEqual(await resumeSession(id, { force: true }), { ok: true })
+    const uncertainRetry = await resumeSession(id, { force: true })
+    assert.equal(uncertainRetry.ok, false, 'force cannot restart a pending candidate whose live PID has no proven transport')
+    assert.equal(readFileSync(invocationCount, 'utf8'), '1', 'uncertain pending reentry spawns nothing')
+    process.kill(Number(readFileSync(launchPidPath, 'utf8').trim()), 'SIGTERM')
+    for (const raw of readFileSync(helperPids, 'utf8').trim().split('\n')) {
+      const pid = Number(raw)
+      try { process.kill(pid, 'SIGTERM') } catch { /* fixture already exited */ }
+    }
+    await waitUntil(() => readFileSync(helperPids, 'utf8').trim().split('\n').every((raw) => {
+      try { process.kill(Number(raw), 0); return false } catch { return true }
+    }), 'failed fixture candidate exits before rollback')
+    const offlineRecovery = await resumeSession(id)
+    assert.equal(offlineRecovery.ok, false)
+    assert.match(offlineRecovery.error || '', /exact stopped\/offline record.*Retry resume/)
+    assert.deepEqual(await resumeSession(id), { ok: true })
     await waitUntil(() => readFileSync(invocationCount, 'utf8') === '2', 'idempotent native-thread resume')
     assert.equal(readFileSync(invocationArgc, 'utf8'), '2')
     assert.equal(readFileSync(invocationPayload, 'utf8'), '--resume')
@@ -751,7 +765,8 @@ exec sleep 30
     runtime_start_token: 'watcher-start', stopped: false, archived: false, cold_proof: '', adapter_recovery: '', launcher: 'fixture',
     launch_cmd: helper, launch_owner: '', create_request_id: '', create_payload_hash: '', launch_readiness_pending: '',
   }, null, 2)}\n`)
-  writeFileSync(sessionArtifactPath(id, 'agent.pid'), `${process.pid}\n`)
+  // A prepared queue row has no leaf yet. Leaving an agent.pid here makes the scheduler correctly reserve the
+  // row as an ambiguous owner before it can inspect the queued launch receipt, which is a different scenario.
   writeFileSync(join(sessionStoreDir(id), 'watchers.json'), `${JSON.stringify([{
     watcher: watcherId, createdAt: new Date().toISOString(), sources: ['parent'], snapshotPending: 'readiness-timeout-snapshot',
   }])}\n`)
@@ -920,7 +935,9 @@ touch ${JSON.stringify(consumed)}
     await waitUntil(() => readinessEntered || settled, 'adapter readiness entry or early resume result', 15_000)
     assert.equal(settled, false, `resume returned before adapter readiness: ${JSON.stringify(settledResult)}`)
     assert.equal(settled, false, 'resume does not finish at shared-runtime spawn')
-    assert.equal(JSON.parse(readFileSync(sessionRecordPath(id), 'utf8')).stopped, true, 'record stays stopped before readiness')
+    const beforeReadiness = JSON.parse(readFileSync(sessionRecordPath(id), 'utf8'))
+    assert.equal(beforeReadiness.launch_readiness_pending?.original?.stopped, true, 'durable BEGIN freezes the stopped original before readiness')
+    assert.equal((await listSessions(true)).find((row) => row.id === id)?.liveness, 'offline', 'public projection stays offline before readiness')
     releaseReady()
     await waitUntil(() => validationEntered, 'post-pending readiness validation')
     const internalPending = JSON.parse(readFileSync(sessionRecordPath(id), 'utf8'))
@@ -1294,6 +1311,106 @@ test('a stale launch-readiness pending record recovers fail-closed before anothe
     assert.equal(existsSync(home), false, 'stale resume fixture root is removed exactly')
     assertLiveSessionsUnchanged(liveBefore, 'stale resume fixture')
   }
+})
+
+test('resume admission and interrupted recovery preserve live owners and newer canonical declarations', serial, async (t) => {
+  for (const outcome of ['ready', 'declared', 'already-published', 'unknown', 'invalidated', 'open-gone', 'open-live', 'open-unknown'] as const) await t.test(outcome, async () => {
+    const previousHome = process.env.SPEXCODE_HOME
+    const previousDatabasePath = process.env.SPEX_SESSION_DATABASE_PATH
+    const originalDescriptors = codexHeadlessHarness.sharedRuntimes
+    const originalDescriptorKey = codexHeadlessHarness.targetDescriptorKey
+    const originalLaunchReady = codexHeadlessHarness.launchReady
+    const originalLaunchCmd = codexHeadlessHarness.launchCmd
+    const home = mkdtempSync(join(tmpdir(), 'spex-pending-resume-reentry-'))
+    process.env.SPEXCODE_HOME = home
+    const id = `pending-reentry-${outcome}-${process.pid}`
+    assertIsolatedResumeStore(home, id)
+    try {
+      const admission = outcome === 'open-live' || outcome === 'open-unknown'
+      const open = outcome === 'open-gone' || admission
+      writeResumeFixtureRecord(id, process.cwd(), 'true', { status: open ? 'active' : 'archived', stopped: !open || admission, archived: !open, closed_at: open ? undefined : '2026-09-16T00:00:00.000Z' })
+      const original = JSON.parse(readFileSync(sessionRecordPath(id), 'utf8'))
+      if (!admission) writeFileSync(sessionRecordPath(id), `${JSON.stringify({
+        ...original, archived: false, stopped: false, closed_at: undefined,
+        launch_readiness_pending: { version: 1, startedAt: 1, original: {
+          status: open ? 'active' : 'archived', proposal: null, note: original.note, stopped: !open, archived: !open,
+          closed_at: original.closed_at ?? null, cold_proof: null, adapter_recovery: null,
+        } },
+      })}\n`)
+      const pendingBytes = readFileSync(sessionRecordPath(id), 'utf8')
+      codexHeadlessHarness.targetDescriptorKey = () => 'fixture-resume-runtime'
+      codexHeadlessHarness.launchCmd = () => { throw new Error('unexpected launch during recovery/admission') }
+      codexHeadlessHarness.sharedRuntimes = () => [{
+        key: 'fixture-resume-runtime', label: 'fixture', pidFile: '', receiptFile: '',
+        residency: async () => ({ healthy: outcome !== 'unknown' && outcome !== 'open-unknown', referenceIds: outcome === 'open-gone' ? [] : [`thread-${id}`] }),
+        probe: async () => ({ healthy: true, references: [] }),
+      }]
+      let validations = 0
+      codexHeadlessHarness.launchReady = async () => ({ proof: { kind: 'fixture-exact-ready' }, validate: async () => { validations++; return outcome !== 'invalidated' } })
+      if (outcome === 'declared') transitionFixtureState(id, 'asking', null, 'new human question')
+      if (outcome === 'already-published') transitionFixtureState(id, 'idle', null, original.note)
+      if (outcome === 'declared') {
+        const frozen = (await listSessions(true)).find((row) => row.id === id)
+        assert.equal(frozen?.note, original.note, 'pending public projection does not leak a newer canonical declaration')
+        assert.equal(frozen?.liveness, 'offline')
+      }
+      const eventsBefore = readTimeline(id)?.events.length ?? 0
+      if (admission) {
+        const refused = await resumeSession(id)
+        assert.equal(refused.ok, false)
+        assert.match(refused.error || '', outcome === 'open-live' ? /ALIVE/ : /physical runtime liveness is unknown/)
+        const ensureLive = await resumeSession(id, { guard: false })
+        assert.equal(ensureLive.ok, outcome === 'open-live', JSON.stringify(ensureLive))
+        assert.equal(canonicalState(id).status, 'active', 'ensure-live does not turn an already executing or ambiguous runtime idle')
+        assert.equal(readFileSync(sessionRecordPath(id), 'utf8'), pendingBytes, 'admission does not mutate filing markers or invent a transaction')
+        assert.equal(validations, 0)
+        assert.equal(readTimeline(id)?.events.length, eventsBefore)
+        return
+      }
+      if (outcome === 'unknown' || open) {
+        const application = configuredSessionApplication()
+        application.bindRuntime(id, { namespace: 'spex-governed', runtimeKind: 'codex-headless', nativeSessionId: `thread-${id}`, nativeStartToken: 'fixture-start' })
+        application.enqueueMessage(id, { kind: 'session.prompt.v1', body: Buffer.from('held until publication') })
+        const pendingHead = application.readPendingMessages(id)[0].messageId
+        await drainSession(id)
+        assert.equal(application.readPendingMessages(id)[0].messageId, pendingHead, 'a binding never bypasses the pending resume delivery fence')
+      }
+      const result = await resumeSession(id, { force: true })
+      assert.equal(existsSync(sessionArtifactPath(id, 'launch.sh')), false, 'pending reentry never launches, even with force')
+      if (open) {
+        assert.equal(result.ok, false)
+        assert.match(result.error || '', /exact stopped\/offline record.*Retry resume/)
+        assert.equal(configuredSessionApplication().resolveRuntime(id, 'spex-governed')?.status, 'unbound', 'the failed candidate binding is detached even when the frozen original was not stopped')
+        const restored = JSON.parse(readFileSync(sessionRecordPath(id), 'utf8'))
+        assert.equal(restored.stopped, false, 'offline recovery retains the original metadata rather than inventing a stop declaration')
+        assert.equal(restored.launch_readiness_pending, '')
+        assert.equal(validations, 0)
+      } else if (outcome === 'unknown' || outcome === 'invalidated') {
+        assert.equal(result.ok, false)
+        assert.match(result.error || '', /pending transaction was retained/)
+        assert.equal(readFileSync(sessionRecordPath(id), 'utf8'), pendingBytes, 'unproven candidate remains byte-identical')
+        assert.equal(readTimeline(id)?.events.length, eventsBefore)
+        assert.equal(validations, outcome === 'unknown' ? 0 : 1)
+      } else {
+        assert.equal(result.ok, true, JSON.stringify(result))
+        assert.equal(validations, 1)
+        assert.equal(JSON.parse(readFileSync(sessionRecordPath(id), 'utf8')).launch_readiness_pending, '')
+        assert.equal(canonicalState(id).status, outcome === 'declared' ? 'asking' : 'idle')
+        assert.equal(canonicalState(id).note, outcome === 'declared' ? 'new human question' : original.note)
+        assert.equal(readTimeline(id)?.events.length, eventsBefore + (outcome === 'ready' ? 1 : 0), 'newer or already published canonical state emits no duplicate event')
+      }
+    } finally {
+      codexHeadlessHarness.sharedRuntimes = originalDescriptors
+      codexHeadlessHarness.targetDescriptorKey = originalDescriptorKey
+      codexHeadlessHarness.launchReady = originalLaunchReady
+      codexHeadlessHarness.launchCmd = originalLaunchCmd
+      if (previousHome === undefined) delete process.env.SPEXCODE_HOME
+      else process.env.SPEXCODE_HOME = previousHome
+      if (previousDatabasePath === undefined) delete process.env.SPEX_SESSION_DATABASE_PATH
+      else process.env.SPEX_SESSION_DATABASE_PATH = previousDatabasePath
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
 })
 
 test('expired launch readiness residue becomes terminal error/offline during queue recovery', serial, async () => {

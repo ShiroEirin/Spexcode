@@ -1,4 +1,4 @@
-import { readAliasedRawRecord, type SessionLifecycle, type SessionProposal } from '@spexcode/spec-core'
+import { isSessionWorkLifecycle, parseHistoricalSessionState, parseSessionProposal, readAliasedRawRecord, type SessionLifecycle, type SessionWorkLifecycle, type SessionProposal } from '@spexcode/spec-core'
 import { decodeEventJson, type SessionEvent } from '@spexcode/session-events'
 import { MIGRATED_MESSAGE_EVENT, MIGRATED_STATE_EVENT } from '@spexcode/session-application'
 import { configuredSessionApplication } from './session-application.js'
@@ -30,13 +30,15 @@ const publicEvent = (event: SessionEvent): TimelineEvent[] => {
   const decoded = decodeEventJson(event.payload)
   if (!decoded || typeof decoded !== 'object' || Array.isArray(decoded)) return []
   const payload = decoded as Record<string, unknown>
-  if (event.type === 'session.state.changed.v1' || event.type === MIGRATED_STATE_EVENT) return [{
-    ts: new Date(event.occurredAtMs).toISOString(),
-    kind: 'status',
-    status: String(payload.status) as SessionLifecycle,
-    proposal: payload.proposal === null || payload.proposal === undefined ? null : String(payload.proposal) as SessionProposal,
-    note: payload.note === null || payload.note === undefined ? null : String(payload.note),
-  }]
+  if (event.type === 'session.state.changed.v1' || event.type === MIGRATED_STATE_EVENT) {
+    const state = parseHistoricalSessionState(payload.status, payload.proposal)
+    return [{
+      ts: new Date(event.occurredAtMs).toISOString(),
+      kind: 'status',
+      ...state,
+      note: payload.note === null || payload.note === undefined ? null : String(payload.note),
+    }]
+  }
   if (event.type === 'session.message.sent.v1' || event.type === MIGRATED_MESSAGE_EVENT) return [{
     ts: new Date(event.occurredAtMs).toISOString(),
     kind: 'sent',
@@ -91,14 +93,15 @@ export const currentHumanTurn = (id: string): { token: string; acceptedAt: strin
   return sent ? { token: sent.mid, acceptedAt: sent.ts } : null
 }
 
-export const recordStatus = (id: string, status: SessionLifecycle, proposal: SessionProposal | null, note: string | null): void => {
+export const recordStatus = (id: string, status: SessionWorkLifecycle, proposal: SessionProposal | null, note: string | null): void => {
+  if (!isSessionWorkLifecycle(status)) throw new Error(`invalid work-state declaration '${String(status)}'`)
   const application = configuredSessionApplication()
   if (!application.readState(id)) throw new Error(`cannot record status for unknown canonical session ${id}`)
-  application.transitionSession(id, { status, proposal, note, reason: 'cli-status' })
+  application.transitionSession(id, { status, proposal: parseSessionProposal(proposal), note, reason: 'cli-status' })
 }
 
 const PROPOSAL_DISPLAY: Record<string, DisplayWord> = { merge: 'review', nothing: 'done', close: 'close-pending' }
-type DisplayWord = 'working' | 'idle' | 'review' | 'done' | 'close-pending' | 'parked' | 'error' | 'asking' | 'queued'
+type DisplayWord = 'working' | 'idle' | 'review' | 'done' | 'close-pending' | 'parked' | 'error' | 'asking' | 'queued' | 'created' | 'archived'
 
 export const timelineDisplay = (event: { status: SessionLifecycle; proposal: SessionProposal | null }): DisplayWord =>
   event.status === 'awaiting' ? (PROPOSAL_DISPLAY[event.proposal ?? 'nothing'] ?? 'done')

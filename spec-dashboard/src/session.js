@@ -10,7 +10,7 @@ export const STATUS_COLOR = {
   working: 'var(--green)', parked: 'var(--green)',
   asking: 'var(--yellow)', review: 'var(--yellow)', done: 'var(--yellow)',
   error: 'var(--red)',
-  idle: 'var(--muted)', starting: 'var(--muted)', queued: 'var(--muted)',
+  idle: 'var(--muted)', starting: 'var(--muted)', queued: 'var(--muted)', created: 'var(--muted)',
   'close-pending': 'var(--muted)', offline: 'var(--muted)',
   unknown: 'var(--yellow)',   // liveness probe FAILED (box overloaded) — death unproven, so warn, never read as dead
   corrupt: 'var(--red)',      // the RECORD itself is unreadable — a broken thing to look at, not a dead agent
@@ -26,7 +26,7 @@ export const STATUS_GLYPH = {
   asking: '?', review: '◑', done: '✓',
   error: '✕',
   idle: '·', starting: '◌', queued: '⋯', 'close-pending': '⊘', offline: '○', unknown: '⁇',
-  corrupt: '⚠', retired: '⚑', archived: '▤',
+  corrupt: '⚠', retired: '⚑', created: '\u25cc', archived: '▤',
 }
 
 // Fixed board buckets consume the status published by the session package. The dashboard does not replace an

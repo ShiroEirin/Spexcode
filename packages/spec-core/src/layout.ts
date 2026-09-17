@@ -5,6 +5,9 @@ import { git, repoRoot, gitA, gitAbortError, currentGitBuildAbortSignal, gitInte
 import { guardWorktree } from './resilience.js'
 import { HARNESS_IDENTITIES, type HarnessId } from './harness-identity.js'
 import { encodeProject, projectRuntimeRoot } from './project-store.js'
+import { isSessionLifecycle, isSessionProposal, type SessionLifecycle } from './session-state.js'
+export { SESSION_LIFECYCLES, SESSION_WORK_LIFECYCLES, SESSION_PROPOSALS, isSessionLifecycle, isSessionWorkLifecycle, isSessionProposal, parseSessionLifecycle, parseSessionProposal, parseHistoricalSessionState, resumedSessionLifecycle } from './session-state.js'
+export type { SessionLifecycle, SessionWorkLifecycle, SessionProposal } from './session-state.js'
 
 export type Config = {
   main?: string                    // path to the source-of-truth checkout (default: the `main` worktree)
@@ -337,19 +340,8 @@ export type RawRecord = {
   launch_readiness_pending?: '' | RawLaunchReadinessPending
 }
 
-export const SESSION_LIFECYCLES = ['active', 'idle', 'awaiting', 'parked', 'error', 'asking', 'queued'] as const
-export const SESSION_PROPOSALS = ['merge', 'nothing', 'close'] as const
-export type SessionLifecycle = typeof SESSION_LIFECYCLES[number]
-export type SessionProposal = typeof SESSION_PROPOSALS[number]
-const sessionLifecycles = new Set<string>(SESSION_LIFECYCLES)
-const sessionProposals = new Set<string>(SESSION_PROPOSALS)
-export const isSessionLifecycle = (value: unknown): value is SessionLifecycle =>
-  typeof value === 'string' && sessionLifecycles.has(value)
-export const isSessionProposal = (value: unknown): value is SessionProposal =>
-  typeof value === 'string' && sessionProposals.has(value)
-
 export type RawLaunchReadinessOriginal = {
-  status: string
+  status: SessionLifecycle
   proposal: string | null
   note: string | null
   stopped: boolean

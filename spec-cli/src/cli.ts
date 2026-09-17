@@ -351,7 +351,7 @@ async function followKit(selectors: string[], verb: string): Promise<{
   const { ownSessionId, toSession } = await import('./sessions.js')
   const { selectSessions } = await import('./session-selectors.js')
   const { fromRaw } = await import('./session-record.js')
-  const { listSessionIds, readPublicRecordEntry } = await import('@spexcode/spec-core')
+  const { listSessionIds, parseSessionLifecycle, parseSessionProposal, readPublicRecordEntry } = await import('@spexcode/spec-core')
   const { configuredSessionApplication } = await import('./session-application.js')
   const real = selectors.filter((sel) => sel && sel !== '@all')
   let picked: string[] = []
@@ -378,8 +378,8 @@ async function followKit(selectors: string[], verb: string): Promise<{
       harness: 'unknown',
       capabilities: { headless: false },
       launcher: null,
-      lifecycle: state.status as import('@spexcode/spec-core').SessionLifecycle,
-      proposal: state.proposal as import('@spexcode/spec-core').SessionProposal,
+      lifecycle: parseSessionLifecycle(state.status),
+      proposal: parseSessionProposal(state.proposal),
       merges: 0,
       status,
       liveness: 'unknown' as const,

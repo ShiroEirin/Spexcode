@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { readFileSync, writeFileSync, existsSync, renameSync, mkdirSync, readdirSync } from 'node:fs'
 import { join, dirname, isAbsolute, resolve } from 'node:path'
-import { mainRoot, runtimeRoot, sessionStoreDir, sessionRecordPath, sessionArtifactPath, rawLaunchReadinessOriginal, readRecordEntry, readAliasedRecordEntry, processStartToken, isSessionLifecycle, isSessionProposal, type RawRecord, type SessionLifecycle, type SessionProposal, type ProcessIdentity } from '@spexcode/spec-core'
+import { mainRoot, runtimeRoot, sessionStoreDir, sessionRecordPath, sessionArtifactPath, rawLaunchReadinessOriginal, readRecordEntry, readAliasedRecordEntry, processStartToken, isSessionLifecycle, isSessionProposal, parseSessionLifecycle, parseSessionProposal, type RawRecord, type SessionLifecycle, type SessionProposal, type ProcessIdentity } from '@spexcode/spec-core'
 import { jsonMigrationFencePath } from '@spexcode/session-application'
 import { configuredSessionApplication, sessionApplicationCutoverState } from './session-application.js'
 import { withSessionRecordLock, withSessionRecordLockSync as coreWithSessionRecordLockSync } from './session-record-lock.js'
@@ -12,6 +12,12 @@ import { sessionHost, probeTimedOut, TMUX_PROBE_TIMEOUT_MS } from './session-hos
 
 type Lifecycle = SessionLifecycle
 type Proposal = SessionProposal
+function canonicalRecordState(id: string, state: { status: string; proposal: string | null }) {
+  try { return { status: parseSessionLifecycle(state.status), proposal: parseSessionProposal(state.proposal) } }
+  catch (error) {
+    throw new SessionRecordUnusable('corrupt', id, `canonical session state is unreadable for ${id}: ${error instanceof Error ? error.message : String(error)}; no runtime envelope was changed`)
+  }
+}
 let withSessionTransition: <T>(id: string, body: () => Promise<T>) => Promise<T> = (_id, body) => body()
 
 export type SessRec = {
@@ -84,8 +90,7 @@ export function readRecord(id: string): SessRec | null {
       session: id,
       governed: true,
       worktreePath: '', branch: null, title: null, name: null, parent: state.parentSessionId, issues: [], issue: null,
-      status: state.status as SessionLifecycle,
-      proposal: isSessionProposal(state.proposal) ? state.proposal : null,
+      ...canonicalRecordState(id, state),
       merges: 0, note: state.note, sortKey: null, createdAt: state.updatedAtMs,
       harness: 'claude', harnessSessionId: null, runtimeStartToken: null,
       stopped: false, archived: false, closedAt: null, coldProof: null, adapterRecovery: null,
@@ -106,14 +111,13 @@ export function readRecord(id: string): SessRec | null {
     if (!state) throw new ResourceConflict(`session ${record.session} has no canonical application state after JSON cutover`)
     return {
       ...record,
-      status: state.status as SessionLifecycle,
-      proposal: isSessionProposal(state.proposal) ? state.proposal : null,
+      ...canonicalRecordState(record.session, state),
       note: state.note,
       parent: state.parentSessionId,
     }
   }
   catch (error) {
-    if (error instanceof ResourceConflict) throw error
+    if (error instanceof ResourceConflict || error instanceof SessionRecordUnusable) throw error
     throw new SessionRecordUnusable('corrupt', id,
       `session record is unreadable: ${sessionRecordPath(id)} — ${error instanceof Error ? error.message : String(error)}. The file is kept as-is; nothing will rewrite it.`)
   }
@@ -166,8 +170,6 @@ export function fromRaw(raw: RawRecord & { launch_owner?: string }): SessRec {
   const sk = raw.sortkey
   const sortKey = typeof sk === 'number' && Number.isFinite(sk) ? sk : null
   const pendingRaw = rawLaunchReadinessOriginal(raw)
-  const pendingStatus = pendingRaw && isSessionLifecycle(pendingRaw.status) ? pendingRaw.status : null
-  if (pendingRaw && !pendingStatus) throw new Error(`session '${raw.session_id}' launch readiness original has invalid lifecycle '${pendingRaw.status}'`)
   const pendingProposal = pendingRaw && isSessionProposal(pendingRaw.proposal) ? pendingRaw.proposal : null
   if (raw.closed_at != null && raw.closed_at !== ''
     && (typeof raw.closed_at !== 'string' || !Number.isFinite(Date.parse(raw.closed_at))))
@@ -224,7 +226,7 @@ export function fromRaw(raw: RawRecord & { launch_owner?: string }): SessRec {
       version: 1,
       startedAt: (raw.launch_readiness_pending as { startedAt: number }).startedAt,
       original: {
-        status: pendingStatus!, proposal: pendingProposal, note: pendingRaw.note || null,
+        status: pendingRaw.status, proposal: pendingProposal, note: pendingRaw.note || null,
         stopped: pendingRaw.stopped, archived: pendingRaw.archived,
         closedAt: pendingRaw.closed_at || null,
         coldProof: pendingRaw.cold_proof || null, adapterRecovery: pendingRaw.adapter_recovery || null,
@@ -357,6 +359,7 @@ export function writeRecord(rec: SessRec): void {
     }),
   }
   const dir = sessionStoreDir(rec.session)
+  rawLaunchReadinessOriginal(obj as unknown as RawRecord)
   mkdirSync(dir, { recursive: true })
   const path = sessionRecordPath(rec.session)
   const tmp = join(dir, `.runtime.json.${process.pid}.tmp`)
