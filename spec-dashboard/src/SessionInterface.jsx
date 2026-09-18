@@ -32,6 +32,7 @@ import {
 import { firesEvent, withShortcut } from './bindings.js'
 import { inertChromePress } from './focus.js'
 import { useEscLayer } from './escStack.js'
+import { useBackdropDismiss } from './backdropDismiss.js'
 import RichText from './RichText.js'
 import { useTransientNotice } from './TransientNotice.jsx'
 import { decodePrompt, encodePrompt } from './codeSelection.js'
@@ -144,9 +145,10 @@ function ArchivePage({ sessions, onOpenSession, onClose }) {
     const next = Math.max(0, Math.min(archiveRows.length - 1, current + (event.key === 'ArrowDown' ? 1 : -1)))
     rowRefs.current[next]?.focus()
   }
+  const backdropProps = useBackdropDismiss(onClose)
 
   return (
-    <div className="si-archive-backdrop" data-archive-backdrop onKeyDown={onKeyDown} onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
+    <div className="si-archive-backdrop" data-archive-backdrop onKeyDown={onKeyDown} {...backdropProps}>
     <div className="si-archive-page" data-archive-page role="dialog" aria-modal="true" aria-label={t('session.archiveTitle')}>
       <header className="si-archive-head">
         <div>
@@ -339,6 +341,7 @@ function LauncherPicker({ launchers, launcher, pickLauncher, onSettings }) {
   const t = useT()
   const [pop, setPop] = useState(false)
   useEscLayer(pop, () => setPop(false))
+  const backdropProps = useBackdropDismiss(() => setPop(false))
   // the trigger's glyph shows the SELECTED launcher's harness (unknown/absent harness reads as claude,
   // the default — same fallback the backend applies).
   const selected = launchers.find((l) => l.name === launcher)
@@ -362,9 +365,9 @@ function LauncherPicker({ launchers, launcher, pickLauncher, onSettings }) {
       )}
       {pop && (
         <>
-          {/* full-viewport backdrop — the outside-click close surface; a mousedown here is inert chrome
-              under the panel's keepFocus blanket, so the composer keeps focus while the pop closes. */}
-          <div className="si-launcher-backdrop" onMouseDown={() => setPop(false)} />
+          {/* full-viewport backdrop — the outside-click close surface; the shared gesture seam keeps a
+              selection that starts in the picker from closing when it releases outside. */}
+          <div className="si-launcher-backdrop" {...backdropProps} />
           <div className="si-launcher-pop" role="dialog" aria-modal="true" aria-label={t('session.launcherPickerTitle')}>
             <div className="si-launcher-pop-head">
               <div className="si-launcher-pop-copy">

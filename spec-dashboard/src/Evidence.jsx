@@ -3,6 +3,7 @@ import { useT } from './i18n/index.jsx'
 import { Icon } from './icons.jsx'
 import { apiUrl } from './project.js'
 import { useEscLayer } from './escStack.js'
+import { useBackdropDismiss } from './backdropDismiss.js'
 
 // The ONE evidence renderer: a content-addressed blob → the right media element in an issue thread or
 // authored document. A typed entry ({hash, kind, state}) renders via EvidenceItem; a BARE hash
@@ -16,8 +17,9 @@ const blobUrl = (hash) => apiUrl(`/api/evidence/${hash}`)
 // click anywhere or Esc closes; Esc is swallowed in capture so the page's own Esc stack never fires.
 export function ImageLightbox({ src, alt, onClose }) {
   useEscLayer(true, onClose)
+  const backdropProps = useBackdropDismiss(onClose)
   return (
-    <div className="lightbox" onClick={onClose}>
+    <div className="lightbox" {...backdropProps}>
       <img src={src} alt={alt} />
     </div>
   )
