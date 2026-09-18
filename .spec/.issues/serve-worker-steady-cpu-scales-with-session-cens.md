@@ -63,3 +63,28 @@ Phase 4 — hook burst 合并
 - 性能目标先以 macmini 现测基线为参照，建议门槛：空载稳定低于 2%，17 个 idle session 无 hook burst 时低于 5%，hook burst 结束后 10s 内回落到该基线附近；若达不到，继续看计数而不是放宽阈值。
 
 落地顺序：Phase 1 单独提交并测量 → Phase 2 单独提交并测量 → Phase 3/4 分别按 `graph-stream`/`sessions` spec 更新意图、实现、`spex spec lint`、真实 serve YATU fail→pass。不要把“降低轮询频率”作为唯一修复，也不要在 macmini 直接试验。
+
+<!-- reply: 7690d008-1893-4d77-a6d3-16f051463169 @ 2026-09-18T02:23:08.207Z -->
+Spec: graph-stream, sessions, serve
+
+CPU 分解 A/B（2026-09-18，本机同一份 678-record store，Linux 16 CPU；只读源码/临时复制 store，未改产品代码）
+
+主要矛盾已从“所有 timer 都可疑”收敛为两个层次：
+
+1. 全量 roster 扫描是常驻底座成本：678 条 `runtime.json`，无 graph stream，worker 稳定期 15 秒 `pidstat` 平均 16.3% CPU（单次 10 秒窗口平均 16.8%）。这来自 3s queue drain、1s delivery retry、1s turn-failure reconciliation，以及它们对全 roster 的记录/状态读取；`drainQueueUnlocked()` 还把 `listSessions()` 内部的 `liveSnapshot()` 与自己的 `liveSnapshot()` 重复了一次（sessions.ts:580-585, 1193-1195）。
+
+2. 至少一个 delta graph subscriber 是最大的共享增量：同一 678-record store、无 stream 稳定 16.3%，接入一个 `/api/graph/stream?mode=delta` 后稳定 15 秒平均 29.5%（另一 10 秒窗口 38.96%，受建图/调度抖动影响，但冷启动已在接入前等待 30 秒）。因此 delta subscriber 打开了 graphStream.ts:1045-1053 的 100ms hot + 1s warm poll，以及 15s patrol/rebuild 体系；它不是每 subscriber 一份，而是 process-global 共享一份。
+
+3. subscriber 数没有线性放大：同一 678-record store 稳定采样，1/5/14 个 delta streams 分别约 31.1% / 29.0% / 30.4%。所以“多浏览器 tab 各自创建 timer”不是主因；主因是第一个 subscriber 触发的共享 graph 路径加上 roster 成本。
+
+4. tmux pane 数不是当前主要增量：678 records + 31 个临时 tmux panes + 一个 delta stream 稳定 15 秒平均 30.4%，与 678 records + 一个 stream 的 29.5% 同一量级。warm poll 的 list-panes/rendezvous 成本存在，但当前样本没有显示它是 40-50% 的第一驱动。
+
+5. hook burst 是短时放大器：15 个 live/non-stopped records + 一个 delta stream，300 次真实 `spex internal session-state active` 写入期间 worker 平均 40.85% CPU；burst 后 10 秒窗口回落到 15.6%。这直接证明 canonical commit → `notifyBoardChanged('sessions')` → graph session projection 的路径（index.ts:58-60, graphStream.ts:377-399）是高频 hook 的增量来源，而不是纯空闲 timer。
+
+结论排序：
+- 第一主要矛盾：第一个 delta graph subscriber 激活的共享 graph poll/rebuild 路径。
+- 第二主要矛盾：678 级别全量 roster 的每秒/每三秒监督扫描，构成稳定底座。
+- 第三是触发放大器：PreToolUse/Stop 等 hook 的 canonical state commit，使 session projection 在 burst 期间把 CPU 推到约 41%。
+- 不是主要矛盾：subscriber 数量本身的线性复制；31 个 pane 的单独增加；daemon-runtime.ts 动态 import。
+
+修复优先级因此调整为：先对第一个 delta subscriber 激活后的共享 graph 路径做计数和降载（hot/warm poll、session refresh、rebuild build-ms），再消除 queue drain 的重复 liveSnapshot；随后把 hook commit 合并限制到一次 session projection/build dirty rerun。delivery/turn-failure 的 roster 扫描属于第二阶段底座优化，不应先拿它解释 macmini 的全部 40-50%。
