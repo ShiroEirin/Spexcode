@@ -70,6 +70,13 @@ export interface SessionStateChange {
   reason: string | null
 }
 
+export interface ChangedSessionIds {
+  /** The append-only session-event rowid to use as the next watermark. */
+  watermark: number
+  /** Distinct event subjects appended after the requested watermark. */
+  subjectSessionIds: string[]
+}
+
 export interface NativeRuntimeIdentity {
   namespace: string
   runtimeKind: string
@@ -159,6 +166,7 @@ export interface ProductionSessionApplication extends SessionApplication {
   /** The protocol address row itself — present for every registered session, governed or not; null means never initialized. */
   readAddress(sessionId: string): SessionAddress | null
   readEvents(sessionId: string, afterSequence?: number): readonly SessionEvent[]
+  readChangedSessionIdsSince(watermark: number): ChangedSessionIds
   readWatchEvents(watcherSessionIds: readonly string[], limit?: number): readonly WatchEvent[]
   readFollowCursor(watcherSessionId: string, subjectSessionId: string): number | null
   advanceFollowCursor(watcherSessionId: string, subjectSessionId: string, eventSequence: number): void
@@ -646,6 +654,30 @@ export function openProjectSessionApplication(options: ProjectSessionApplication
     readEvents(sessionId, afterSequence) {
       requireId(sessionId, 'sessionId')
       return events.read(sessionId, afterSequence === undefined ? undefined : { afterSequence })
+    },
+
+    readChangedSessionIdsSince(watermark) {
+      if (!Number.isSafeInteger(watermark) || watermark < 0) {
+        throw new TypeError('session event watermark must be a non-negative safe integer')
+      }
+      return protocol.withTransaction(tx => {
+        // session_events is append-only and uses SQLite's implicit rowid, giving separate processes a
+        // database-local commit cursor without adding a migration. The event table never deletes or updates
+        // rows, so a caller can safely retain the returned watermark between watcher notifications.
+        const rows = tx.query(
+          'SELECT rowid, subject_session_id FROM session_events WHERE rowid>? ORDER BY rowid',
+          watermark,
+        ) as Array<{ rowid: number | bigint; subject_session_id: string }>
+        const latest = tx.query('SELECT COALESCE(MAX(rowid), 0) AS watermark FROM session_events')[0]?.watermark ?? 0
+        const nextWatermark = Number(latest)
+        if (!Number.isSafeInteger(nextWatermark) || nextWatermark < watermark) {
+          throw new Error('session event watermark is outside the safe integer range')
+        }
+        return {
+          watermark: nextWatermark,
+          subjectSessionIds: [...new Set(rows.map(row => String(row.subject_session_id)))],
+        }
+      })
     },
 
     readWatchEvents(watcherSessionIds, limit = 1000) {

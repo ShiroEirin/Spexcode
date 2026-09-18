@@ -64,6 +64,29 @@ test('post-commit reports affected session ids and a change mask without changin
   }
 })
 
+test('session event watermark returns only subjects appended after the prior cursor', () => {
+  const root = mkdtempSync(join(tmpdir(), 'session-application-change-watermark-'))
+  const app = openProjectSessionApplication({ databasePath: join(root, 'sessions.sqlite'), locality: () => {} })
+  try {
+    assert.throws(() => app.readChangedSessionIdsSince(-1), /watermark must be a non-negative safe integer/)
+    app.createSession({ sessionId: 'first' })
+    const first = app.readChangedSessionIdsSince(0)
+    assert.ok(first.watermark > 0)
+    assert.deepEqual(first.subjectSessionIds, ['first'])
+
+    app.createSession({ sessionId: 'second' })
+    app.transitionSession('first', { status: 'active' })
+    const second = app.readChangedSessionIdsSince(first.watermark)
+    assert.ok(second.watermark > first.watermark)
+    assert.deepEqual(second.subjectSessionIds, ['second', 'first'])
+
+    const settled = app.readChangedSessionIdsSince(second.watermark)
+    assert.deepEqual(settled, { watermark: second.watermark, subjectSessionIds: [] })
+  } finally {
+    app.close()
+  }
+})
+
 test('production composition runs the parent/child state, event, replay, publish, and binding fence story', () => {
   const root = mkdtempSync(join(tmpdir(), 'session-application-production-'))
   const databasePath = join(root, 'sessions.sqlite')
