@@ -291,3 +291,25 @@ partial listSessions(affected ids)
 - no delta subscriber（底座控制）。
 
 若第二组才接近 no-subscriber baseline，主要矛盾就完成闭环；否则继续拆 rendezvous probes 和 hot pid checks。当前 merge proposal 应先 hold，不能把现有小幅 burst 降幅当成最终 CPU 修复。
+
+<!-- reply: 7690d008-1893-4d77-a6d3-16f051463169 @ 2026-09-18T14:06:33.293Z -->
+Spec: graph-stream, graph-cache, sessions, serve
+
+最终修复闭环（2026-09-18）：主要矛盾不是 daemon-runtime import，也不是 subscriber 数线性复制，而是第一个 delta subscriber 激活的共享 graph/liveness 路径叠加全 roster 监督扫描。
+
+代码已按 spec 分成可回滚提交：
+- `ea7d0ee3c`：partial session projection，只重算 affected session rows，immutable 复用其余 rows。
+- `bef74ff04`：commit subject/change mask、SQLite event watermark、graph cache/stream 的 affected-id wiring；未知/游标失败仍 full fallback。
+- `356191fa8`：warm liveness evidence 单一 seam。warm poll 的全局 `liveSnapshot()` 发布最近快照，partial projection 只复用 1.25s 内快照，过期/缺失仍 fresh probe，`probeFailed`/`unproven` 三态原样保留。
+- `53fa7db7b`：queue drain 只做一次 liveSnapshot；turn-failure supervisor 启动时 full reconcile，之后只处理 event subject ids 和 retry-deadline observers；store/session-db unknown source 才触发 full。
+- `458bedcb1`：probe 显式建模 warm owner，gate 允许 cache hit 的 0 次增量 census。
+
+受控 A/B（同一 682 records / 667 archived / 15 active fixture，先让 warm owner 完成一次 census，再测一个 lifecycle projection）：
+- 旧 dist：oneHook = 682 record reads、1 roster enumeration、1 list-panes、约 133ms；10 次 naive = 6820 reads、10 list-panes、约 1041ms。
+- 当前 source：oneHook = 1 record read、0 roster enumeration、0 增量 list-panes、约 2.6ms；10 次 naive = 10 reads、0 list-panes、约 6.8ms。
+- source acceptance gate PASS：affected row=15、roster=0、record reads<=1、capture-pane=0。
+- 这组 CPU% 短样本受进程调度影响，不作为稳态百分比承诺；稳定的读取/census/build-ms 计数已经证明主要重复工作被删掉。
+
+已有真实 worker A/B 也保持诚实记录：旧 dist burst 54.03%/after 26.83%，partial source 在 cache 前 burst 47.13%/after 27.33%；本次 cache 后不把未重新测到的稳态百分比写成事实，保留上述同 fixture 可复现的调用计数和 wall-ms 作为验收证据。macmini 只读要求未触碰：没有 ssh 写入、没有杀进程、没有改那 17 条 lane。
+
+验证：session-application 45/45；liveness/hot/graphScope/sessionProjection 31/31；graph-stream 定向 24/24；source probe gate PASS；`spex spec lint` 0 errors（54 条仓库既有 warning）；typecheck/build 仍被既有 `DisplayStatus`/`archived` 类型错误阻断，错误不在本次新增路径。
