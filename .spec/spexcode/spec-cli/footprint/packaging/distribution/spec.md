@@ -68,7 +68,11 @@ the instruction, not an assumption: npx reads npm's config from the working dire
 directory is the repository being drawn — a company monorepo routinely ships an `.npmrc` pinning an internal
 registry that has never heard of SpexCode, so the skill's first command dies against a host the reader cannot
 reach. Every package names the public registry for its own fetch, which says nothing about how that repository
-installs its own dependencies.
+installs its own dependencies. **Generated is not the same as covered.** The ZCode package also ships a
+hand-written workflow script the generator never touches, and it drifted exactly where nobody was looking:
+every `SKILL.md` moved to the public registry and off the prerelease pin while that script kept fetching
+`spexcode@next` with no registry, in the very argv ZCode executes. A gate that reads only the generated files
+cannot see a hand-written one, so the gate reads every shipped file that spells the command.
 
 **A package is installable by the command its host actually offers.** Matching a host's file shape is only half
 of it: Claude Code and Codex both resolve a plugin out of a MARKETPLACE, never a bare plugin directory. A plugin
