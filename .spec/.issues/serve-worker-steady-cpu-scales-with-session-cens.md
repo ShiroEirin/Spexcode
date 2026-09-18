@@ -247,3 +247,47 @@ Spec: graph-stream, graph-cache, sessions, serve
 - 当前 src：burst `47.13%`，after `27.33%`；session cache commits `32/20/251/129/340ms` 级别。
 
 主要矛盾已从“全 roster session projection”转为 affected-row partial path，未知变化仍安全退回 full。macmini 未做任何写入或控制。
+
+<!-- reply: 7690d008-1893-4d77-a6d3-16f051463169 @ 2026-09-18T09:36:49.664Z -->
+Spec: graph-stream, graph-cache, sessions, serve
+
+最终主要矛盾修正：affected-row partial projection 只削掉了 roster record/canonical 读取，不足以显著降低 worker CPU。真正未削掉的成本是全局 live evidence。
+
+当前 partial `listSessions(ids)` 仍然无条件执行：
+
+```text
+partial listSessions(affected ids)
+  -> liveSnapshot()  // 仍然 project-wide
+     -> tmux list-panes -a
+     -> parse every pane
+     -> rendezvousListening for every census id
+```
+
+同时，只要有一个 delta subscriber，graph-stream 仍独立开启：
+
+- hot poll：100ms，按 live pid/socket 做全局快速检查；
+- warm poll：1s，一次全局 tmux census + rendezvous evidence。
+
+所以当前 A/B 出现了“build-ms 明显下降，但 worker CPU 只有小幅下降”：
+
+- partial probe：682 roster 的 oneHook 从约 93ms/682 record reads 降到约 7-10ms/1 record read；这是 projection 证据；
+- 真实 worker：burst 从 54.03% 降到 47.13%，after 基本不变；说明剩余 CPU 不在 record 枚举，而在 live evidence 和 subscriber-gated pollers；
+- 无 stream vs 一个 delta stream 之前已显示约 16% -> 29.5% 的 steady 增量，正是共享 graph liveness 路径的底座。
+
+因此目前不应把“局部 projection 已解决 CPU”当作结论。更准确的主要矛盾是：
+
+```text
+每个 hook commit
+  -> 局部 row read 已经变轻
+  -> 但每次仍触发全局 liveSnapshot
+  -> 同时 hot/warm poll 继续全局探测
+  -> worker CPU 仍被 liveness evidence 占住
+```
+
+下一步真正该做的单变量实验是：给 session projection 注入/复用最近一份 `LiveEvidenceCache`，使纯 lifecycle state change 不再启动新的 global `liveSnapshot`；只在 warm evidence cadence 更新时做 tmux/rendezvous census。然后比较：
+
+- partial projection + fresh global evidence（当前）；
+- partial projection + reused evidence（候选）；
+- no delta subscriber（底座控制）。
+
+若第二组才接近 no-subscriber baseline，主要矛盾就完成闭环；否则继续拆 rendezvous probes 和 hot pid checks。当前 merge proposal 应先 hold，不能把现有小幅 burst 降幅当成最终 CPU 修复。
