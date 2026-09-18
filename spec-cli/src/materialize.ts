@@ -560,8 +560,13 @@ export function materialize(proj = process.cwd()): MaterializeResult {
     if (isTrackedHere(f) || hostContentOf(f).trim()) filterContracts.push(f)
     else oursContracts.push(f)
   }
+  // @@@ backslashes - .gitignore patterns are '/'-separated on EVERY platform (git reads them as POSIX
+  // paths); a win32 `relative()` hands back `\.claude\settings.json`, which git matches against NOTHING, so
+  // the whole managed ignore block silently did nothing on Windows — every machine-local artifact
+  // (.claude/settings.json, the skill SKILL.md files, CLAUDE.md) stayed visible to `git status` and got
+  // swept into commits. Normalizing here is the same fix walk()/bundleFiles() already carry.
   const localEntries = [...machinePaths, ...bundlePaths, ...artifactPaths, ...oursContracts]
-    .map((p) => relative(proj, p)).filter((p) => !p.startsWith('..'))
+    .map((p) => relative(proj, p).replace(/\\/g, '/')).filter((p) => !p.startsWith('..'))
   const ignoreFile = join(proj, '.gitignore')
   const ignoreTracked = isTrackedHere(ignoreFile)
   // A repo adopted during the window where `spex init` appended .spec/spexcode.local.json to the ignore carries
