@@ -228,3 +228,8 @@ event AND as a `response_item` message (`output_text` blocks). The reader takes 
 message, one assistant turn per reply — and reads neither `response_item` message form as a turn; an empty
 `agent_message` (a final answer that was a tool call) is a clock, not a turn. Measured on bench 3.9: before this,
 every human message appeared twice, once as a JSON-encoded block array.
+
+Codex 0.153 moved the final prose record: the rollout may omit `event_msg/agent_message` and keep the answer in
+`response_item/message` with `phase: final_answer`. The Codex file adapter reads `session_meta.cli_version` once
+at the parser seam and selects that native form; it does not make the session route or timeline add a second
+fallback reader. The normalized result remains one assistant turn, and the older event form remains unchanged.

@@ -68,7 +68,12 @@ recorded path. If the archive ref exists, its diff against the branch tip is app
 tracked edits, deletions, and untracked files return as uncommitted state. A legacy `archived: true` row without
 an archive ref is still readable and resumable from its retained branch; it simply has no extra dirty delta to
 restore. Only then does the normal adapter launch/readiness fence run. Any restore or launch failure keeps the
-record archived and the worktree available for a bounded retry.
+record archived and the worktree available for a bounded retry only when runtime absence is proven. An existing
+live or ambiguous restore candidate remains fenced for explicit recovery; it cannot claim the old cold proof.
+The human-owned terminal marker is part of [[session-state-model]]'s complete lifecycle domain, and successful
+resume always leaves that terminal state through the model's explicit recovery transition.
+Close does not race a durable pending restore: it requires that restore to be revalidated or explicitly
+cancelled through the ordinary stop/cold ownership proof first.
 
 **Compatibility.** Existing records with `archived: true`, `coldProof`, or `archiveHazard` remain valid input.
 They project as closed/offline when their target is not live, regardless of whether the old cold proof is present;

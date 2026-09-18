@@ -12,7 +12,7 @@ import { adapterLoadedReferenceState, assertRvSockPath, defaultHarness, defaultL
 import { materialize } from './materialize.js'
 import { parseParentDirective, stripRefSigil } from './mentions.js'
 import { resolveSession } from './session-selectors.js'
-import { mainBranch, mainRoot, gitCommonDir, readConfig, runtimeRoot, treeSlotDir, sessionStoreDir, sessionArtifactPath, listSessionIds, readRecordEntry, readPublicRecordEntry, envSessionId, type PublicRecordEntry, type SessionLifecycle, type SessionProposal } from '@spexcode/spec-core'
+import { mainBranch, mainRoot, gitCommonDir, readConfig, runtimeRoot, treeSlotDir, sessionStoreDir, sessionArtifactPath, listSessionIds, readRecordEntry, readPublicRecordEntry, envSessionId, isSessionWorkLifecycle, parseSessionLifecycle, parseSessionProposal, resumedSessionLifecycle, type PublicRecordEntry, type SessionLifecycle, type SessionWorkLifecycle, type SessionProposal } from '@spexcode/spec-core'
 import { readSessionFiles, sessionUploads, type SessionUpload } from './session-files.js'
 import { readSessionWebs, type SessionWeb } from './session-web.js'
 import { readSessionWidgets, type SessionWidget } from './session-widgets.js'
@@ -124,7 +124,7 @@ export type { DispatchResult }
 
 type Lifecycle = SessionLifecycle
 export type Proposal = SessionProposal
-export type DisplayStatus = 'working' | 'idle' | 'offline' | 'starting' | 'review' | 'done' | 'close-pending' | 'parked' | 'error' | 'asking' | 'queued' | 'unknown' | 'corrupt' | 'retired'
+export type DisplayStatus = 'working' | 'idle' | 'offline' | 'starting' | 'review' | 'done' | 'close-pending' | 'parked' | 'error' | 'asking' | 'queued' | 'unknown' | 'corrupt' | 'retired' | 'created' | 'archived'
 const PROPOSAL_STATUS: Record<Proposal, DisplayStatus> = { merge: 'review', nothing: 'done', close: 'close-pending' }
 
 // Awaiting is the durable lifecycle row; its proposal selects the user-facing display status. Keep this
@@ -397,7 +397,7 @@ async function assertTargetTmuxAbsent(id: string, phase: string): Promise<void> 
 function reconcile(rec: SessRec, snap: LiveSnap, residentLiveness?: Liveness): DisplayStatus {
   // record integrity outranks both axes: a session whose worktree is gone has no work to be in any state
   // about. It reads `retired` — a terminal, human-closable row, never a lifecycle a hook can write back over.
-  if (rec.archived) return 'offline'
+  if (rec.archived || rec.status === 'archived') return 'offline'
   if (retirementReason(rec)) return 'retired'
   if (rec.status === 'awaiting') return displayStatusForProposal(rec.proposal)
   if (rec.status !== 'active' && rec.status !== 'idle') return rec.status  // parked | error | asking | queued (no tmux yet)
@@ -577,7 +577,7 @@ const lastKnownSession = new Map<string, Session>()
 // full text: it is a receipt for one ask the caller just made, not a row in a list of many.
 const boardRow = (s: Session): Session => { s.prompt = null; return s }
 
-export async function listSessions(includeArchived = false): Promise<Session[]> {
+export async function listSessions(includeArchived = false, includePendingArchived = false): Promise<Session[]> {
   // ONE store enumeration + ONE tmux snapshot (windows + pane pids + titles, merged) for the whole list, then
   // every session reconciles by a pure set lookup + one existsSync — no per-session tmux spawn.
   const [ids, snap] = await Promise.all([
@@ -620,6 +620,7 @@ export async function listSessions(includeArchived = false): Promise<Session[]> 
       if (current.kind !== 'ok' || before?.kind !== 'ok' || JSON.stringify(current.raw) !== JSON.stringify(before.raw)) changedDuringCensus.add(rec.session)
     } catch { changedDuringCensus.add(rec.session) }
   }
+  const pendingArchivedIds = new Set<string>()
   const rows = ids.map((id) => guardSession(id, () => {
     // a record we cannot READ still has a row: it is a session that exists and whose state is unknowable, which
     // is a thing to act on, not a thing to hide. It carries its own status and names the file, so the human can
@@ -633,7 +634,8 @@ export async function listSessions(includeArchived = false): Promise<Session[]> 
     if (entry.kind === 'corrupt') { const c = corruptSession(id, entry); lastKnownSession.set(id, c); return c }
     const rec = snapshot.rec
     if (!rec || !rec.governed) { lastKnownSession.delete(id); return null }   // no record, or a self-launched (non-board) one
-    const projectedRecord = canonicalRecordProjection(rec, canonicalStates.get(id))
+    if (entry.kind === 'ok' && entry.pending && rec.archived) pendingArchivedIds.add(id)
+    const projectedRecord = entry.kind === 'ok' && entry.liveness === 'offline' ? rec : canonicalRecordProjection(rec, canonicalStates.get(id))
     // A forced public liveness comes only from the shared record projection. Do not let live process/thread
     // evidence punch through it (including archive hazard repair).
     if (entry.kind === 'ok' && entry.liveness === 'offline') {
@@ -696,7 +698,7 @@ export async function listSessions(includeArchived = false): Promise<Session[]> 
   // prune last-known entries for ids that no longer appear at all (genuinely removed), keeping it bounded.
   const liveIds = new Set(ids)
   for (const k of [...lastKnownSession.keys()]) if (!liveIds.has(k)) lastKnownSession.delete(k)
-  return rows.filter((s): s is Session => s != null && (includeArchived || !s.archived))
+  return rows.filter((s): s is Session => s != null && (includeArchived || !s.archived || (includePendingArchived && pendingArchivedIds.has(s.id))))
     .sort((a, b) => (a.sortKey ?? a.created) - (b.sortKey ?? b.created) || a.id.localeCompare(b.id))
 }
 
@@ -982,8 +984,8 @@ export function canonicalRecordProjection<T extends Pick<SessRec, 'status' | 'st
   return {
     ...rec,
     archived: closed ? true : rec.archived,
-    status: (closed ? 'archived' : canonical.status) as Lifecycle,
-    proposal: (closed ? null : canonical.proposal) as Proposal | null,
+    status: closed ? 'archived' : parseSessionLifecycle(canonical.status),
+    proposal: closed ? null : parseSessionProposal(canonical.proposal),
     note: canonical.note,
     parent: canonical.parentSessionId,
   }
@@ -1185,16 +1187,37 @@ async function startQueuedUnlocked(id: string): Promise<QueuedStartResult> {
 }
 const startQueued = (id: string): Promise<QueuedStartResult> => withSessionTransition(id, () => withRecordLock(id, () => startQueuedUnlocked(id)))
 
+const queueRecordLogReasons = new Map<string, string>()
+function readQueueRecord(id: string): SessRec | null {
+  try {
+    const rec = readRecord(id)
+    queueRecordLogReasons.delete(id)
+    return rec
+  } catch (error) {
+    if (!(error instanceof SessionRecordUnusable)) throw error
+    if (queueRecordLogReasons.get(id) !== error.message) {
+      console.error(`spex: launch queue excluded ${id}; capacity reserved: ${error.message}`)
+      queueRecordLogReasons.set(id, error.message)
+    }
+    return null
+  }
+}
+
 async function drainQueueUnlocked(): Promise<void> {
   if (draining) return
   draining = true
   try {
     const cap = maxActive()   // read once per drain pass (.spec/spexcode.json → env → default); won't shift mid-burst
     for (;;) {
-      const [sessions, snap] = await Promise.all([listSessions(), liveSnapshot()])
+      const [sessions, snap] = await Promise.all([listSessions(false, true), liveSnapshot()])
+      const records = new Map(sessions.map((session) => [session.id, readQueueRecord(session.id)]))
+      const reservations = new Set(sessions.filter((session) => session.status === 'corrupt' || session.liveness === 'unknown'
+        || !records.get(session.id) || records.get(session.id)?.launchReadinessPending).map((session) => session.id))
+      const present = new Set(sessions.map((session) => session.id))
+      for (const id of queueRecordLogReasons.keys()) if (!present.has(id)) queueRecordLogReasons.delete(id)
       for (const session of sessions) {
-        const rec = readRecord(session.id)
-        if (!rec || launching.has(session.id)) continue
+        const rec = records.get(session.id)
+        if (!rec || rec.launchReadinessPending || launching.has(session.id)) continue
         // Older timed-out rows predate the durable readiness timestamp. Reconcile their recorded failure
         // before any queue/watch work so a backend restart cannot resurrect the old active/limbo projection.
         if (rec.status !== 'queued' && /^queued launch readiness failed:/.test(rec.note || '')) {
@@ -1226,10 +1249,13 @@ async function drainQueueUnlocked(): Promise<void> {
           if (!live) {
             let startedAt = Date.now()
             try { startedAt = statSync(sessionArtifactPath(session.id, 'launch')).mtimeMs } catch { /* race: observer below will fail loud */ }
-            writeRecord({ ...rec, launchReadinessStartedAt: startedAt })
+            const updated = { ...rec, launchReadinessStartedAt: startedAt }
+            writeRecord(updated)
+            records.set(session.id, updated)
           }
         }
-        const refreshed = readRecord(session.id) || rec
+        const refreshed = records.get(session.id)
+        if (!refreshed || refreshed.launchReadinessPending) { reservations.add(session.id); continue }
         if (refreshed.launchReadinessStartedAt && !refreshed.stopped && !refreshed.archived) {
           const harness = harnessById(refreshed.harness || defaultHarness.id)
           const live = await launchReadinessWitnessAlive(session.id, harness, refreshed)
@@ -1254,15 +1280,15 @@ async function drainQueueUnlocked(): Promise<void> {
       // MORE compute onto an already-thrashing box. Under load, do the safe thing — launch nothing this pass and
       // let the next tick re-drain once the probe recovers ([[state]] board honesty applied to the cap).
       if (snap.probeFailed) break
-      const occupied = sessions.reduce((n, s) => n + (launching.has(s.id) || isOccupying(s, snap) ? 1 : 0), 0)
+      const occupied = sessions.reduce((n, s) => n + (reservations.has(s.id) || launching.has(s.id) || isOccupying(s, snap) ? 1 : 0), 0)
       if (occupied >= cap) {
         break
       }
       const authority = backendLaunchAuthority()
       const next = sessions.find((s) => {
         if (s.status !== 'queued' || launching.has(s.id)) return false
-        const rec = readRecord(s.id)
-        return !!rec && canDrainQueued(rec, authority)
+        const rec = records.get(s.id)
+        return !reservations.has(s.id) && !!rec && canDrainQueued(rec, authority)
       })
       if (!next) break
       const started = await startQueued(next.id)
@@ -1317,7 +1343,8 @@ export function superviseQueue(intervalMs = 3000): void {
   if (supervisingQueue) return
   supervisingQueue = true
   const tick = async () => {
-    try { await drainQueue() } catch { /* transient git/tmux hiccup; next tick retries */ }
+    try { await drainQueue() }
+    catch (error) { console.error(`spex: launch queue pass failed: ${error instanceof Error ? error.message : String(error)}`) }
     setTimeout(tick, intervalMs)
   }
   void tick()
@@ -2419,8 +2446,7 @@ async function waitForReady(id: string, harness: Harness, pending?: SessRec, tim
 type ResumeOptions = { force?: boolean; guard?: boolean }
 // An explicit successful resume is a new runtime attempt. A prior terminal launch/turn error must not
 // survive that handoff as current lifecycle truth; waiting declarations remain waiting declarations.
-const restingLifecycle = (status: Lifecycle): Lifecycle =>
-  status === 'active' || status === 'queued' || status === 'error' ? 'idle' : status
+const restingLifecycle = resumedSessionLifecycle
 const resumeNote = (status: Lifecycle, note: string | null): string | null => status === 'error' ? null : note
 
 const archiveRef = (id: string): string => `refs/spex-archive/${id}`
@@ -2463,12 +2489,82 @@ async function restoreArchivedWorktree(id: string, rec: SessRec): Promise<void> 
   }
 }
 
-async function resumeSessionUnlocked(id: string, opts: ResumeOptions = {}): Promise<{ ok: boolean; error?: string; refused?: boolean; info?: string }> {
+type ResumeResult = { ok: boolean; error?: string; refused?: boolean; info?: string }
+
+async function resumeRuntimeLiveness(rec: SessRec): Promise<Liveness> {
+  const candidate = { ...rec, stopped: false, archived: false }
+  const harness = harnessById(rec.harness)
+  if (harness.runtimeOwnership === 'adapter') {
+    const live = await adapterRuntimeLiveness(candidate)
+    return live === 'offline' && agentAlive(rec.session) === true ? 'starting' : live
+  }
+  const snap = await liveSnapshot(rec.session)
+  if (snap.probeFailed || snap.unproven.has(rec.session)) return 'unknown'
+  if (!snap.windows.has(rec.session) && agentAlive(rec.session) !== true) return 'offline'
+  return liveness(candidate, snap)
+}
+
+async function publishReadyResumeUnlocked(id: string, fence: HarnessLaunchReadinessFence): Promise<boolean> {
+  const valid = await fence.validate(() => {
+    const current = readRecord(id)
+    return current ? { ...current, runtimeDir: runtimeRoot() } : null
+  })
+  if (!valid) return false
+  const latest = readRecord(id)
+  const original = latest?.launchReadinessPending?.original
+  if (!latest || !original) throw new ResourceConflict(`session ${id}: resume publication has no pending transaction`)
+  const unchanged = latest.status === original.status && latest.proposal === original.proposal && latest.note === original.note
+  if (!unchanged && latest.status === 'archived') throw new ResourceConflict(`session ${id}: resume was superseded by a close`)
+  const published: SessRec = {
+    ...latest,
+    status: unchanged ? restingLifecycle(latest.status) : latest.status,
+    note: unchanged ? resumeNote(latest.status, latest.note) : latest.note,
+    archived: false, closedAt: null, coldProof: null, adapterRecovery: null, stopped: false,
+  }
+  bindNativeRuntimeUnlocked(published)
+  if (published.status !== latest.status || published.proposal !== latest.proposal || published.note !== latest.note)
+    publishCanonicalLifecycle(published, published.status, published.proposal, published.note)
+  writeRecord({ ...published, launchReadinessPending: null })
+  return true
+}
+
+async function refusePendingResumeUnlocked(id: string, reason: string): Promise<ResumeResult> {
+  const pending = readRecord(id)
+  if (!pending?.launchReadinessPending) throw new ResourceConflict(`session ${id}: failed resume lost its pending transaction`)
+  const live = await resumeRuntimeLiveness(pending)
+  if (live === 'offline') {
+    // A candidate may already have bound a runtime before readiness failed. Detach that attempt while its
+    // frozen fence still proves the exact target; restoring an original `stopped:false` record first would
+    // make releaseDetachedRuntimeUnlocked treat the live binding as someone else's.
+    releaseDetachedRuntimeUnlocked({ ...pending, stopped: true })
+    const restored = restoreLaunchReadinessOriginal(pending)
+    writeRecord(restored)
+    return { ok: false, refused: true, error: `session ${id}: ${reason}; the exact stopped/offline record was retained. Retry resume.` }
+  }
+  return { ok: false, refused: true, error: `session ${id}: ${reason}; candidate runtime is ${live}, so the pending transaction was retained. Retry resume to revalidate it; no restart was performed.` }
+}
+
+async function recoverPendingResumeUnlocked(id: string, rec: SessRec): Promise<ResumeResult> {
+  const live = await resumeRuntimeLiveness(rec)
+  if (live !== 'online') return refusePendingResumeUnlocked(id, 'stale launch readiness pending needs recovery')
+  try {
+    if (rec.stopped || rec.archived) writeRecord({ ...rec, stopped: false, archived: false, closedAt: null })
+    const candidate = readRecord(id)!
+    const ready = await waitForReady(id, harnessById(rec.harness), candidate, SOCKET_READY_TIMEOUT_MS, true)
+    if (ready.ok && await publishReadyResumeUnlocked(id, ready.fence)) return { ok: true, info: 'interrupted resume published without restarting its existing runtime' }
+    return refusePendingResumeUnlocked(id, 'existing resume candidate did not pass fresh readiness')
+  } catch (error) {
+    return refusePendingResumeUnlocked(id, error instanceof Error ? error.message : String(error))
+  }
+}
+
+async function resumeSessionUnlocked(id: string, opts: ResumeOptions = {}): Promise<ResumeResult> {
   const { force = false, guard = true } = opts
   let wt: { path: string; branch: string | null; rec: SessRec } | null
   try { wt = await findWorktree(id) }
   catch (e) { if (e instanceof SessionRecordUnusable) return { ok: false, refused: true, error: e.message }; throw e }
   if (!wt) return { ok: false, error: `no such session ${id}` }
+  if (wt.rec.launchReadinessPending) return recoverPendingResumeUnlocked(id, wt.rec)
   if (wt.rec.archived && retirementReason(wt.rec)) {
     try {
       await restoreArchivedWorktree(id, wt.rec)
@@ -2476,17 +2572,6 @@ async function resumeSessionUnlocked(id: string, opts: ResumeOptions = {}): Prom
       if (!wt) return { ok: false, error: `session ${id} disappeared while restoring its archived worktree` }
     } catch (error) {
       return { ok: false, refused: true, error: `session ${id}: archived worktree restore failed: ${error instanceof Error ? error.message : String(error)}` }
-    }
-  }
-  // A process that died while validating left an internal candidate behind. This record lock proves no live
-  // resume still owns it. Restore the frozen public original before doing any transport work and require an
-  // explicit retry; stale runtime evidence is never adopted into a fresh launch attempt.
-  if (wt.rec.launchReadinessPending) {
-    writeRecord(restoreLaunchReadinessOriginal(wt.rec))
-    return {
-      ok: false,
-      refused: true,
-      error: `session ${id}: stale launch readiness pending was recovered fail-closed; the exact stopped/offline record was retained. Retry resume.`,
     }
   }
   const preResume = wt.rec
@@ -2507,115 +2592,38 @@ async function resumeSessionUnlocked(id: string, opts: ResumeOptions = {}): Prom
     wt = await findWorktree(id)
     if (!wt) return { ok: false, error: `session ${id} disappeared while recovering native launch receipt` }
   }
-  // An archived record is expected to be stopped, but the guard must still inspect physical liveness in case
-  // it is a legacy/invariant-violating row. Ignore filing and stale stop metadata for this one safety probe so
-  // resume can never kill a live leaf merely because the record was hidden.
-  const probeRec = wt.rec.archived ? { ...wt.rec, archived: false, stopped: false } : wt.rec
-  const resumeSnap = h.runtimeOwnership === 'adapter' ? null : await liveSnapshot()
-  const lv = h.runtimeOwnership === 'adapter'
-    ? await adapterRuntimeLiveness(probeRec)
-    : liveness(probeRec, resumeSnap!)   // FRESH, honest liveness (listener-verified)
-  if (guard && !force && lv === 'online')
-    return { ok: false, refused: true, error: `session ${id} is ALIVE — refusing to relaunch, which would kill a live worker mid-work. To steer it, send it a message; use force only for a genuinely wedged (but alive) process.` }
-  if (guard && !force && lv === 'unknown')
-    return { ok: false, refused: true, error: `session ${id}: the liveness probe failed (the box is likely overloaded) — refusing to relaunch since a live worker can't be ruled out. Retry in a moment, or use force to override.` }
+  const lv = await resumeRuntimeLiveness(wt.rec)
+  if (!force && lv === 'online') return guard
+    ? { ok: false, refused: true, error: `session ${id} is ALIVE — refusing to relaunch, which would kill a live worker mid-work. To steer it, send it a message; use force only for a genuinely wedged (but alive) process.` }
+    : { ok: true, info: 'runtime is already online; its declaration was retained' }
+  if (!force && lv !== 'offline')
+    return { ok: false, refused: true, error: `session ${id}: physical runtime liveness is ${lv}; readiness is not settled, so no relaunch or lifecycle change was performed. Retry after the current launch or repair the host/adapter.` }
   const wasArchived = wt.rec.archived
-  if (!wasArchived && wt.rec.adapterRecovery) {
-    const recovery = await h.restoreRuntime?.(wt.rec)
-    if (recovery && !recovery.ok) return { ok: false, refused: true, error: `session ${id}: recovery required before resume — ${recovery.reason}` }
-    writeRecord({ ...(readRecord(id) || wt.rec), adapterRecovery: null, coldProof: null, archived: false, closedAt: null, stopped: true })
-    wt = await findWorktree(id)
-    if (!wt) return { ok: false, error: `session ${id} disappeared during adapter recovery` }
+  let resumeTail: string
+  try { resumeTail = h.resumeArg(wt.rec, readLaunchFile(id)).trim() }
+  catch (error) {
+    return { ok: false, refused: true, error: error instanceof Error ? error.message : String(error) }
   }
-  if (wasArchived && (force || lv === 'offline')) {
-    // Make the durable row visible/offline before any adapter unarchive or launch RPC. Any later failure leaves
-    // a retryable unarchived record rather than archived:true with a newly loaded target thread.
-    const pendingRecovery = wt.rec.adapterRecovery || 'restore-runtime-pending'
-    writeRecord({ ...wt.rec, archived: false, closedAt: null, stopped: true, coldProof: wt.rec.coldProof, adapterRecovery: pendingRecovery })
-    const visible = readRecord(id) || { ...wt.rec, archived: false, closedAt: null, stopped: true, coldProof: wt.rec.coldProof, adapterRecovery: pendingRecovery }
-    const restored = await h.restoreRuntime?.(visible)
-    if (restored && !restored.ok) return { ok: false, refused: true, error: `session ${id}: ${restored.reason}` }
-    writeRecord({ ...(readRecord(id) || visible), adapterRecovery: null, coldProof: null })
-  }
-  // proceeding: settle the RESTING lifecycle (a resumed working agent is now idle), then relaunch iff the agent
-  // is CONFIRMED offline (or force — the wedged-but-alive escape). Clear the explicit-stop marker only after
-  // launch has accepted the relaunch; a thrown launch leaves the record truthfully stopped. `starting`/`unknown`
-  // fall through to a metadata-only no-op.
-  // Archived sessions have no runtime by invariant. Resume first leaves cold storage, then the normal
-  // starting -> online launch path recreates the same conversation.
-  const current = wasArchived ? (readRecord(id) || { ...wt.rec, archived: false, closedAt: null, stopped: true, coldProof: null }) : wt.rec
-  const resumed: SessRec = {
-    ...current,
-    archived: false,
-    closedAt: null,
-    coldProof: null,
-    status: restingLifecycle(current.status),
-    note: resumeNote(current.status, current.note),
-    stopped: false,
-  }
-  if (force || lv === 'offline') {
-    let resumeTail: string
-    try { resumeTail = h.resumeArg(wt.rec, readLaunchFile(id)).trim() }
-    catch (error) {
-      return { ok: false, refused: true, error: error instanceof Error ? error.message : String(error) }
+  // @@@ durable resume begin - public readers keep the original while every runtime writer carries the
+  // same fence; a replacement owner can revalidate this candidate instead of spawning it a second time.
+  writeRecord({ ...wt.rec, archived: false, closedAt: null, stopped: true, launchReadinessPending: launchReadinessPending(preResume) })
+  try {
+    if (wasArchived || wt.rec.adapterRecovery) {
+      const restoring = readRecord(id)!
+      const restored = await h.restoreRuntime?.(restoring)
+      if (restored && !restored.ok) return refusePendingResumeUnlocked(id, `adapter recovery failed: ${restored.reason}`)
+      writeRecord({ ...readRecord(id)!, adapterRecovery: null, coldProof: null })
     }
-    await sessionHost().stop(id)   // drop a dead/offline pane (or a force-killed live one)
+    await sessionHost().stop(id)
     await launch(id, wt.path, resumeTail, h, launcherCmd(wt.rec))
-    let readiness: LaunchReadinessOutcome = { ok: false, stage: 'liveness' }
-    let readinessError = ''
-    try { readiness = await waitForReady(id, h, resumed, SOCKET_READY_TIMEOUT_MS, true) }
-    catch (error) { readinessError = error instanceof Error ? error.message : String(error) }
-    if (!readiness.ok) {
-      const failed = readRecord(id) || current
-      const restored: SessRec = { ...failed, ...preResume, harnessSessionId: failed.harnessSessionId, launchReadinessPending: null }
-      writeRecord(restored)
-      releaseDetachedRuntimeUnlocked(restored)
-      return {
-        ok: false,
-        refused: true,
-        error: `session ${id}: launch did not become ready${readinessError ? ` - ${readinessError}` : ''}; the session remains stopped and can be retried`,
-      }
-    }
-    const latest = readRecord(id) || resumed
-    const candidate: SessRec = {
-      ...latest,
-      archived: false,
-      closedAt: null,
-      coldProof: null,
-      status: restingLifecycle(latest.status),
-      note: resumeNote(latest.status, latest.note),
-      stopped: false,
-      launchReadinessPending: launchReadinessPending(preResume),
-    }
-    writeRecord(candidate)
-    let stillReady = false
-    try { stillReady = await readiness.fence.validate(() => {
-      const stored = readRecord(id)
-      return stored ? { ...stored, runtimeDir: runtimeRoot() } : null
-    }) }
-    catch (error) { readinessError = error instanceof Error ? error.message : String(error) }
-    if (!stillReady) {
-      const failed = readRecord(id) || candidate
-      const restored = restoreLaunchReadinessOriginal(failed)
-      writeRecord(restored)
-      releaseDetachedRuntimeUnlocked(restored)
-      return {
-        ok: false,
-        refused: true,
-        error: `session ${id}: launch readiness changed across the pending publication${readinessError ? ` - ${readinessError}` : ''}; the session remains stopped and can be retried`,
-      }
-    }
-    // `readRecord` projects the still-public pre-resume lifecycle while the candidate fence is pending.
-    // Carrying that stale projection into the final publish used to leave queued/error rows unchanged in
-    // SQLite even though the runtime envelope had crossed readiness. Publish the candidate lifecycle while
-    // retaining the latest non-lifecycle envelope fields.
-    const latestPublished = readRecord(id) || candidate
-    const published = { ...latestPublished, status: candidate.status, proposal: candidate.proposal, note: candidate.note }
-    publishCanonicalLifecycle(published, candidate.status, candidate.proposal, candidate.note)
-    writeRecord({ ...published, launchReadinessPending: null })
-  } else {
-    publishCanonicalLifecycle(current, resumed.status, resumed.proposal, resumed.note)
-    writeRecord(resumed)
+    const candidate = readRecord(id)!
+    writeRecord({ ...candidate, stopped: false })
+    const readiness = await waitForReady(id, h, { ...candidate, stopped: false }, SOCKET_READY_TIMEOUT_MS, true)
+    if (!readiness.ok) return refusePendingResumeUnlocked(id, 'launch did not become ready')
+    if (!await publishReadyResumeUnlocked(id, readiness.fence))
+      return refusePendingResumeUnlocked(id, 'launch readiness changed across the pending publication')
+  } catch (error) {
+    return refusePendingResumeUnlocked(id, `launch did not become ready - ${error instanceof Error ? error.message : String(error)}`)
   }
   return { ok: true }
 }
@@ -2626,7 +2634,8 @@ export const resumeSession = (id: string, opts: ResumeOptions = {}) =>
     return result
   })
 
-export function markState(status: Lifecycle, opts: { proposal?: Proposal; note?: string; sessionId?: string } = {}): boolean {
+export function markState(status: SessionWorkLifecycle, opts: { proposal?: Proposal; note?: string; sessionId?: string } = {}): boolean {
+  if (!isSessionWorkLifecycle(status)) throw new ResourceConflict(`invalid work-state declaration '${String(status)}'; registration and archive are owned by lifecycle transactions`)
   const id = opts.sessionId || ownSessionId()
   if (!id) return false
   return withRecordLockSync(id, () => {
@@ -2635,7 +2644,7 @@ export function markState(status: Lifecycle, opts: { proposal?: Proposal; note?:
     const rec = readLiveRecord(id)
     if (!rec?.governed) return false
     const application = configuredSessionApplication()
-    const proposal = status === 'awaiting' ? (opts.proposal ?? 'nothing') : null
+    const proposal = status === 'awaiting' ? parseSessionProposal(opts.proposal ?? 'nothing') : null
     const note = opts.note ?? null
     const current = application.readState(id)
     if (current && current.status === status && current.proposal === proposal && current.note === note) return true
@@ -3315,6 +3324,22 @@ async function stopSessionUnlocked(id: string): Promise<boolean> {
     throw e
   }
   if (!wt) return false
+  if (wt.rec.launchReadinessPending) {
+    const original = wt.rec.launchReadinessPending.original
+    const closed = wt.rec.status === 'archived'
+    if (closed) await coldStopSessionUnlocked(id)
+    else await stopAgentProcess(id, { ...wt.rec, stopped: false, archived: false })
+    const cancelled = readRecord(id)
+    if (!cancelled) throw new ResourceConflict(`session ${id}: cancelled resume lost its record`)
+    writeRecord({
+      ...cancelled, stopped: true, launchReadinessPending: null,
+      archived: closed,
+      closedAt: closed ? cancelled.closedAt || original.closedAt : null,
+      coldProof: closed ? cancelled.coldProof : null,
+    })
+    requestQueueDrain()
+    return true
+  }
   await stopAgentProcess(id, wt.rec)
   const rec = readRecord(id)
   if (rec) writeRecord({ ...rec, stopped: true })
@@ -3561,6 +3586,8 @@ async function closeSessionUnlocked(id: string, source: CloseSource): Promise<bo
       `refusing close for ${id}: the unreadable record proves no adapter, leaf, worktree, or branch owner (${guard}). ${evidence}. Runtime remains at ${runtime}; worktree and branch ownership is unknown and was not touched; no process signal or deletion was attempted.`)
   }
   if (!wt) return false
+  if (wt.rec.launchReadinessPending)
+    throw new ResourceConflict(`refusing to close ${id}: a resume transaction is pending; revalidate or cancel that transaction first`)
   let unboundStopped = false
   if (!retirementReason(wt.rec) && !wt.rec.archived && wt.rec.status !== 'queued') {
     const harness = harnessById(wt.rec.harness || defaultHarness.id)
@@ -3776,6 +3803,7 @@ export async function drainSession(id: string): Promise<void> {
   const application = configuredSessionApplication()
   const rec = readRecord(id)
   if (!rec) return
+  if (rec.launchReadinessPending) return
   // An empty canonical queue is a successful no-op. Do not turn a resume with no owed prompt into a
   // runtime-binding error; require a bound adapter only when there is a message that must be handed over.
   if (application.readPendingMessages(id).length === 0) return
@@ -3812,7 +3840,7 @@ async function deliverQueueHead(id: string): Promise<'advanced' | 'empty' | 'hel
     }
     const rec = readRecord(id)
     const binding = application.resolveRuntime(id, 'spex-governed')
-    if (!rec || !binding || binding.status !== 'bound') return 'held'
+    if (!rec || rec.launchReadinessPending || !binding || binding.status !== 'bound') return 'held'
     const h = harnessById(rec.harness || defaultHarness.id)
     const text = canonicalMessageText(msg, rec)
     if (h.deliveryBlockedBy) {

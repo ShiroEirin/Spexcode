@@ -121,6 +121,10 @@ A hot-reloaded/restarted child at the SAME public URL therefore takes over autom
 may display the row but never claims it; recovery is restart the owner or close and re-dispatch there. Existing
 unowned `queued` records remain adoptable for compatibility, while new leased entries use a raw-state fence that
 current code presents as `queued` but a legacy drainer cannot recognize as launchable.
+Queue admission isolates an unreadable envelope as an ineligible record with a visible per-session diagnostic,
+not a fleet-wide retry exception. It reserves one slot for that unknown owner and for each pending resume even
+though public readiness is frozen offline. A failed global liveness probe still pauses the entire pass; a corrupt
+record alone does not starve healthy queued sessions while proven capacity remains.
 
 **Materialized delivery, not injection:** the spec-discipline contract is NOT pushed on the command line.
 Before the agent starts, the worktree is `materialize`d ([[harness-delivery]]), writing the `surface: system`

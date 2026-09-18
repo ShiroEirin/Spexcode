@@ -25,6 +25,7 @@ export default {
     error: 'error',
     asking: 'asking',
     queued: 'queued',
+    created: 'created',
     unknown: 'unknown',
     corrupt: 'corrupt',
     retired: 'retired',
