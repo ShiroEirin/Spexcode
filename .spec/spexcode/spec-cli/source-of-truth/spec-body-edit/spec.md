@@ -14,6 +14,10 @@ related:
 
 ## raw source
 
+Reading a spec on the bo# spec-body-edit
+
+## raw source
+
 Reading a spec on the board and finding a wrong sentence should not mean opening an editor somewhere else.
 Give the board the affordance GitHub's web view has — **edit this passage right here and commit it** —
 without giving it anything else. Only `spec.md` bodies. Never code. And when it can't be done, say so
