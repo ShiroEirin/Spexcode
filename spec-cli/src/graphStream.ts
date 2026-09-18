@@ -6,7 +6,7 @@ import { sessionsRoot, gitCommonDir, repoRoot, isTrashWorktreePath } from '@spex
 import { resolveDatabasePath } from '@spexcode/session-application'
 import { listSessions, pendingSessionCreateWorktreePaths } from './sessions.js'
 import { hotSignature, warmSignature } from './session-liveness.js'
-import { getBoard, getBoardForSessionRefresh, invalidateBoard, patrolBoard, boardIdentity, readBoard, type Board } from './graphCache.js'
+import { getBoard, getBoardForSessionRefresh, invalidateBoard, patrolBoard, boardIdentity, readBoard, sessionSpliceInFlight, type Board } from './graphCache.js'
 import { diffFromPosition, positionOf, type Position } from '@spexcode/spec-core'
 const { streamSSE } = await daemonRuntime()
 
@@ -268,13 +268,17 @@ let dirty = false
 let patrolPending = false
 let sessionRefreshRequested = false
 let wakeSessionRefresh: (() => void) | null = null
+// A session signal may overtake one unrelated full build, but repeated signals must join the same
+// refresh wave. Once the session wait itself is in flight, waking it again leaves the underlying producer
+// running and starts another one beside it; later signals remain represented by the dirty/requested flags.
+let sessionRefreshWaitActive = false
 
 async function rebuildAndBroadcast(patrol = false, sessions = false, full = false): Promise<void> {
   if (patrol) patrolPending = true
   if (sessions) sessionRefreshRequested = true
   if (building) {
     dirty = true
-    if (sessions) {
+    if (sessions && !sessionRefreshWaitActive && wakeSessionRefresh) {
       wakeSessionRefresh?.()
       wakeSessionRefresh = null
     }
@@ -304,20 +308,27 @@ async function rebuildAndBroadcast(patrol = false, sessions = false, full = fals
         const boardWait = sessionsFirst
           ? getBoardForSessionRefresh()
           : validate ? patrolBoard() : getBoard()
-        const outcome = await Promise.race([
-          boardWait.then((value) => ({ value })),
-          sessionWake.then(() => ({ value: null as unknown })),
-        ])
-        if (wakeSessionRefresh === wake) wakeSessionRefresh = null
-        if (outcome.value === null) {
-          boardWait.catch(() => {})
-          board = await getBoardForSessionRefresh()
-          servedSessionRefresh = true
-          if (validate) patrolPending = true
-          dirty = true // the full wait was preempted only for delivery; it remains owed.
-        } else {
-          board = outcome.value
-          if (sessionsFirst && validate) { patrolPending = true; dirty = true }
+        sessionRefreshWaitActive = sessionsFirst && sessionSpliceInFlight()
+        try {
+          const outcome = await Promise.race([
+            boardWait.then((value) => ({ value })),
+            sessionWake.then(() => ({ value: null as unknown })),
+          ])
+          if (wakeSessionRefresh === wake) wakeSessionRefresh = null
+          if (outcome.value === null) {
+            boardWait.catch(() => {})
+            const sessionRefresh = getBoardForSessionRefresh()
+            sessionRefreshWaitActive = sessionSpliceInFlight()
+            board = await sessionRefresh
+            servedSessionRefresh = true
+            if (validate) patrolPending = true
+            dirty = true // the full wait was preempted only for delivery; it remains owed.
+          } else {
+            board = outcome.value
+            if (sessionsFirst && validate) { patrolPending = true; dirty = true }
+          }
+        } finally {
+          sessionRefreshWaitActive = false
         }
       }
       catch {
@@ -367,7 +378,10 @@ async function rebuildAndBroadcast(patrol = false, sessions = false, full = fals
       if (DEBUG)
         console.warn(`spec-cli: graph broadcast — changed [${changedKeys.join(', ')}] triggers {${tags.join(', ')}} build ${buildMs}ms`)
     } while (dirty)
-  } finally { building = false }
+  } finally {
+    building = false
+    sessionRefreshWaitActive = false
+  }
 }
 
 // a merge/launch/close touches several record files at once; collapse the burst into ONE signal. Each call
