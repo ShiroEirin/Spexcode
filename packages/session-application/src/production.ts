@@ -36,6 +36,14 @@ const PARENT_WATCH_RELATION = 'watch:parent'
 const MANUAL_WATCH_RELATION = 'watch:manual'
 const compositions = new Map<string, ProductionSessionApplication>()
 
+/** Additive post-commit facts; consumers can select the work implied by one commit without re-enumerating all sessions. */
+export const SESSION_CHANGE = Object.freeze({
+  state: 1 << 0,
+  topology: 1 << 1,
+  delivery: 1 << 2,
+} as const)
+export type SessionChangeMask = number
+
 export interface LocalityPrecondition {
   (databasePath: string): void
 }
@@ -74,7 +82,7 @@ export interface ProjectSessionApplicationOptions {
   databasePath: string
   locality: LocalityPrecondition
   now?: () => number
-  onCommitted?: (result: Pick<CommittedSessionChange, 'recipients'>) => void
+  onCommitted?: (result: Pick<CommittedSessionChange, 'recipients' | 'subjectSessionIds' | 'changeMask'>) => void
   /** Runtime binding is the event that makes an existing canonical delivery debt drainable. */
   onRuntimeBound?: (sessionId: string) => void
 }
@@ -106,6 +114,10 @@ export interface CommittedSessionChange {
   edge: TopologyEdge | null
   recipients: string[]
   messages: Message[]
+  /** Session rows whose state or topology may have changed in this transaction. */
+  subjectSessionIds: string[]
+  /** Bitwise OR of SESSION_CHANGE flags describing the durable effects. */
+  changeMask: SessionChangeMask
 }
 
 export interface WatchEvent {
@@ -189,6 +201,9 @@ const requireId = (value: string, field: string): void => {
   if (typeof value !== 'string' || !SESSION_ID.test(value)) throw new TypeError(`${field} must be a valid protocol session id`)
 }
 
+const uniqueSessionIds = (...ids: readonly (string | null | undefined)[]): string[] =>
+  [...new Set(ids.filter((id): id is string => id !== null && id !== undefined))]
+
 const requireStatus = (value: string): void => {
   if (typeof value !== 'string' || !STATUS.test(value)) throw new TypeError('session status has an invalid grammar')
 }
@@ -254,7 +269,7 @@ export function openProjectSessionApplication(options: ProjectSessionApplication
     }
   }
 
-  const notifyCommitted = (result: Pick<CommittedSessionChange, 'recipients'>): void => {
+  const notifyCommitted = (result: Pick<CommittedSessionChange, 'recipients' | 'subjectSessionIds' | 'changeMask'>): void => {
     options.onCommitted?.(result)
   }
 
@@ -292,7 +307,11 @@ export function openProjectSessionApplication(options: ProjectSessionApplication
         }))
         return { edge: null, recipients, messages }
       })
-      notifyCommitted(result)
+      notifyCommitted({
+        ...result,
+        subjectSessionIds: [subjectSessionId],
+        changeMask: SESSION_CHANGE.delivery,
+      })
       return result
     },
 
@@ -306,7 +325,11 @@ export function openProjectSessionApplication(options: ProjectSessionApplication
         }))
         return { edge, recipients, messages }
       })
-      notifyCommitted(result)
+      notifyCommitted({
+        ...result,
+        subjectSessionIds: uniqueSessionIds(fromSessionId, subjectSessionId),
+        changeMask: SESSION_CHANGE.topology | SESSION_CHANGE.delivery,
+      })
       return result
     },
 
@@ -378,6 +401,8 @@ export function openProjectSessionApplication(options: ProjectSessionApplication
         edge: created.edge,
         recipients: created.recipients,
         messages: created.messages,
+        subjectSessionIds: uniqueSessionIds(input.sessionId, parentSessionId),
+        changeMask: SESSION_CHANGE.state | (created.edge ? SESSION_CHANGE.topology : 0),
       }
       notifyCommitted(result)
       return created.state
@@ -456,6 +481,8 @@ export function openProjectSessionApplication(options: ProjectSessionApplication
           edge,
           recipients,
           messages,
+          subjectSessionIds: uniqueSessionIds(sessionId, current.parentSessionId, parentSessionId),
+          changeMask: SESSION_CHANGE.state | (parentSessionId === current.parentSessionId ? 0 : SESSION_CHANGE.topology),
         }
       })
       notifyCommitted(result)

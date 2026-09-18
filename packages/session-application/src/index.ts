@@ -89,7 +89,7 @@ export function openSessionApplication(
   }
 }
 
-export { openProjectSessionApplication } from './production.js'
+export { openProjectSessionApplication, SESSION_CHANGE } from './production.js'
 export { DatabasePathError, resolveDatabasePath } from './storage-path.js'
 export type { ResolveDatabasePathOptions, StorageEnvironment } from './storage-path.js'
 export { LocalityError, requireLocalDatabasePath } from './storage-locality.js'
@@ -105,6 +105,7 @@ export type {
   ProjectSessionApplicationOptions,
   SessionState,
   SessionStateChange,
+  SessionChangeMask,
   TransitionSessionInput,
   WatchEvent,
 } from './production.js'
