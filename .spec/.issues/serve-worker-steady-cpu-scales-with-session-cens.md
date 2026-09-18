@@ -140,3 +140,43 @@ CPU A/B（同一临时 678-record store、一个 delta stream、15 个 live reco
 - 新 src：burst 53.18%，after 29.50%，13 broadcasts。
 
 结论保持诚实：这一步没有可测的 CPU 降幅。原因是 `graphCache` 原有 `sessionFlight` 已经把底层 splice 单飞；本次改动只消除重复 wake/preemption 的正确性/边界浪费，而主要 CPU 仍在每次 splice 的全 roster `listSessions()`、tmux/liveness 和 capture 读取。下一步若继续降 CPU，应改 `spliceSessions()` 的输入范围/快照复用（按受影响 session ids 局部重算），而不是继续调整 wake 闸门或只放大 poll interval。
+
+<!-- reply: 7690d008-1893-4d77-a6d3-16f051463169 @ 2026-09-18T04:39:00.719Z -->
+Spec: graph-stream, graph-cache, sessions, serve
+
+更正主要矛盾：之前的“重复 wake/preemption”不是 CPU 主因，代码改动已作废并撤回（工作树基线已恢复）。原因是 `graphCache` 原本已有 `sessionFlight` 单飞；旧 dist 与尝试修改后的 src 在并发 burst 下几乎相同：
+
+- 旧 dist：burst 50.74%，after 28.38%，12 broadcasts
+- 新 src：burst 53.18%，after 29.50%，13 broadcasts
+
+真正的主要矛盾是“sessions-only”并不是真正按受影响 session 局部刷新：
+
+`canonical lifecycle commit` → `notifyBoardChanged('sessions')` → `fireChanged` → `invalidateBoard('sessions')` → `getBoardForSessionRefresh()` → `startSessionSplice()` → `graphSnapshot.spliceSessions(prev)` → `listSessions()`。
+
+而 `listSessions()` 每次都会：
+
+- 枚举整个 session roster；
+- 读取每个 record/canonical state/prompt/runtime projection；
+- 共享 `liveSnapshot()`，做全局 tmux `list-panes` census；
+- 对 pane/session 做 liveness/rendezvous 判断；
+- 重新读取 session-side files/web/widgets/activity。
+
+因此一个 hook 只改 session A，实际付的是整个 roster 的 projection 成本。并发 A/B 的 debug 日志也证明了这一点：每次 broadcast 的 changed keys 经常包含 9-10 个 `sess:*`，而不是只包含触发 hook 的一个 id；build 平均约 800ms，最高约 6.3s。说明主要成本在“每次 projection 扫全 roster + liveness/capture”，不是 wake 次数。
+
+这也解释了 CPU A/B：
+
+- 678 records 无 stream 稳定约 16.3%
+- 同一 roster 一个 delta stream 稳定约 29.5%
+- 15 live records + stream 的 hook burst 约 40-50%
+- 31 panes + stream 与 records + stream 同量级
+- subscriber 数 1/5/14 不线性增长
+
+正确修复方向不是继续调 wake 或 poll interval，而是把 session projection 真正做成局部：
+
+1. canonical commit/DB watcher 传递受影响 session ids 和一个 revision；未知/结构变化才退回 full roster。
+2. cache 保留现有 board rows；session splice 只重算受影响 ids，复用其他 rows 的 immutable projection。
+3. liveness/capture 也按 affected ids 读取；warm poll 的全局 liveness 仍单独负责它自己的 sessions-domain 更新。
+4. 一批 hook commit 合并为一个 affected-id set + 一个 revision；build 期间只保留下一版，不重复扫描全 roster。
+5. 用“一条 session 变更”和“15 条并发 hook burst”分别验证 changed keys、listSessions roster reads、tmux/capture 调用数和 CPU。
+
+当前代码未留下这次无收益修复；保留的只有诊断 issue 记录和 A/B 证据。
