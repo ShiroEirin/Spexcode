@@ -40,6 +40,7 @@ export type HarnessLaunchReadinessFence = {
   validate(current: () => HarnessLaunchReadyRecord | null): Promise<boolean>
 }
 export type TurnFailure = { message: string; completedAt: number | null }
+export type NativeIdentityChange = { previousSessionId: string; nextSessionId: string }
 export type FailureSubscription = { close(): void; readonly closed: Promise<string | null>; readonly ready?: Promise<boolean> }
 // An adapter's native input transport can be ready, temporarily inconclusive, or proven unreachable. This is
 // deliberately separate from agent liveness: sessions.ts joins an unreachable transport with its independent
@@ -333,8 +334,13 @@ export interface Harness {
   // witness by sessions.ts, which is the only place allowed to call a live agent's transport stranded.
   deliveryTransport?(rec: HarnessDeliveryRecord): Promise<DeliveryTransportState>
   // Observe native turn failures that this harness does not expose as a lifecycle hook. The adapter owns the
-  // transport subscription; sessions owns observer reconciliation and the active-only lifecycle CAS.
-  observeTurnFailures?(rec: HarnessDeliveryRecord, onFailure: (failure: TurnFailure) => void): FailureSubscription
+  // transport subscription; sessions owns observer reconciliation and the active-only lifecycle CAS. A native
+  // runtime may also report that its current conversation address was replaced by an exact successor (for
+  // example a TUI rewind forks the current thread); the session layer owns that rebind under its record lock.
+  observeTurnFailures?(rec: HarnessDeliveryRecord, onFailure: (failure: TurnFailure) => void, onIdentityChange?: (change: NativeIdentityChange) => void): FailureSubscription
+  // Observe replacement of the native conversation address without subscribing to a turn history. This is
+  // separate from turn-failure observation so waiting sessions can follow a native fork cheaply.
+  observeNativeIdentity?(rec: HarnessDeliveryRecord, onIdentityChange: (change: NativeIdentityChange) => void): FailureSubscription
   // Hard-interrupt the current turn through the harness's native control plane. Optional: a headless harness
   // without a confirmed native interrupt refuses rather than emulating one with a signal; a pane-backed TUI
   // without one receives the operator's own interrupt key in its pane (sessions.ts interruptSession).

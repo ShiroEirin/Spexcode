@@ -301,6 +301,12 @@ Codex notes retain the native error message and native `completedAt`. `online` m
 when the adapter's controller, pane home, or shared server can still accept the next delivery; the orthogonal
 `error` lifecycle is the honest signal that the previous turn failed.
 
+Native conversation address changes are a separate optional adapter seam from turn-failure observation. A
+runtime that can fork or replace its native thread reports only an exact predecessor/successor pair; the
+session layer owns the record lock and updates its native runtime binding, while waiting sessions use a cheap
+identity-only subscription instead of a turn-history resume. Product code never infers a replacement from
+cwd, title, rollout order, or lifecycle status.
+
 The runtime's behavior-identical mechanics are shared once across adapter rows: shell arguments use one POSIX
 single-quote encoder; resident headless controllers use one newline-delimited JSON socket client and timeout;
 socket-backed headless delivery uses one `live` / `unproven` / `absent` gate before its adapter-specific cold

@@ -8,7 +8,7 @@ import { rm as rmAsync, readdir as readdirAsync } from 'node:fs/promises'
 import { seedWorktreeHostState } from './worktree-sources.js'
 import { git, gitTry, withGitAbortSignal, isGitObjectId } from '@spexcode/spec-core'
 import { loadSpecsLite } from '@spexcode/spec-core'
-import { adapterLoadedReferenceState, assertRvSockPath, defaultHarness, defaultLauncher, harnessById, procSnapshot, resolveLauncher, rendezvousListening, stampRvSock, type AdapterLoadedReferenceState, type Harness, type HarnessLaunchReadinessFence, type TurnFailure, type FailureSubscription, type DispatchResult, type ProcTable } from './harness.js'
+import { adapterLoadedReferenceState, assertRvSockPath, defaultHarness, defaultLauncher, harnessById, procSnapshot, resolveLauncher, rendezvousListening, stampRvSock, type AdapterLoadedReferenceState, type Harness, type HarnessLaunchReadinessFence, type TurnFailure, type NativeIdentityChange, type FailureSubscription, type DispatchResult, type ProcTable } from './harness.js'
 import { materialize } from './materialize.js'
 import { parseParentDirective, stripRefSigil } from './mentions.js'
 import { resolveSession } from './session-selectors.js'
@@ -30,7 +30,7 @@ import {
 } from './session-prompt.js'
 import { assertSessionOwnerSafe, assertSessionStopSafe, collectResourceReport, ResourceConflict } from './host-resources.js'
 import { processStartToken } from '@spexcode/spec-core'
-import { bindCodexGeneration, codexGenerationBindingForSession, commitCodexGenerationRegistration, prepareCodexGenerationRegistration, readCodexGenerationLedger } from './codex-runtime-generations.js'
+import { bindCodexGeneration, codexGenerationBindingForSession, commitCodexGenerationRegistration, prepareCodexGenerationRegistration, readCodexGenerationLedger, rebindCodexGeneration } from './codex-runtime-generations.js'
 import { cliEntrypointArgs } from './tsx-bin.js'
 import { TMUX_PROBE_TIMEOUT_MS, TARGET_TMUX_CLOSE_SETTLE_MS, sessionHost } from './session-host.js'
 import {
@@ -1443,6 +1443,18 @@ let supervisingTurnFailures = false
 let startingTurnFailureObserver = false
 const TURN_FAILURE_OBSERVER_STABLE_MS = 5000
 
+type NativeIdentityObserverState = {
+  fingerprint: string
+  subscription: FailureSubscription | null
+  startedAt: number
+  failures: number
+  retryAt: number
+  lastReason: string | null
+}
+const nativeIdentityObservers = new Map<string, NativeIdentityObserverState>()
+let startingNativeIdentityObserver = false
+const NATIVE_IDENTITY_OBSERVER_STABLE_MS = 5000
+
 export function turnFailureNote(harness: string, failure: TurnFailure): string {
   const message = failure.message.replace(/\s+/g, ' ').trim().slice(0, 500) || 'turn failed'
   const at = failure.completedAt == null ? '' : ` at ${new Date(failure.completedAt * 1000).toISOString()}`
@@ -1513,6 +1525,13 @@ export function reconcileTurnFailureObservers(): void {
         if (turnFailureObservers.get(id)?.fingerprint !== target.fingerprint) return
         try { markTurnFailure(id, turnFailureNote(target.harness.id, failure)) }
         catch (error) { console.error(`[spex ${target.harness.id}] could not record native turn failure for ${id}: ${error instanceof Error ? error.message : String(error)}`) }
+      }, (change) => {
+        if (turnFailureObservers.get(id)?.fingerprint !== target.fingerprint) return
+        try {
+          rebindHarnessSessionId(id, change)
+        } catch (error) {
+          console.error(`[spex ${target.harness.id}] could not follow native thread successor for ${id}: ${error instanceof Error ? error.message : String(error)}`)
+        }
       })
       state.subscription = subscription
       if (subscription.ready) void subscription.ready.then(() => { startingTurnFailureObserver = false }, () => { startingTurnFailureObserver = false })
@@ -1530,11 +1549,86 @@ export function reconcileTurnFailureObservers(): void {
   }
 }
 
+function deferNativeIdentityObserver(id: string, harness: string, state: NativeIdentityObserverState, reason: string): void {
+  state.subscription = null
+  state.failures++
+  const delay = turnFailureRetryDelay(state.failures)
+  state.retryAt = Date.now() + delay
+  if (state.lastReason !== reason)
+    console.warn(`[spex ${harness}] native identity observer for ${id} disconnected (${reason}); retrying in ${delay}ms`)
+  state.lastReason = reason
+}
+
+// Native fork observation is cheap and independent from turn failure observation. Keep it alive for every
+// non-archived governed native session, including waiting sessions where no turn/resume failure subscription
+// exists; this is what lets a dashboard-followed TUI rewind update its address after the model has gone idle.
+export function reconcileNativeIdentityObservers(): void {
+  const wanted = new Map<string, { rec: SessRec; harness: Harness; fingerprint: string }>()
+  for (const id of listSessionIds()) {
+    let rec: SessRec | null = null
+    try { rec = readRecord(id) } catch { continue }
+    if (!rec?.governed || rec.stopped || rec.archived || !rec.harnessSessionId) continue
+    const harness = harnessById(rec.harness || defaultHarness.id)
+    if (!harness.observeNativeIdentity) continue
+    wanted.set(id, { rec, harness, fingerprint: `${harness.id}:${rec.harnessSessionId}:${runtimeRoot()}` })
+  }
+  for (const [id, state] of nativeIdentityObservers) {
+    if (wanted.get(id)?.fingerprint === state.fingerprint) continue
+    nativeIdentityObservers.delete(id)
+    state.subscription?.close()
+  }
+  for (const [id, target] of wanted) {
+    const now = Date.now()
+    let state = nativeIdentityObservers.get(id)
+    if (state?.subscription) {
+      if (state.failures > 0 && now - state.startedAt >= NATIVE_IDENTITY_OBSERVER_STABLE_MS) {
+        state.failures = 0
+        state.retryAt = 0
+        state.lastReason = null
+      }
+      continue
+    }
+    if (startingNativeIdentityObserver || (state && now < state.retryAt)) continue
+    state ??= { fingerprint: target.fingerprint, subscription: null, startedAt: now, failures: 0, retryAt: 0, lastReason: null }
+    state.startedAt = now
+    nativeIdentityObservers.set(id, state)
+    startingNativeIdentityObserver = true
+    try {
+      const subscription = target.harness.observeNativeIdentity!({
+        session: id,
+        worktreePath: target.rec.worktreePath,
+        harnessSessionId: target.rec.harnessSessionId,
+        runtimeDir: runtimeRoot(),
+        launchCmd: target.rec.launchCmd,
+      }, (change) => {
+        if (nativeIdentityObservers.get(id)?.fingerprint !== target.fingerprint) return
+        try { rebindHarnessSessionId(id, change) }
+        catch (error) { console.error(`[spex ${target.harness.id}] could not follow native thread successor for ${id}: ${error instanceof Error ? error.message : String(error)}`) }
+      })
+      state.subscription = subscription
+      if (subscription.ready) void subscription.ready.then(() => { startingNativeIdentityObserver = false }, () => { startingNativeIdentityObserver = false })
+      else startingNativeIdentityObserver = false
+      void subscription.closed.then((reason) => {
+        startingNativeIdentityObserver = false
+        if (nativeIdentityObservers.get(id) !== state) return
+        if (reason) deferNativeIdentityObserver(id, target.harness.id, state, reason)
+        else nativeIdentityObservers.delete(id)
+      })
+    } catch (error) {
+      startingNativeIdentityObserver = false
+      deferNativeIdentityObserver(id, target.harness.id, state, error instanceof Error ? error.message : String(error))
+    }
+  }
+}
+
 export function superviseTurnFailures(intervalMs = 1000): void {
   if (supervisingTurnFailures) return
   supervisingTurnFailures = true
   const tick = () => {
-    try { reconcileTurnFailureObservers() }
+    try {
+      reconcileNativeIdentityObservers()
+      reconcileTurnFailureObservers()
+    }
     catch (error) { console.error(`spex: turn failure reconciliation failed: ${error instanceof Error ? error.message : String(error)}`) }
     const timer = setTimeout(tick, intervalMs)
     timer.unref?.()
@@ -2815,6 +2909,44 @@ function bindHarnessSessionIdUnlocked(rec: SessRec, harnessSessionId: string, ge
     throw error
   }
   if (codex && generationId) commitCodexGenerationRegistration(root, id, harnessSessionId, generationId)
+}
+
+// Codex's TUI rewind can switch from one native thread to an exact fork successor while the SpexCode session
+// remains the same product address. The observer supplies both ids; under the record lock, require that the
+// record still names the predecessor, update the record/runtime binding, then commit the generation ledger's
+// thread replacement. Any failed step restores the predecessor so a partial observation cannot strand delivery.
+function rebindHarnessSessionIdUnlocked(rec: SessRec, change: NativeIdentityChange): void {
+  const isCodex = rec.harness === 'codex' || rec.harness === 'codex-headless'
+  if (!isCodex) throw new ResourceConflict(`native identity replacement is unsupported for harness ${rec.harness || defaultHarness.id}`)
+  if (!change.nextSessionId || change.previousSessionId === change.nextSessionId) return
+  if (rec.harnessSessionId !== change.previousSessionId) return
+  const root = runtimeRoot()
+  const binding = codexGenerationBindingForSession(root, rec.session)
+  if (!binding || binding.threadId !== change.previousSessionId)
+    throw new ResourceConflict(`refusing Codex thread successor ${change.nextSessionId}: the predecessor binding changed`)
+  const successor = { ...rec, harnessSessionId: change.nextSessionId, coldProof: null, adapterRecovery: null }
+  writeRecord(successor)
+  try {
+    bindNativeRuntimeUnlocked(successor)
+    rebindCodexGeneration(root, rec.session, change.previousSessionId, change.nextSessionId)
+  } catch (error) {
+    try {
+      writeRecord(rec)
+      bindNativeRuntimeUnlocked(rec)
+    } catch (rollback) {
+      throw new ResourceConflict(`Codex thread successor ${change.nextSessionId} was observed but rollback failed: ${rollback instanceof Error ? rollback.message : String(rollback)}`)
+    }
+    throw error
+  }
+}
+
+export function rebindHarnessSessionId(sessionId: string, change: NativeIdentityChange): boolean {
+  return withRecordLockSync(sessionId, () => {
+    const rec = readLiveRecord(sessionId)
+    if (!rec?.governed || rec.stopped || rec.archived) return false
+    rebindHarnessSessionIdUnlocked(rec, change)
+    return rec.harnessSessionId === change.nextSessionId
+  })
 }
 
 type StagedHarnessLaunchProof = {

@@ -162,6 +162,19 @@ authoritative resolved `launch` payload remains means resume replays that payloa
 adapter's proof that identity AND the first durable turn both landed may bind the id and consume the payload. A
 missing payload leaves the record unchanged and refuses loudly.
 
+### Native thread succession
+
+The SpexCode session id is the stable product address; the Codex thread id is a replaceable native
+execution address. Codex TUI rewind/backtrack may fork the current conversation and switch the TUI to a
+new thread whose `forkedFromId` is the previously bound thread. The adapter observes the app-server's
+`thread/started` notification and reports only a child whose `forkedFromId` exactly equals the session's
+current native id. The session layer then rebinds the same SpexCode record, runtime binding, and generation
+ledger entry to that child under the record lock, preserving the generation while replacing only the native
+target. A notification with no exact parent,
+an already changed record, or a failed rebind is ignored or reported as a refusal; it must never guess from
+cwd, title, rollout order, or another loaded thread. All later transcript, delivery, liveness, resume, and
+cold-operation reads resolve the newly bound child through the unchanged SpexCode session id.
+
 ## Liveness is the pane's process tree
 
 A session is live when its tmux window is up AND a codex process lives among the pane pid's DESCENDANTS —

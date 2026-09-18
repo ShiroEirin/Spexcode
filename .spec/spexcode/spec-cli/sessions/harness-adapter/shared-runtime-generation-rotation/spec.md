@@ -64,6 +64,12 @@ only use its stored exact binding;
 missing, mismatched, or ambiguous bindings are refusals, never a fallback to the current root. A binding whose
 root is proven DEAD is the one case that is repaired instead of refused, on the terms below.
 
+The binding's native `threadId` may also rotate without a generation change when the Codex TUI rewinds by
+forking the current conversation. The adapter reports the exact `{ previousSessionId, nextSessionId }` successor and
+the session layer replaces only that session's binding after confirming the old id still matches; the ledger
+keeps the same generation and never adopts an unrelated fork. Delivery, transcript, liveness, resume, and
+cold-operation reads then address the new thread through the same stable SpexCode session id.
+
 ### Drain
 
 A draining generation remains addressable for its bound governed sessions and for every unowned or

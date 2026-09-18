@@ -13,7 +13,7 @@ import { spawnDetachedRuntime } from './runtime-ownership.js'
 import { codexRolloutPath, codexTranscript } from '@spexcode/transcript'
 import { shQuote } from './sh.js'
 import { writeFileIfChanged } from './file-write.js'
-import type { Harness, HarnessLivenessRecord, HarnessDeliveryRecord, HarnessLaunchReadyRecord, SharedRuntimeDescriptor, SharedRuntimeMutationGuard, SharedRuntimeProbe, HarnessOrphanThreadQuarantine, DispatchResult, PaneProbe, TurnFailure, FailureSubscription } from './harness.js'
+import type { Harness, HarnessLivenessRecord, HarnessDeliveryRecord, HarnessLaunchReadyRecord, SharedRuntimeDescriptor, SharedRuntimeMutationGuard, SharedRuntimeProbe, HarnessOrphanThreadQuarantine, DispatchResult, PaneProbe, TurnFailure, NativeIdentityChange, FailureSubscription } from './harness.js'
 
 
 import { buildShim, cleanHarness, headlessTurnFailureShell, listenerAt, noLaunchEnv, paneTreeRuns, sessionIdentityEnvVars, SPEX } from './harness-shim.js'
@@ -351,6 +351,7 @@ export const CODEX_TURN_OBSERVER_SUBSCRIBE_MS = 30_000
 export function codexTurnFailureObserver(
   rec: HarnessDeliveryRecord,
   onFailure: (failure: TurnFailure) => void,
+  onIdentityChange?: (change: NativeIdentityChange) => void,
 ): FailureSubscription {
   const threadId = rec.harnessSessionId
   if (!threadId) return { close: () => {}, closed: Promise.resolve(null) }
@@ -405,7 +406,7 @@ export function codexTurnFailureObserver(
     // A resumed Codex thread can stream large goal/progress notifications while the turn runs. They are
     // irrelevant to this failure observer; avoid JSON.parse on those payloads so one active turn cannot make
     // the backend spend its memory and CPU re-materializing a transcript it does not use.
-    if (json.includes('"method"') && !json.includes('"method":"turn/started"') && !json.includes('"method":"turn/completed"')) return
+    if (json.includes('"method"') && !json.includes('"method":"turn/started"') && !json.includes('"method":"turn/completed"') && !json.includes('"method":"thread/started"')) return
     let message: JsonRpc
     try { message = JSON.parse(json) } catch { return }
     if (message.error) return finish(`Codex turn observer request failed: ${message.error.message || JSON.stringify(message.error)}`)
@@ -437,6 +438,14 @@ export function codexTurnFailureObserver(
       }
       return
     }
+    if (message.method === 'thread/started') {
+      const params = message.params as { thread?: { id?: unknown; forkedFromId?: unknown } } | undefined
+      const nextThreadId = params?.thread?.id
+      const forkedFromId = params?.thread?.forkedFromId
+      if (onIdentityChange && typeof nextThreadId === 'string' && nextThreadId && forkedFromId === threadId)
+        onIdentityChange({ previousSessionId: threadId, nextSessionId: nextThreadId })
+      return
+    }
     if (message.method === 'turn/started') {
       const params = message.params as { threadId?: unknown; turn?: { id?: unknown } } | undefined
       if (params?.threadId === threadId) {
@@ -466,8 +475,80 @@ export function codexTurnFailureObserver(
     }
     if (drainWsFrames(frames, conn, handle, (payload) => {
       const method = Buffer.from('"method"')
-      return !payload.includes(method) || payload.includes(Buffer.from('"turn/started"')) || payload.includes(Buffer.from('"turn/completed"'))
+      return !payload.includes(method) || payload.includes(Buffer.from('"turn/started"')) || payload.includes(Buffer.from('"turn/completed"')) || payload.includes(Buffer.from('"thread/started"'))
     })) finish('Codex app-server closed the turn observer')
+  })
+  return { close: () => finish(null), closed, ready }
+}
+
+// Rewind/fork can replace a Codex thread while its SpexCode record is waiting for the next prompt. Keep this
+// observer deliberately lighter than codexTurnFailureObserver: initialize the shared socket and listen for the
+// app-server's global thread/started notifications, but never thread/resume or replay native history.
+export function codexNativeIdentityObserver(
+  rec: HarnessDeliveryRecord,
+  onIdentityChange: (change: NativeIdentityChange) => void,
+): FailureSubscription {
+  const threadId = rec.harnessSessionId
+  if (!threadId) return { close: () => {}, closed: Promise.resolve(null), ready: Promise.resolve(false) }
+  const runtimeDir = rec.runtimeDir || runtimeRoot()
+  const endpoint = codexEndpointForRecord(rec, runtimeDir)
+  if (!endpoint) {
+    return {
+      close: () => {},
+      closed: Promise.resolve(`Codex identity observer refused: no exact generation binding for session ${rec.session}`),
+      ready: Promise.resolve(false),
+    }
+  }
+  const conn: Socket = createConnection(endpoint.socketPath)
+  const frames: FrameState = { buf: Buffer.alloc(0), fragOp: 0, fragBuf: Buffer.alloc(0) }
+  let upgraded = false, settled = false, readySettled = false
+  let resolveReady!: (ready: boolean) => void
+  const ready = new Promise<boolean>((resolve) => { resolveReady = resolve })
+  let resolveClosed!: (reason: string | null) => void
+  const closed = new Promise<string | null>((resolve) => { resolveClosed = resolve })
+  const finish = (reason: string | null) => {
+    if (settled) return
+    settled = true
+    if (!readySettled) { readySettled = true; resolveReady(false) }
+    clearTimeout(timer)
+    try { conn.destroy() } catch {}
+    resolveClosed(reason)
+  }
+  const timer = setTimeout(() => finish(`Codex identity observer did not subscribe within ${CODEX_TURN_OBSERVER_SUBSCRIBE_MS}ms`), CODEX_TURN_OBSERVER_SUBSCRIBE_MS)
+  timer.unref?.()
+  const send = (message: JsonRpc) => conn.write(wsText(JSON.stringify(message)))
+  conn.on('error', (error) => finish(`Codex identity observer connection failed: ${rpcError(error)}`))
+  conn.on('close', () => finish('Codex identity observer connection closed'))
+  conn.on('connect', () => conn.write(WS_UPGRADE(randomBytes(16).toString('base64'))))
+  const handle = (json: string) => {
+    let message: JsonRpc
+    try { message = JSON.parse(json) } catch { return }
+    if (message.error) return finish(`Codex identity observer request failed: ${message.error.message || JSON.stringify(message.error)}`)
+    if (message.id === 1 && message.result) {
+      send({ method: 'initialized', params: {} })
+      if (!readySettled) { readySettled = true; resolveReady(true) }
+      return
+    }
+    if (message.method !== 'thread/started') return
+    const params = message.params as { thread?: { id?: unknown; forkedFromId?: unknown } } | undefined
+    const nextThreadId = params?.thread?.id
+    const forkedFromId = params?.thread?.forkedFromId
+    if (typeof nextThreadId === 'string' && nextThreadId && forkedFromId === threadId)
+      onIdentityChange({ previousSessionId: threadId, nextSessionId: nextThreadId })
+  }
+  conn.on('data', (chunk: Buffer) => {
+    frames.buf = Buffer.concat([frames.buf, chunk])
+    if (!upgraded) {
+      const split = frames.buf.indexOf('\r\n\r\n')
+      if (split < 0) return
+      const head = frames.buf.slice(0, split).toString('utf8')
+      if (!/^HTTP\/1\.1 101/.test(head)) return finish(`Codex app-server refused identity observer: ${head.split('\r\n')[0]}`)
+      upgraded = true
+      frames.buf = frames.buf.slice(split + 4)
+      send(wsInitialize)
+    }
+    if (drainWsFrames(frames, conn, handle, (payload) => !payload.includes(Buffer.from('"method"')) || payload.includes(Buffer.from('"thread/started"'))))
+      finish('Codex app-server closed the identity observer')
   })
   return { close: () => finish(null), closed, ready }
 }
@@ -1964,6 +2045,7 @@ export const codexHarness: Harness = {
   exactNativeTargetId: (rec) => rec.harnessSessionId || null,
   deliver: (rec, text) => deliverViaCodexAppServer(rec, text),
   observeTurnFailures: codexTurnFailureObserver,
+  observeNativeIdentity: codexNativeIdentityObserver,
   interrupt: interruptCodexTurn,
   cleanupRuntime: async () => { /* project-scoped app-server is shared; no per-session transport to remove */ },
   targetDescriptorKey: (rec) => {
