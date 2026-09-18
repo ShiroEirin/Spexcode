@@ -116,3 +116,27 @@ hook/session projection 计数：
 3. queue/roster 读取是 baseline，不能解释 hook burst 的额外 build；`list-panes` 计数的 stream 增量约 1/s 与 warm poll 对齐，说明 warm poll 是固定项，不是本次 69 builds 的全部来源。
 
 下一步降载顺序（仍未实现）：先把 `sessionRefresh` 的 build 次数/build-ms 降下来（build-in-flight 期间只保留一个 dirty session revision，并合并跨 hook 的 session keys），再处理 warm/hot 的固定 census；最后消除 queue drain 重复 `liveSnapshot()`。不要先只改 100ms 为更大的数，因为 69 次 session projection 的 404.6ms 平均才是 hook burst 的主要可变 CPU。
+
+<!-- reply: 7690d008-1893-4d77-a6d3-16f051463169 @ 2026-09-18T04:28:36.812Z -->
+Spec: graph-stream, graph-cache, serve
+
+已实现第一步“in-flight session refresh 只允许一次 wake，其余 session signal 合并到 dirty/requested wave”。
+
+代码：
+- `graphStream.ts` 新增 session-wait 状态闸门：session signal 可以第一次越过一个正在等待的 unrelated full，但当真实 session splice 已在途时，后续 signal 不再 wake/preempt 当前 wait；它们由现有 dirty/sessionRefreshRequested 在当前 producer 完成后消费。
+- `graphCache.ts` 暴露 `sessionSpliceInFlight()`，区分“真正 session splice 在途”和“session refresh 只是 join 了 full build”，避免破坏 route-owned full 的 session-over-full 优先级。
+
+提交：`1cc1d5638 fix(graph-stream): coalesce in-flight session refresh wakes`
+Spec-OK：`efd682683 ack: Spec-OK graph-cache, graph-stream`
+
+验证：
+- `graphStream.api.test.ts` 全量 11/11 通过，包括 blinded patrol、failed refresh recovery、route-owned full/session overtaking、hook-authored commit、database patrol repair。
+- eslint 两个改动文件通过。
+- `spex spec lint` 0 errors（仓库已有 53 warnings）。
+- `npm run typecheck`/`npm run build` 仍被仓库已有的 DisplayStatus/archived 类型错误阻断，错误不在本次改动文件。
+
+CPU A/B（同一临时 678-record store、一个 delta stream、15 个 live records、150 次并发 idle↔active 尝试）：
+- 旧 dist：burst 50.74%，after 28.38%，12 broadcasts。
+- 新 src：burst 53.18%，after 29.50%，13 broadcasts。
+
+结论保持诚实：这一步没有可测的 CPU 降幅。原因是 `graphCache` 原有 `sessionFlight` 已经把底层 splice 单飞；本次改动只消除重复 wake/preemption 的正确性/边界浪费，而主要 CPU 仍在每次 splice 的全 roster `listSessions()`、tmux/liveness 和 capture 读取。下一步若继续降 CPU，应改 `spliceSessions()` 的输入范围/快照复用（按受影响 session ids 局部重算），而不是继续调整 wake 闸门或只放大 poll interval。
