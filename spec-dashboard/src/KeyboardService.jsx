@@ -1,6 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef } from 'react'
 import { usePaneActive } from './workspace.jsx'
 import { consumeEscape } from './escStack.js'
+import { focusComposer } from './focus.js'
+import { firesEvent } from './bindings.js'
 
 // The shell's one capture listener. Scopes return true when they consumed an event; returning false leaves
 // native controls and the next lower-priority owner alone. Registration is ref-backed so stateful views can
@@ -33,6 +35,12 @@ export function KeyboardServiceProvider({ children }) {
 
   useEffect(() => {
     const onKey = (event) => {
+      // Shift+Escape is the one global way back to authored text. It runs before routed scopes and the
+      // plain Escape stack, so it still works while another native control owns focus and never becomes a
+      // modified dismissal gesture for an overlay.
+      if (firesEvent('shell.focusComposer', event) && focusComposer()) {
+        event.preventDefault(); event.stopPropagation(); return
+      }
       // Escape layers are the highest-priority owner. Keeping this arbitration in the service means no
       // overlay needs a second capture listener that can race the shell or a routed view.
       if (consumeEscape(event)) { event.stopPropagation(); return }

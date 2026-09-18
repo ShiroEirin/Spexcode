@@ -108,6 +108,13 @@ consumer but does not attach a second window listener; one Escape closes only th
 lists and video detail register their own j/k or player controls through `useKeyboardScope`, so their handlers
 cannot race one another or a shell route when documents remain mounted but hidden.
 
+The service also owns the fixed `shell.focusComposer` chord (`Shift+Escape`). When a visible dashboard-authored
+composer exists, the chord focuses that composer and is consumed even when focus currently sits in another native
+control or an editor. The target comes from [[composer]]'s shared marker, not from a page-specific ref, so every
+composer home gets the same behavior and hidden warm documents cannot win. If no visible composer exists, the
+chord passes through. This is distinct from plain Escape: the LIFO layer stack consumes only unmodified Escape,
+so Shift+Escape remains available for this focus action.
+
 ## tab grammar
 
 The tab commands are new registry entries with non-browser-reserved defaults: close the active tab, select
