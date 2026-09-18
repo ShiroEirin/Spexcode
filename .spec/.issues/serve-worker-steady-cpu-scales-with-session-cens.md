@@ -208,3 +208,42 @@ hook lifecycle commit
 “sessions-only”只意味着不重建 spec/Git topology；它并不意味着只重算受影响 session。一个 hook 改 A，实际扫 682 条 roster，所以 CPU 同时受两个因素控制：session-db signal 频率 × roster 规模。
 
 之前做的 wake/coalesce 改动已撤回：`sessionFlight` 已经让底层 splice 单飞，且 before/after CPU 无收益。下一步应该只围绕真正有效的点设计：让 session-db commit 携带 affected session ids/revision，session splice 只重算 affected rows，复用其余 projection；未知/结构变化才 fallback 全 roster。先做一个单变量实验验证“局部 1-row splice”是否把 682 roster 的 burst 从约 52% 拉近 13 条 roster 的量级，再考虑理论抽象和正式实现。
+
+<!-- reply: 7690d008-1893-4d77-a6d3-16f051463169 @ 2026-09-18T09:27:19.116Z -->
+Spec: graph-stream, graph-cache, sessions, serve
+
+统一局部 projection 已落地并完成验收：
+
+提交链：
+- `706b9a554` affected commit subjects + change mask
+- `84fb94dbd` cross-process append-only session-event watermark
+- `ea7d0ee3c` partial session reader + immutable row merge/fallback
+- `bef74ff04` graph cache/stream wiring and partial projection integration
+- probe commits `6f339be2c`, `5e13eaac3`, `b64405330`
+
+实现机制：
+
+- canonical commit observer 携带 `subjectSessionIds` + `changeMask`；delivery-only commit 不触发 session projection。
+- session-db watcher 维护 append-only event rowid watermark，跨进程 hook commit 恢复 state-event subject ids；cursor failure/unknown event fallback full。
+- session store watcher 从 relative path 提取 session id；非 session path fallback full。
+- graph cache accumulates affected ids, and a precise session event uses `spliceSessions(prev, {scope:'partial', affectedSessionIds})`。
+- partial reader 不枚举全 roster、不读取无关 runtime/canonical/resident rows；只读 affected rows，保留一次共享 project-wide live evidence census。
+- immutable merge 保留 untouched row identity；malformed/duplicate/unseen ids fallback authoritative full roster。
+- partial splice 跳过 hook 热路径的全量 pre/post `sessionInputRevision()`；patrol 仍负责 aggregate revision validation。
+
+验收：
+
+- session-application 全套 `45/45` 通过。
+- projection/graphScope `16/16` 通过。
+- graph-stream API `11/11` 通过。
+- source acceptance gate：682 records / 667 archived / 15 active，一次 partial hook projection = `0` roster enumerations、`1` runtime read、`1` list-panes、`0` capture、15 working rows；10-build naive = 10 reads/10 census，local one-build约 7-10ms。
+- `spex spec lint`：0 errors，仓库已有 warnings。
+- eslint 改动文件通过。
+- `npm run typecheck/build` 的剩余错误是仓库已有 `DisplayStatus`/`archived` 类型错误，不在本次新增路径。
+
+真实 worker A/B（同一 682-record temp store、一个 delta stream、15 active、并发 lifecycle burst）：
+
+- 旧 dist：burst `54.03%`，after `26.83%`；session cache commits `513/359/316/305/345ms` 级别。
+- 当前 src：burst `47.13%`，after `27.33%`；session cache commits `32/20/251/129/340ms` 级别。
+
+主要矛盾已从“全 roster session projection”转为 affected-row partial path，未知变化仍安全退回 full。macmini 未做任何写入或控制。
