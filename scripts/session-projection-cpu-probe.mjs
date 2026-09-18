@@ -49,8 +49,18 @@ if (!process.argv.includes('--child')) {
       oneHook: 'one lifecycle change should cause one projection build and one liveness census; local projection should read affected rows, not every archived row',
       burst: 'a burst should have one coalesced projection build per settled wave; affected session ids may repeat but roster reads must not scale with archived count',
       archive: 'clean archived rows stay in the archive index and do not cause tmux capture/liveness calls in the working projection',
-      fail: 'this probe is evidence only and does not assert a win; compare the same JSON before/after a code change',
+      fail: 'set SPEX_PROBE_ASSERT=1 for a pass/fail gate on the 682-record partial one-hook case; without it the script emits evidence only',
     },
+  }
+  if (process.env.SPEX_PROBE_ASSERT === '1') {
+    const oneHook = large?.cases?.oneHook
+    assert.equal(oneHook?.projectionBuilds, 1, 'partial one-hook refresh must build exactly once')
+    assert.equal(oneHook?.rosterEnumerations, 0, 'partial one-hook refresh must not enumerate the roster')
+    assert.ok((oneHook?.recordReads ?? Infinity) <= 1, `partial one-hook refresh read ${oneHook?.recordReads} records; expected <= 1 affected row`)
+    assert.equal(oneHook?.tmux?.listPanes, 1, 'partial one-hook refresh keeps one shared liveness census')
+    assert.equal(oneHook?.tmux?.capturePane, 0, 'partial one-hook refresh must not capture panes')
+    assert.equal(oneHook?.projectedRows, 15, 'clean archives stay out of the working projection')
+    process.stdout.write('session-projection-cpu-probe: PASS\n')
   }
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`)
   process.exit(0)
