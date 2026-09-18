@@ -25,6 +25,7 @@ import ProseActions from './ProseActions.jsx'
 import NodeDiagram from './NodeDiagram.jsx'
 import { useSpecContent } from './specContent.js'
 import { useHistory, useVersionDiff } from './specHistory.js'
+import { useBackdropDismiss } from './backdropDismiss.js'
 import 'katex/dist/katex.min.css'
 
 export { useSpecContent } from './specContent.js'
@@ -515,6 +516,7 @@ export default function NodeView({ node, pane, setPane, onClose, sessions = [], 
   const issueClosed = node.reviewSummary?.issues?.closed || 0
   const editCount = (node.overlays || []).length
   const panes = panesFor(node, graphOnly)
+  const backdropProps = useBackdropDismiss(onClose)
   // render the pane the user picked, but fall back to the first available if it isn't valid for THIS node
   // (e.g. 'edit' is selected, then a node with no overlay opens) — so a tab is always shown, never blank.
   const active = panes.some((p) => p.key === pane) ? pane : panes[0].key
@@ -522,7 +524,7 @@ export default function NodeView({ node, pane, setPane, onClose, sessions = [], 
   // once loaded the rows persist, so returning to the tab is instant — no reload flash.
   const rows = useHistory(node.id, active === 'history')
   return (
-    <div className="ov-backdrop" data-focus-overlay onMouseDown={onClose}>
+    <div className="ov-backdrop" data-focus-overlay {...backdropProps}>
       <div className="ov-panel" onMouseDown={(e) => e.stopPropagation()}>
         <div className="ov-head">
           <span className="ov-title">{node.title}</span>
