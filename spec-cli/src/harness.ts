@@ -40,6 +40,7 @@ export type HarnessLaunchReadinessFence = {
   validate(current: () => HarnessLaunchReadyRecord | null): Promise<boolean>
 }
 export type TurnFailure = { message: string; completedAt: number | null }
+export type NativeIdentityChange = { previousThreadId: string; nextThreadId: string; runtimeKey: string }
 export type FailureSubscription = { close(): void; readonly closed: Promise<string | null>; readonly ready?: Promise<boolean> }
 // An adapter's native input transport can be ready, temporarily inconclusive, or proven unreachable. This is
 // deliberately separate from agent liveness: sessions.ts joins an unreachable transport with its independent
@@ -78,6 +79,9 @@ export type SharedRuntimeDescriptor = {
   // every loaded id, but only reads native status for those references; unowned history stays visible as
   // unknown without replaying it on every report.
   probe(referenceIds?: readonly string[]): Promise<SharedRuntimeProbe>
+  // One observer per shared generation, not one observer per governed session. The runtime owns the native
+  // notification stream; product code maps an exact predecessor/successor pair back to its stable session id.
+  observeNativeIdentity?(onIdentityChange: (change: NativeIdentityChange) => void): FailureSubscription
 }
 export type SharedRuntimeMutationGuard = {
   healthy: boolean
@@ -322,6 +326,9 @@ export interface Harness {
   // session id; native-assigned adapters return only a captured id; adapters with no native conversation return
   // null. This is deliberately unrelated to OS leaf ownership and runtime liveness.
   exactNativeTargetId(rec: HarnessLivenessRecord & { harnessSessionId?: string | null }): string | null
+  // Commit a native predecessor/successor replacement in the adapter's runtime authority. The session layer
+  // owns the record lock and runtime binding; the adapter owns any generation-specific ledger mutation.
+  rebindNativeIdentity?(rec: HarnessLivenessRecord & { harnessSessionId?: string | null }, change: NativeIdentityChange): void
   // Poke a live session and report whether this immediate channel accepted the attempt. Claude-family adapters
   // write one idempotent rendezvous reply; native adapter uses JSON-RPC on the same app-server WebSocket the
   // visible TUI uses — it reads the thread live and either `turn/steer`s the message INTO an in-progress turn

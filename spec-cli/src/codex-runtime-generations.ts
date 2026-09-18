@@ -733,6 +733,22 @@ export function repinCodexGeneration(root: string, sessionId: string, threadId: 
   })
 }
 
+// A Codex TUI rewind can fork a conversation without changing the project app-server generation. Rebind the
+// existing session's exact generation entry to that successor only when the ledger still names the expected
+// predecessor; a raced resume/close therefore refuses instead of overwriting a newer native identity.
+export function rebindCodexGeneration(root: string, sessionId: string, previousThreadId: string, nextThreadId: string): void {
+  if (!nextThreadId || previousThreadId === nextThreadId) throw new Error('Codex successor thread id must differ from its predecessor')
+  withLedgerLockSync(root, () => {
+    const previous = readCodexGenerationLedger(root)
+    const binding = previous.bindings[sessionId]
+    if (!binding || binding.threadId !== previousThreadId) throw new Error(`Codex session ${sessionId} has no exact predecessor binding to rebind`)
+    const generation = previous.generations[binding.generationId]
+    if (!generation || generation.state === 'reclaimed') throw new Error(`Codex generation ${binding.generationId} is absent or reclaimed`)
+    const bindings = { ...previous.bindings, [sessionId]: { ...binding, threadId: nextThreadId } }
+    writeLedger(root, previous, { current: previous.current, pending: previous.pending, generations: previous.generations, bindings })
+  })
+}
+
 // The resume boundary. A binding to a LIVE generation still routes only there — an existing conversation is
 // never moved out from under the client that holds it. But a binding whose root is gone names a process, not a
 // conversation: the thread's durable home is its on-disk rollout, which any generation can load. So the gone

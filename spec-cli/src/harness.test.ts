@@ -6,7 +6,7 @@ import { platform, tmpdir } from 'node:os'
 import { createServer } from 'node:net'
 import { execFileSync } from 'node:child_process'
 import { assertRvSockPath, HARNESSES, claudeHarness, opencodeHarness, piHarness, zcodeHarness, claudeHeadlessHarness, opencodeHeadlessHarness, piHeadlessHarness, writeManagedBlock, removeManagedBlock, writeManagedJsonHooks, removeManagedJsonHooks, sharedShimHasHostContent, GENERATED_MARK, launcherList, resolveLauncher, defaultLauncher, launcherDefault, rendezvousListening, rvSock, legacyRvSock, scopedRvSock, stampRvSock, deliverViaRendezvous, deliverViaClaudeRendezvous } from './harness.js'
-import { activeTurnIdFromThread, codexAppServerSock, codexAppServerPid, codexAppServerReceipt, codexSharedRuntimeProbe, codexBinary, codexHandshakeMessages, codexInjectMessage, codexLoadedReferenceIds, codexThreadList, codexTurn, codexTurnFailureObserver, codexObservedActiveTurnId, CODEX_THREAD_SOURCE_KINDS, CODEX_TURN_OBSERVER_SUBSCRIBE_MS, codexHarness, codexHeadlessHarness, codexLaunchCommand, codexLauncherThreadPolicy, codexStartThread, codexStartThreadParams, paneTreeRunsCodex, codexRolloutExists, writeCodexTrust } from './codex-harness.js'
+import { activeTurnIdFromThread, codexAppServerSock, codexAppServerPid, codexAppServerReceipt, codexSharedRuntimeProbe, codexBinary, codexHandshakeMessages, codexInjectMessage, codexLoadedReferenceIds, codexThreadList, codexTurn, codexTurnFailureObserver, codexGenerationIdentityObserver, codexObservedActiveTurnId, CODEX_THREAD_SOURCE_KINDS, CODEX_TURN_OBSERVER_SUBSCRIBE_MS, codexHarness, codexHeadlessHarness, codexLaunchCommand, codexLauncherThreadPolicy, codexStartThread, codexStartThreadParams, paneTreeRunsCodex, codexRolloutExists, writeCodexTrust } from './codex-harness.js'
 import { shQuote } from './sh.js'
 import { runtimeRoot, sessionArtifactPath } from '@spexcode/spec-core'
 import { processStartToken, verifyDetachedRuntime, writeDetachedRuntimeReceipt } from '@spexcode/spec-core'
@@ -220,6 +220,55 @@ test('Codex turn observer refuses an unbound detached-v3 thread without falling 
     assert.ok(closed)
     assert.match(closed, /no exact generation binding/)
   } finally {
+    if (previousHome === undefined) delete process.env.SPEXCODE_HOME
+    else process.env.SPEXCODE_HOME = previousHome
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('Codex generation observer follows a fork successor without resuming native history', async () => {
+  const previousHome = process.env.SPEXCODE_HOME
+  const home = mkdtempSync(join(tmpdir(), 'spex-codex-identity-observer-'))
+  process.env.SPEXCODE_HOME = home
+  const root = runtimeRoot()
+  const threadId = 'identity-thread'
+  const socket = join(home, 'identity.sock')
+  mkdirSync(root, { recursive: true })
+  writeFileSync(join(root, 'codex-app-server-generations.json'), `${JSON.stringify({
+    version: 3, revision: 1, current: 'identity-generation', pending: null,
+    generations: {
+      'identity-generation': {
+        state: 'current',
+        endpoint: {
+          id: 'identity-generation', pidFile: join(root, 'identity.pid'), receiptFile: join(root, 'identity.json'),
+          logFile: join(root, 'identity.log'), socketPath: socket,
+        },
+      },
+    },
+    bindings: { 'identity-session': { generationId: 'identity-generation', threadId } },
+  }, null, 2)}\n`)
+  const server = codexRpcFixture(() => { throw new Error('identity observer must not issue thread/resume') }, {
+    initialize: (message, send) => send({ id: message.id, result: { serverInfo: { method: 'fixture-method-name' } } }),
+    initialized: (_message, send) => setTimeout(() => send({
+      method: 'thread/started', params: { thread: { id: 'identity-successor', forkedFromId: threadId } },
+    }), 10),
+  })
+  let observer: { close(): void; closed: Promise<string | null> } | null = null
+  try {
+    await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(socket, () => resolve()) })
+    const descriptor = codexHarness.sharedRuntimes?.(root)[0]
+    if (!descriptor?.observeNativeIdentity) throw new Error('Codex generation observer is missing from the shared descriptor')
+    let resolveChange!: (value: unknown) => void
+    const change = new Promise<unknown>((resolve) => { resolveChange = resolve })
+    observer = descriptor.observeNativeIdentity(resolveChange)
+    assert.deepEqual(await Promise.race([
+      change,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('fork successor was not observed')), 1_000)),
+    ]), { previousThreadId: threadId, nextThreadId: 'identity-successor', runtimeKey: descriptor.key })
+  } finally {
+    observer?.close()
+    await observer?.closed
+    await new Promise<void>((resolve) => server.close(() => resolve()))
     if (previousHome === undefined) delete process.env.SPEXCODE_HOME
     else process.env.SPEXCODE_HOME = previousHome
     rmSync(home, { recursive: true, force: true })
