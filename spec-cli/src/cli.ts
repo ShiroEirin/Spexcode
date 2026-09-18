@@ -76,10 +76,16 @@ async function assertDaemonRuntime(command: 'spex serve' | 'spex dashboard'): Pr
 // anything else prints in full so a real bug keeps its trace. A synchronous throw inside an awaited call
 // (loadConfig on a malformed .spec/spexcode.json) surfaces as uncaughtException, not unhandledRejection, so BOTH
 // paths route through the same printer.
-function fatal(e: unknown): never {
+function fatal(e: unknown): void {
   if (e instanceof Error && ['BackendError', 'ConfigError', 'UsageError', 'GuardError', 'DashboardAssetError', 'GitWorkspaceError', 'SessionFileError'].includes(e.name)) console.error(`spex: ${e.message}`)
   else console.error(e)
-  process.exit(1)
+  // @@@ windows-exit - process.exit() force-quits while async handles are still closing, and on Windows a
+  // rejected session-create (a BackendError from an awaited fetch whose undici socket is mid-close) then hit
+  // libuv's `!(handle->flags & UV_HANDLE_CLOSING)` assertion: the message printed, then the CLI died with
+  // 0xC0000409 instead of a clean exit 1. Setting exitCode and letting the loop drain its closing handles is
+  // the documented-clean way out; the process still exits 1, and `flushExit` is NOT used here because its
+  // write-callback exit races those same handles (measured: it made a HEALTHY `session ls` crash too).
+  process.exitCode = 1
 }
 process.on('unhandledRejection', fatal)
 process.on('uncaughtException', fatal)

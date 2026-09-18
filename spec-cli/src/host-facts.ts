@@ -11,7 +11,7 @@ export type AgentFact = { installed: boolean; path: string | null; loggedIn: boo
 export type LauncherFact = { projectId: string; project: string; name: string; harness: string; cmd: string; resolves: boolean; binary: string | null }
 export type HostFacts = {
   host: { kind: 'tmux-host' | 'process-host'; reason: string }
-  runtime: { kind: 'native-linux' | 'darwin' | 'wsl2'; label: string; distro?: string }
+  runtime: { kind: 'native-linux' | 'darwin' | 'wsl2' | 'win32'; label: string; distro?: string }
   versions: { node: string; tmux: string | null; git: string | null }
   agents: Record<'claude' | 'codex' | 'opencode' | 'pi', AgentFact>
   launchers: LauncherFact[]
@@ -105,10 +105,14 @@ function launcherFacts(roots: string[]): LauncherFact[] {
 
 export function collectHostFacts(roots = discoverRoots()): HostFacts {
   const wsl = isWsl()
+  // @@@ win32 - the runtime label is a FACT the operator reads, and reporting a native Windows host as
+  // "native linux" is a lie that sends them looking for a Linux box that does not exist. Windows gets its
+  // own row; the WSL branch stays ahead of it because a WSL shell reports platform 'linux'.
   const runtime = platform() === 'darwin'
     ? { kind: 'darwin' as const, label: 'darwin' }
     : wsl ? { kind: 'wsl2' as const, label: 'wsl2', distro: process.env.WSL_DISTRO_NAME || undefined }
-      : { kind: 'native-linux' as const, label: 'native linux' }
+      : platform() === 'win32' ? { kind: 'win32' as const, label: 'native windows' }
+        : { kind: 'native-linux' as const, label: 'native linux' }
   const record = readHostRecord()
   return {
     host: sessionHost().kind === 'tmux-host'
