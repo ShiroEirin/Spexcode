@@ -88,3 +88,31 @@ CPU 分解 A/B（2026-09-18，本机同一份 678-record store，Linux 16 CPU；
 - 不是主要矛盾：subscriber 数量本身的线性复制；31 个 pane 的单独增加；daemon-runtime.ts 动态 import。
 
 修复优先级因此调整为：先对第一个 delta subscriber 激活后的共享 graph 路径做计数和降载（hot/warm poll、session refresh、rebuild build-ms），再消除 queue drain 的重复 liveSnapshot；随后把 hook commit 合并限制到一次 session projection/build dirty rerun。delivery/turn-failure 的 roster 扫描属于第二阶段底座优化，不应先拿它解释 macmini 的全部 40-50%。
+
+<!-- reply: 7690d008-1893-4d77-a6d3-16f051463169 @ 2026-09-18T02:55:57.535Z -->
+Spec: graph-stream, sessions, serve
+
+共享 graph 路径计数（不改代码；现有 `SPEXCODE_BOARD_DEBUG=1` + `SPEXCODE_TMUX_RECORD`，临时复制 store）
+
+窗口与可观测计数：
+
+- 无 stream 预热 25s：`list-panes` 记录 40 次，约 1.6/s。这里混有 queue supervisor 的全量 snapshot 和其它 liveness 读取，作为底座。
+- 接入 1 个 delta SSE 后 25s：新增 `list-panes` 63 次，约 2.5/s；相对无 stream增量 23 次/25s，约 0.92/s，与 warm poll 的 1s cadence 对齐。subscriber 退出前总活跃 span 62.7s，故 hot poll 理论 tick 约 627 次（100ms），warm poll 理论 tick 约 63 次（1s）。hot 不 spawn tmux，当前版本没有日志计数，只能用源码 cadence + warm 的外部 spawn 交叉验证。
+- 一次 delta subscriber 已足以打开这组 process-global poller；此前 1/5/14 subscriber 的 CPU 约 31.1/29.0/30.4%，没有按 subscriber 线性增加。
+
+hook/session projection 计数：
+
+- 使用 15 个 `archived=false, stopped=false` 的真实记录，执行 5 轮 idle→active 交替（150 次有效写入尝试）。
+- `graph latency ... stage=sessions-signal`：116 次。其余尝试落在同一状态/被状态机拒绝，没有把失败当作 signal。
+- `graph broadcast`：69 次，其中 68 次 `sessionRefresh=true`；说明 116 个 signal 被 debounce/in-flight dirty 合并为 68 个 session projection broadcast，而不是一一对应。
+- broadcast build-ms：n=69，min=243ms，max=3446ms，avg=404.6ms。日志中出现过 `sessions` build 282/432/243/…ms；初始 session refresh 3495ms，full build 1368ms。
+- 触发 tags 主要是 `{sessions}`（58 次）；另有 patrol+sessions / patrol 混合，说明 patrol 也会与 hook signal 竞争 build，不是单独的空闲成本。
+- 同窗口 `list-panes` 总数 212，另有 `capture-pane` 116 次；后者来自现有 session projection/route 的 pane capture，不是 warm poll 本身，说明 session refresh 的 build 内部还有 pane 读取成本。
+
+主要矛盾（计数版）：
+
+1. graph 的第一个 delta subscriber 使每秒新增约 1 次全量 warm tmux census，并同时使 hot 100ms poll 常驻；它贡献共享 steady overhead，但不是按 tab 复制。
+2. hook burst 时 116 个 sessions signal 只合并成 68 次 projection，但每次平均 build 404.6ms，最大 3.45s；这部分是 CPU 的主要可变项。debounce 目前只能合并同一窄时间窗，无法抵消 build 期间 dirty rerun。
+3. queue/roster 读取是 baseline，不能解释 hook burst 的额外 build；`list-panes` 计数的 stream 增量约 1/s 与 warm poll 对齐，说明 warm poll 是固定项，不是本次 69 builds 的全部来源。
+
+下一步降载顺序（仍未实现）：先把 `sessionRefresh` 的 build 次数/build-ms 降下来（build-in-flight 期间只保留一个 dirty session revision，并合并跨 hook 的 session keys），再处理 warm/hot 的固定 census；最后消除 queue drain 重复 `liveSnapshot()`。不要先只改 100ms 为更大的数，因为 69 次 session projection 的 404.6ms 平均才是 hook burst 的主要可变 CPU。
