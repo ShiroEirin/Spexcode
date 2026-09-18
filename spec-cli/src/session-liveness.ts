@@ -19,6 +19,28 @@ export type Liveness = 'online' | 'starting' | 'offline' | 'unknown'
 // Share one liveness snapshot rather than spawning tmux for every displayed session.
 export type LiveSnap = { probeFailed: boolean; windows: Map<string, PaneProbe>; titles: Map<string, string>; sockets: Set<string>; unproven: Set<string> }
 
+// The warm graph poll is already the process-wide owner of this expensive evidence. A session-only projection
+// may reuse one recent global result, but never beyond one warm cadence plus a small scheduling margin. An expired
+// or absent result falls back to a fresh probe, so the cache only removes duplicate work; it cannot turn a failed
+// or missing witness into a liveness verdict.
+export const LIVE_SNAPSHOT_CACHE_MAX_AGE_MS = 1250
+let recentSnapshot: { value: LiveSnap; at: number } | null = null
+
+export function publishLiveSnapshot(value: LiveSnap): void {
+  recentSnapshot = { value, at: Date.now() }
+}
+
+function rememberSnapshot(value: LiveSnap, targetId?: string): LiveSnap {
+  if (!targetId) publishLiveSnapshot(value)
+  return value
+}
+
+export function recentLiveSnapshot(maxAgeMs = LIVE_SNAPSHOT_CACHE_MAX_AGE_MS): LiveSnap | null {
+  if (!recentSnapshot) return null
+  const age = Date.now() - recentSnapshot.at
+  return age >= 0 && age <= maxAgeMs ? recentSnapshot.value : null
+}
+
 // tmux rewrites CONTROL characters in a format string before printing them — 3.6a turns both a tab and a raw
 // 0x1f into `_`, while 3.4 turns a raw 0x1f into the printable escape `\037`. So the field separator is ASKED
 // FOR as that printable text, which every supported version passes through untouched, and the format is built
@@ -80,7 +102,7 @@ export async function liveSnapshot(targetId?: string): Promise<LiveSnap> {
   const titles = new Map<string, string>()
   if (sessionHost().kind === 'process-host') {
     // process-host has no window/pane census. Per-session process identity is joined by liveness().
-    return { probeFailed: false, windows, titles, sockets: new Set(), unproven: new Set() }
+    return rememberSnapshot({ probeFailed: false, windows, titles, sockets: new Set(), unproven: new Set() }, targetId)
   }
   let out: string
   try {
@@ -93,7 +115,7 @@ export async function liveSnapshot(targetId?: string): Promise<LiveSnap> {
   } catch (e) {
     // a TIMEOUT/kill is a probe FAILURE (we can't tell who's alive → unknown, never a false graveyard). A clean
     // non-zero exit ("no server running" — genuinely zero sessions) is authoritative → the empty map = offline.
-    return { probeFailed: probeTimedOut(e), windows, titles, sockets: new Set(), unproven: new Set() }
+    return rememberSnapshot({ probeFailed: probeTimedOut(e), windows, titles, sockets: new Set(), unproven: new Set() }, targetId)
   }
   // the hot-tier pid verdict per windowed session (latch-consistent with hotSignature) + the legacy-scan gate.
   const legacy: { harness: string; hasPid: boolean }[] = []
@@ -129,7 +151,7 @@ export async function liveSnapshot(targetId?: string): Promise<LiveSnap> {
     if (listening[i] === 'live') sockets.add(id)
     else if (listening[i] === 'unproven') unproven.add(id)
   })
-  return { probeFailed: false, windows, titles, sockets, unproven }
+  return rememberSnapshot({ probeFailed: false, windows, titles, sockets, unproven }, targetId)
 }
 // Avoid process spawns on the hot path; old sessions without agent.pid remain warm-tier only.
 let hotIds: string[] = []

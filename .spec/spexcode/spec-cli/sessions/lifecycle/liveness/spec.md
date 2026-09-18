@@ -48,6 +48,12 @@ module state, so no caller can corrupt the pid-reuse guard by hand.
   stale record fields or a thread still addressable through a project-shared control plane cannot make a row
   with no target pane and no target leaf read `online`/`working`; it converges to `offline`.
 
+  The warm tier is the evidence owner for project-wide snapshots. It publishes the completed snapshot for a
+  bounded 1.25-second reuse window so a lifecycle-only row projection does not spawn a second tmux census for the
+  same warm interval. The cache carries the full tri-state result, including `probeFailed` and `unproven`; reuse
+  never turns an unknown reading into offline. A missing or expired snapshot falls back to one fresh warm probe,
+  while the warm poll remains the only recurring owner of that evidence.
+
   **Board honesty under load — the probe can fail, and a failed probe is not a death.** The tmux snapshot is
   one bounded call; under heavy load it can time out — a timed-out probe means we **cannot tell** who is alive,
   categorically different from "tmux is up and this session is gone," so those rows yield `unknown`, rendered
