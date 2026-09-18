@@ -52,6 +52,17 @@ export function processStartToken(pid: number, procRoot = '/proc'): string | nul
     try { return parseProcStat(readFileSync(join(procRoot, String(pid), 'stat'), 'utf8')).startToken }
     catch { return null }
   }
+  // Windows has no /proc and no POSIX `ps`. The `ps` that a git-bash PATH supplies is MINGW's, which does not
+  // take `-o` at all — it answered `ps: unknown option -- o`, the token came back null, and every caller that
+  // needs a claimant identity refused: `spex spec lint` and `spex graph --public --html` both died on a fresh
+  // Windows machine. The platform difference belongs here, at the one seam that answers "is this the same
+  // process", not in the callers that ask.
+  if (platform() === 'win32') {
+    try {
+      const ticks = execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', `(Get-Process -Id ${pid}).StartTime.Ticks`], { encoding: 'utf8' }).trim()
+      return /^\d+$/.test(ticks) ? ticks : null
+    } catch { return null }
+  }
   try {
     const started = execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8' }).trim()
     return started || null

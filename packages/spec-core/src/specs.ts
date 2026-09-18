@@ -258,7 +258,10 @@ export function specContent(id: string): { body: string; parts: ReturnType<typeo
 // its body asks the spec tree's own reader rather than re-deriving a path from an id.
 export function specDir(id: string): string | null {
   const r = raws().find((x) => x.id === id)
-  return r ? r.relPath.replace(/\/spec\.md$/, '') : null
+  // Strip the leaf with EITHER separator: relPath is built by the host's path module, so on Windows it is
+  // back-slashed and a '/'-only strip left the file path in place — every diagram then resolved to
+  // `…\\spec.md\\diagram.json`, a path that cannot exist.
+  return r ? r.relPath.replace(/[/\\]spec\.md$/, '') : null
 }
 
 // `root` defaults to the backend's own checkout — the canonical tree. A session worktree may be passed
