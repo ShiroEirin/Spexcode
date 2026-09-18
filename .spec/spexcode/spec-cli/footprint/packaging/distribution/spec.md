@@ -97,8 +97,11 @@ job left for them.
 **Generated from one source, written by hand where a person decides.** `npm run build:distribution` writes every
 manifest and every `SKILL.md` from the atlas preset in `.plugins`, read through the same projection that writes
 the init templates, so each package says what adopters are seeded; it adds only the lines a repository without
-SpexCode needs first and the line that hands over the page. Versions follow the repository's version, and while
-that is a prerelease every command names npm's `next` tag, the only tag carrying these verbs. The gugu tab's
+SpexCode needs first and the line that hands over the page. Versions follow the repository's version, and the TAG follows from it: while
+that version is a prerelease every command names npm's `next` tag, the only tag then carrying these verbs;
+once it is a release they name no tag at all, because `latest` is the release and `next` is by then the older
+of the two — a package still pinning `@next` hands an adopter a build older than the one they would get by
+asking for nothing. The gugu tab's
 copies of archify — the renderer bundled for a browser, the focus module, the stylesheet — are generated from
 `packages/archify` with a pinned esbuild, so they stay byte-for-byte what the dashboard draws. gugu's shelf parses
 each `.js` file as a classic script, so the generated focus helper and prompt expose globals. Archify keeps its
