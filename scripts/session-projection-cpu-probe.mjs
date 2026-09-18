@@ -156,6 +156,7 @@ const layout = await import('@spexcode/spec-core')
 const applicationModule = await import(modulePath('session-application', 'js'))
 const sessions = await import(modulePath('sessions', 'js'))
 const graph = await import(modulePath('graphSnapshot', 'js'))
+const { warmSignature } = await import(modulePath('session-liveness', 'js'))
 const { configuredSessionApplication } = applicationModule
 const application = configuredSessionApplication()
 sessionsPath = layout.sessionsRoot()
@@ -234,8 +235,11 @@ const runProjection = async (previous, affectedIds) => {
   return board
 }
 const measure = async (name, operation) => {
-  resetCounters()
   const before = await graph.buildBoard()
+  // Model the production owner explicitly: the warm poll has already completed one global evidence census.
+  // The controlled sample starts after that owner has published, so only a consumer that cannot reuse the
+  // snapshot pays for another list-panes/rendezvous pass.
+  await warmSignature()
   resetCounters()
   const sample = await cpuWindow(() => operation(before))
   return {
