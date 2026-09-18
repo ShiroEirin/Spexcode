@@ -248,6 +248,7 @@ test('Codex generation observer follows a fork successor without resuming native
     bindings: { 'identity-session': { generationId: 'identity-generation', threadId } },
   }, null, 2)}\n`)
   const server = codexRpcFixture(() => { throw new Error('identity observer must not issue thread/resume') }, {
+    initialize: (message, send) => send({ id: message.id, result: { serverInfo: { method: 'fixture-method-name' } } }),
     initialized: (_message, send) => setTimeout(() => send({
       method: 'thread/started', params: { thread: { id: 'identity-successor', forkedFromId: threadId } },
     }), 10),

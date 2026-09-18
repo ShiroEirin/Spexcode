@@ -527,7 +527,7 @@ export function codexGenerationIdentityObserver(
       frames.buf = frames.buf.slice(split + 4)
       send(wsInitialize)
     }
-    if (drainWsFrames(frames, conn, handle, (payload) => !payload.includes(Buffer.from('"method"')) || payload.includes(Buffer.from('"thread/started"'))))
+    if (drainWsFrames(frames, conn, handle))
       finish('Codex app-server closed the generation observer')
   })
   return { close: () => finish(null), closed, ready }
