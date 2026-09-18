@@ -711,11 +711,6 @@ export function getBoardForSessionRefresh(): Promise<Board> {
   return getBoard()
 }
 
-// The stream scheduler needs to distinguish a real session splice from a session refresh that is still
-// waiting behind a structural full build. Both use getBoardForSessionRefresh(), but only the former must
-// reject another wake while its producer is already running.
-export const sessionSpliceInFlight = (): boolean => sessionFlight !== null
-
 // The delta-gated cold tick calls this instead of invalidating. Equal inputs resolve to the cached object;
 // changed inputs repair through the same flight and full producer as a watcher-owned invalidation.
 export function patrolBoard(): Promise<Board> {
