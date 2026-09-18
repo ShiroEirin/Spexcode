@@ -577,11 +577,20 @@ const lastKnownSession = new Map<string, Session>()
 // full text: it is a receipt for one ask the caller just made, not a row in a list of many.
 const boardRow = (s: Session): Session => { s.prompt = null; return s }
 
-export async function listSessions(includeArchived = false): Promise<Session[]> {
+// A partial read is for a session-scoped board refresh: the caller already knows which durable records moved,
+// so do not enumerate or project the rest of the roster. The liveness snapshot remains project-wide (one tmux
+// census is shared by every requested row), preserving the evidence semantics without paying per-session reads
+// for unrelated history. Omit `restrictToIds` for the authoritative full roster.
+export async function listSessions(includeArchived = false, restrictToIds?: readonly string[]): Promise<Session[]> {
+  const restricted = restrictToIds !== undefined
+  const requestedIds = restricted
+    ? [...new Set(restrictToIds.filter((id): id is string => typeof id === 'string' && id.length > 0))]
+    : null
+  if (requestedIds && requestedIds.length === 0) return []
   // ONE store enumeration + ONE tmux snapshot (windows + pane pids + titles, merged) for the whole list, then
   // every session reconciles by a pure set lookup + one existsSync — no per-session tmux spawn.
   const [ids, snap] = await Promise.all([
-    Promise.resolve(listSessionIds()), liveSnapshot(),
+    Promise.resolve(requestedIds ?? listSessionIds()), liveSnapshot(),
   ])
   // Freeze one record snapshot for both the census join and row projection. A second full read after an awaited
   // probe could pair record A with thread identity B and accidentally treat a missing census entry as clean.
@@ -694,8 +703,10 @@ export async function listSessions(includeArchived = false): Promise<Session[]> 
     return lastKnownSession.get(id) ?? null
   }))
   // prune last-known entries for ids that no longer appear at all (genuinely removed), keeping it bounded.
-  const liveIds = new Set(ids)
-  for (const k of [...lastKnownSession.keys()]) if (!liveIds.has(k)) lastKnownSession.delete(k)
+  if (!restricted) {
+    const liveIds = new Set(ids)
+    for (const k of [...lastKnownSession.keys()]) if (!liveIds.has(k)) lastKnownSession.delete(k)
+  }
   return rows.filter((s): s is Session => s != null && (includeArchived || !s.archived))
     .sort((a, b) => (a.sortKey ?? a.created) - (b.sortKey ?? b.created) || a.id.localeCompare(b.id))
 }

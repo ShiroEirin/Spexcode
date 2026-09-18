@@ -6,7 +6,15 @@ import { residentForgeRevision, residentForgeState } from '@spexcode/spec-forge/
 import { resolveForgeHost } from '@spexcode/spec-forge/drivers'
 import { boardThreads } from './issues.js'
 import { localIssueRevision } from './localIssues.js'
+import { mergeSessionRows } from './sessionProjection.js'
 import { buildBoard as assembleBoard, spliceSessions as spliceBoardSessions, type BoardSnapshot } from '@spexcode/spec-core'
+
+type GraphBoard = Awaited<ReturnType<typeof assembleBoard>>
+type SessionProjectionRow = GraphBoard['sessions'][number]
+
+export type SessionSpliceRequest =
+  | { scope: 'full' }
+  | { scope: 'partial'; affectedSessionIds: readonly string[] }
 
 // The application adapter is the sole reader of runtime/forge state. graph.ts only receives this result.
 export async function boardSnapshot(): Promise<BoardSnapshot> {
@@ -37,7 +45,33 @@ export async function boardSnapshot(): Promise<BoardSnapshot> {
 
 export const buildBoard = async () => assembleBoard(await boardSnapshot())
 
-export const spliceSessions = async (prev: Awaited<ReturnType<typeof buildBoard>>) => {
-  const sessions = await listSessions()
-  return spliceBoardSessions(prev, sessions)
+// A partial read can safely replace only rows named by a committed session change. The graph-core splice still
+// owns archive overlay semantics; after it runs, rows outside the affected set are put back by identity so a
+// lifecycle update does not manufacture a new object for every historical session. `null` means the partial
+// evidence was not sufficient to prove a complete replacement (for example, an unseen id with no row); callers
+// must then retry with the authoritative full roster.
+export async function spliceSessionRows(
+  prev: GraphBoard,
+  sessions: readonly SessionProjectionRow[],
+  affectedSessionIds: readonly string[],
+): Promise<GraphBoard | null> {
+  const affected = new Set(affectedSessionIds)
+  const previousById = new Map(prev.sessions.map((row) => [row.id, row]))
+  const combined = mergeSessionRows(prev.sessions, sessions, affectedSessionIds)
+  if (!combined) return null
+  const projected = await spliceBoardSessions(prev, combined)
+  const sessionsWithStableRows = projected.sessions.map((row) => affected.has(row.id) ? row : previousById.get(row.id) ?? row)
+  return { ...projected, sessions: sessionsWithStableRows }
+}
+
+export const spliceSessions = async (
+  prev: GraphBoard,
+  request: SessionSpliceRequest = { scope: 'full' },
+): Promise<GraphBoard> => {
+  if (request.scope === 'full') return spliceBoardSessions(prev, await listSessions())
+  const partial = await spliceSessionRows(prev, await listSessions(false, request.affectedSessionIds), request.affectedSessionIds)
+  if (partial) return partial
+  // Unknown ids and absent rows are an explicit full-refresh fallback. A partial result is never guessed into
+  // a deletion, because archive/hazard state must remain visible when the caller's change set was incomplete.
+  return spliceBoardSessions(prev, await listSessions())
 }
