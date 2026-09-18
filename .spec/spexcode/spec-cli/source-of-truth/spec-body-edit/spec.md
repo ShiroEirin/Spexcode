@@ -10,7 +10,7 @@ related:
   - spec-cli/src/spec-body-edit.test.ts
   - spec-cli/templates/hooks/pre-commit
 ---
-# spec-body-edit
+# sp# spec-body-edit
 
 ## raw source
 
