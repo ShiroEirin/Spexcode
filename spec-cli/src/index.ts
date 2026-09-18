@@ -46,6 +46,7 @@ import { collectResourceReport, ResourceConflict } from './host-resources.js'
 import { reparentRequest, SessionReparentRequestError } from './session-reparent.js'
 import { buildGuidanceCatalog } from './guidance-catalog.js'
 import { configuredSessionApplication, setSessionApplicationCommitObserver } from './session-application.js'
+import { SESSION_CHANGE } from '@spexcode/session-application'
 import { editSpecBody, readSpecBodyEdit, SpecBodyEditError } from './spec-body-edit.js'
 const { serve, Hono, cors, etag, createNodeWebSocket } = await daemonRuntime()
 
@@ -57,7 +58,10 @@ startWorktreeTrashReaper()
 const app = new Hono()
 // Canonical lifecycle commits do not touch a watched JSON file. Bridge those commits into the existing board
 // stream so status/proposal/parent changes arrive without waiting for a later human send or delivery tick.
-setSessionApplicationCommitObserver(() => notifyBoardChanged('sessions'))
+setSessionApplicationCommitObserver((change) => {
+  if (!(change.changeMask & (SESSION_CHANGE.state | SESSION_CHANGE.topology))) return
+  notifyBoardChanged('sessions', change.subjectSessionIds)
+})
 startUploadReaper()
 app.use('/api/*', cors())
 app.onError((error, c) => {

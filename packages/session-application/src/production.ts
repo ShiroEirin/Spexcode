@@ -665,8 +665,10 @@ export function openProjectSessionApplication(options: ProjectSessionApplication
         // database-local commit cursor without adding a migration. The event table never deletes or updates
         // rows, so a caller can safely retain the returned watermark between watcher notifications.
         const rows = tx.query(
-          'SELECT rowid, subject_session_id FROM session_events WHERE rowid>? ORDER BY rowid',
+          `SELECT rowid, subject_session_id FROM session_events
+             WHERE rowid>? AND event_type=? ORDER BY rowid`,
           watermark,
+          STATE_EVENT,
         ) as Array<{ rowid: number | bigint; subject_session_id: string }>
         const latest = tx.query('SELECT COALESCE(MAX(rowid), 0) AS watermark FROM session_events')[0]?.watermark ?? 0
         const nextWatermark = Number(latest)

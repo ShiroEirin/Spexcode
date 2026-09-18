@@ -19,7 +19,8 @@ let freshStoreLeases = 0
 
 type SessionApplicationCommitWake = (recipients: readonly string[]) => void
 let commitWake: SessionApplicationCommitWake = () => {}
-let commitObserver: ((change: Pick<CommittedSessionChange, 'recipients'>) => void) | undefined
+type SessionApplicationCommitChange = Pick<CommittedSessionChange, 'recipients' | 'subjectSessionIds' | 'changeMask'>
+let commitObserver: ((change: SessionApplicationCommitChange) => void) | undefined
 
 /** The application owns commit ordering; Spex supplies the adopter transport wake. */
 export function setSessionApplicationCommitWake(wake: SessionApplicationCommitWake): void {
@@ -27,7 +28,7 @@ export function setSessionApplicationCommitWake(wake: SessionApplicationCommitWa
 }
 
 /** Allow the adopter to refresh its board stream after the canonical transaction commits. */
-export function setSessionApplicationCommitObserver(observer: (change: Pick<CommittedSessionChange, 'recipients'>) => void): void {
+export function setSessionApplicationCommitObserver(observer: (change: SessionApplicationCommitChange) => void): void {
   commitObserver = observer
 }
 

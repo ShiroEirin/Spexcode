@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
 import { rebasePublishedSessions } from '@spexcode/spec-core'
-import { buildBoard, spliceSessions } from './graphSnapshot.js'
+import { buildBoard, spliceSessions, type SessionSpliceRequest } from './graphSnapshot.js'
 import { headSha, repoRoot, requireGitWorkspace, withGitAbortSignal } from '@spexcode/spec-core'
 import { unitize, tagOf, type Units } from '@spexcode/spec-core'
 import { listSessionIds, mainBranch, mainCheckout, readPublicRecordEntry, sessionArtifactPath, sessionRecordPath } from '@spexcode/spec-core'
@@ -354,6 +354,8 @@ type Flight = { wait: Promise<Board>; settle: Promise<Board> }
 let inflight: Flight | null = null
 let sessionFlight: Flight | null = null
 let sessionOwed = false
+let sessionAffectedIds = new Set<string>()
+let sessionAffectedUnknown = false
 let sessionGeneration = 0
 let sessionProjectionPublication = 0
 let topologyGeneration = 0
@@ -370,9 +372,18 @@ function mergeDirty(scope: Scope): void {
   else dirty = 'sessions'
 }
 
-export function invalidateBoard(scope: Scope = 'full'): void {
+export function invalidateBoard(scope: Scope = 'full', affectedSessionIds?: readonly string[]): void {
   gen++
-  if (scope === 'sessions') { sessionOwed = true; sessionGeneration++ }
+  if (scope === 'sessions') {
+    sessionOwed = true
+    sessionGeneration++
+    if (affectedSessionIds?.length) {
+      for (const id of affectedSessionIds) if (typeof id === 'string' && id.length) sessionAffectedIds.add(id)
+    } else {
+      sessionAffectedUnknown = true
+      sessionAffectedIds.clear()
+    }
+  }
   mergeDirty(scope)
   retryAt = 0
   lastFailure = null
@@ -399,12 +410,23 @@ function startSessionSplice(): Flight | null {
     while (true) {
       const base = cached, revision = cachedRevision, generation = topologyGeneration
       if (!base || !revision) throw new Error('graph session splice lost its cached topology')
-      const before = sessionInputRevision()
-      const board = await spliceSessions(base)
-      const after = sessionInputRevision()
+      const request: SessionSpliceRequest = sessionAffectedUnknown
+        ? { scope: 'full' }
+        : sessionAffectedIds.size
+          ? { scope: 'partial', affectedSessionIds: [...sessionAffectedIds] }
+          : { scope: 'full' }
+      const partial = request.scope === 'partial'
+      const before = partial ? revision : sessionInputRevision()
+      sessionAffectedIds = new Set()
+      sessionAffectedUnknown = false
+      const board = await spliceSessions(base, request)
+      // A precise partial event already names the durable rows being projected. The next patrol validates the
+      // aggregate session revision; sampling the entire roster before/after every hook would reintroduce the
+      // cost this lane is removing.
+      const after = partial ? before : sessionInputRevision()
       if (base !== cached || revision !== cachedRevision || generation !== topologyGeneration) continue
-      const stable = before.sessions === after.sessions &&
-        JSON.stringify(before.activeRoots) === JSON.stringify(after.activeRoots)
+      const stable = partial || ('activeRoots' in before && 'activeRoots' in after && before.sessions === after.sessions &&
+        JSON.stringify(before.activeRoots) === JSON.stringify(after.activeRoots))
       const projectedRoots = [...new Set(board.sessions.map((row) => row.path))].sort()
       const rootTransition = carrySubtractiveWorktrees(revision, projectedRoots)
       const carried = stable ? rootTransition.revision : revision
