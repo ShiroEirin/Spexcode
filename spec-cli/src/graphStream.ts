@@ -5,7 +5,7 @@ import { join, dirname, relative, resolve, basename } from 'node:path'
 import { sessionsRoot, gitCommonDir, repoRoot, isTrashWorktreePath } from '@spexcode/spec-core'
 import { resolveDatabasePath } from '@spexcode/session-application'
 import { configuredSessionApplication } from './session-application.js'
-import { listSessions, pendingSessionCreateWorktreePaths } from './sessions.js'
+import { listSessions, pendingSessionCreateWorktreePaths, notifyTurnFailureObservers } from './sessions.js'
 import { hotSignature, warmSignature } from './session-liveness.js'
 import { getBoard, getBoardForSessionRefresh, invalidateBoard, patrolBoard, boardIdentity, readBoard, type Board } from './graphCache.js'
 import { diffFromPosition, positionOf, type Position } from '@spexcode/spec-core'
@@ -477,6 +477,7 @@ function ensureWatcher(root: string): void {
     scope: 'sessions',
     onInput: (_event, relativePath) => {
       const id = relativePath.split(/[\\/]/)[0]
+      if (id && !id.includes('.')) notifyTurnFailureObservers([id])
       fireChanged('sessions', id && !id.includes('.') ? [id] : undefined)
     },
     onFailure: (error) => {
@@ -535,15 +536,17 @@ function closeSessionDatabaseWatcher(): void {
   activeDatabasePath = null
   sessionDatabaseWatermark = null
 }
-function sessionDatabaseChangedIds(): readonly string[] | null {
+function sessionDatabaseChangedIds(notify = true): readonly string[] | null {
   try {
     const application = configuredSessionApplication()
     const changed = application.readChangedSessionIdsSince(sessionDatabaseWatermark ?? 0)
     sessionDatabaseWatermark = changed.watermark
+    if (notify && changed.subjectSessionIds.length) notifyTurnFailureObservers(changed.subjectSessionIds)
     return changed.subjectSessionIds
   } catch (error) {
     console.error(`spec-cli: session-db change cursor failed — ${(error as Error).message}`)
     sessionDatabaseWatermark = null
+    notifyTurnFailureObservers()
     return null
   }
 }
@@ -562,7 +565,7 @@ function ensureSessionDatabaseWatcher(): void {
   }
   // Seed the append-only event cursor once. Historical state events are already represented by the first board
   // build and must not replay as a fresh hook burst when this watcher attaches.
-  const initialChanges = sessionDatabaseChangedIds()
+  const initialChanges = sessionDatabaseChangedIds(false)
   if (initialChanges === null) sessionDatabaseWatermark = null
   const registry = watchSessionDatabase(databasePath, () => {
     const ids = sessionDatabaseChangedIds()
@@ -571,6 +574,7 @@ function ensureSessionDatabaseWatcher(): void {
     if (sessionDatabaseWatcher === registry) sessionDatabaseWatcher = null
     noteSourceFailure(SESSION_DB_SOURCE, error)
     sessionDatabaseWatermark = null
+    notifyTurnFailureObservers()
     fireChanged('sessions')
   })
   sessionDatabaseWatcher = registry

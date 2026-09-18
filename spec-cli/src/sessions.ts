@@ -581,7 +581,7 @@ const boardRow = (s: Session): Session => { s.prompt = null; return s }
 // so do not enumerate or project the rest of the roster. The liveness snapshot remains project-wide (one tmux
 // census is shared by every requested row), preserving the evidence semantics without paying per-session reads
 // for unrelated history. Omit `restrictToIds` for the authoritative full roster.
-export async function listSessions(includeArchived = false, restrictToIds?: readonly string[]): Promise<Session[]> {
+export async function listSessions(includeArchived = false, restrictToIds?: readonly string[], providedSnap?: LiveSnap): Promise<Session[]> {
   const restricted = restrictToIds !== undefined
   const requestedIds = restricted
     ? [...new Set(restrictToIds.filter((id): id is string => typeof id === 'string' && id.length > 0))]
@@ -590,7 +590,8 @@ export async function listSessions(includeArchived = false, restrictToIds?: read
   // ONE store enumeration + ONE tmux snapshot (windows + pane pids + titles, merged) for the whole list, then
   // every session reconciles by a pure set lookup + one existsSync — no per-session tmux spawn.
   const [ids, snap] = await Promise.all([
-    Promise.resolve(requestedIds ?? listSessionIds()), liveSnapshot(),
+    Promise.resolve(requestedIds ?? listSessionIds()),
+    providedSnap ? Promise.resolve(providedSnap) : liveSnapshot(),
   ])
   // Freeze one record snapshot for both the census join and row projection. A second full read after an awaited
   // probe could pair record A with thread identity B and accidentally treat a missing census entry as clean.
@@ -1202,7 +1203,8 @@ async function drainQueueUnlocked(): Promise<void> {
   try {
     const cap = maxActive()   // read once per drain pass (.spec/spexcode.json → env → default); won't shift mid-burst
     for (;;) {
-      const [sessions, snap] = await Promise.all([listSessions(), liveSnapshot()])
+      const [ids, snap] = await Promise.all([Promise.resolve(listSessionIds()), liveSnapshot()])
+      const sessions = await listSessions(false, ids, snap)
       for (const session of sessions) {
         const rec = readRecord(session.id)
         if (!rec || launching.has(session.id)) continue
@@ -1425,7 +1427,19 @@ type TurnFailureObserverState = {
 const turnFailureObservers = new Map<string, TurnFailureObserverState>()
 let supervisingTurnFailures = false
 let startingTurnFailureObserver = false
+let turnFailureNeedsFullReconcile = true
+const turnFailureDirtyIds = new Set<string>()
 const TURN_FAILURE_OBSERVER_STABLE_MS = 5000
+
+// Lifecycle/event sources hand exact subjects here. The supervisor keeps a full scan only for startup or an
+// unknown source; ordinary ticks revisit changed ids and observer retry ids instead of enumerating the roster.
+export function notifyTurnFailureObservers(ids?: readonly string[]): void {
+  if (!ids?.length) {
+    turnFailureNeedsFullReconcile = true
+    return
+  }
+  for (const id of ids) if (typeof id === 'string' && id.length) turnFailureDirtyIds.add(id)
+}
 
 export function turnFailureNote(harness: string, failure: TurnFailure): string {
   const message = failure.message.replace(/\s+/g, ' ').trim().slice(0, 500) || 'turn failed'
@@ -1449,9 +1463,10 @@ function deferTurnFailureObserver(id: string, harness: string, state: TurnFailur
 
 // Reconcile one adapter-owned native failure subscription per live governed session. Product code knows only
 // the optional interface capability; Codex owns WebSocket/thread semantics and Claude keeps using StopFailure.
-export function reconcileTurnFailureObservers(): void {
+export function reconcileTurnFailureObservers(ids?: readonly string[]): void {
+  const full = ids === undefined
   const wanted = new Map<string, { rec: SessRec; harness: Harness; fingerprint: string }>()
-  for (const id of listSessionIds()) {
+  for (const id of ids ?? listSessionIds()) {
     let rec: SessRec | null = null
     try { rec = readRecord(id) } catch { continue }
     // Native turn failure observation is for an executing turn, not a durable roster census. Asking, awaiting,
@@ -1462,10 +1477,20 @@ export function reconcileTurnFailureObservers(): void {
     if (!harness.observeTurnFailures) continue
     wanted.set(id, { rec, harness, fingerprint: `${harness.id}:${rec.harnessSessionId}:${runtimeRoot()}` })
   }
-  for (const [id, state] of turnFailureObservers) {
-    if (wanted.get(id)?.fingerprint === state.fingerprint) continue
-    turnFailureObservers.delete(id)
-    state.subscription?.close()
+  if (full) {
+    for (const [id, state] of turnFailureObservers) {
+      if (wanted.get(id)?.fingerprint === state.fingerprint) continue
+      turnFailureObservers.delete(id)
+      state.subscription?.close()
+    }
+  } else {
+    for (const id of ids ?? []) {
+      const state = turnFailureObservers.get(id)
+      if (state && wanted.get(id)?.fingerprint !== state.fingerprint) {
+        turnFailureObservers.delete(id)
+        state.subscription?.close()
+      }
+    }
   }
   for (const [id, target] of wanted) {
     const now = Date.now()
@@ -1518,7 +1543,21 @@ export function superviseTurnFailures(intervalMs = 1000): void {
   if (supervisingTurnFailures) return
   supervisingTurnFailures = true
   const tick = () => {
-    try { reconcileTurnFailureObservers() }
+    try {
+      if (turnFailureNeedsFullReconcile) {
+        turnFailureNeedsFullReconcile = false
+        turnFailureDirtyIds.clear()
+        reconcileTurnFailureObservers()
+      } else {
+        const dirty = [...turnFailureDirtyIds]
+        turnFailureDirtyIds.clear()
+        const retry = [...turnFailureObservers.entries()]
+          .filter(([, state]) => !state.subscription && Date.now() >= state.retryAt)
+          .map(([id]) => id)
+        const ids = [...new Set([...dirty, ...retry])]
+        if (ids.length) reconcileTurnFailureObservers(ids)
+      }
+    }
     catch (error) { console.error(`spex: turn failure reconciliation failed: ${error instanceof Error ? error.message : String(error)}`) }
     const timer = setTimeout(tick, intervalMs)
     timer.unref?.()

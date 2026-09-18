@@ -7,6 +7,7 @@ import { resolveForgeHost } from '@spexcode/spec-forge/drivers'
 import { boardThreads } from './issues.js'
 import { localIssueRevision } from './localIssues.js'
 import { mergeSessionRows } from './sessionProjection.js'
+import { recentLiveSnapshot } from './session-liveness.js'
 import { buildBoard as assembleBoard, spliceSessions as spliceBoardSessions, type BoardSnapshot } from '@spexcode/spec-core'
 
 type GraphBoard = Awaited<ReturnType<typeof assembleBoard>>
@@ -69,7 +70,11 @@ export const spliceSessions = async (
   request: SessionSpliceRequest = { scope: 'full' },
 ): Promise<GraphBoard> => {
   if (request.scope === 'full') return spliceBoardSessions(prev, await listSessions())
-  const partial = await spliceSessionRows(prev, await listSessions(false, request.affectedSessionIds), request.affectedSessionIds)
+  // The warm graph poll already owns the process-wide tmux/rendezvous census. Reuse it while it is fresh so a
+  // lifecycle-only hook does not launch a second identical census; listSessions still falls back to a fresh
+  // probe when the worker has no recent evidence or the warm probe expired.
+  const snap = recentLiveSnapshot()
+  const partial = await spliceSessionRows(prev, await listSessions(false, request.affectedSessionIds, snap ?? undefined), request.affectedSessionIds)
   if (partial) return partial
   // Unknown ids and absent rows are an explicit full-refresh fallback. A partial result is never guessed into
   // a deletion, because archive/hazard state must remain visible when the caller's change set was incomplete.
