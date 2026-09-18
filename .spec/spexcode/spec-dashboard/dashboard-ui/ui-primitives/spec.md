@@ -25,6 +25,8 @@ prose three ways. The pattern is the point: the second copy is where the defect 
   wherever it is read.
 - [[esc-layers]] — the one LIFO Escape stack, so a press peels the layer in front and never the surface
   behind it.
+- [[backdrop-dismiss]] — the one outside-close gesture boundary, so text selection that leaves an overlay
+  cannot turn its release into a close.
 - [[resizable-panes]] — the one pane-resize mechanism: divider, clamp, persistence, and reset gesture.
 - [[transient-notices]] — the one short-lived result surface: a themed, dismissible stack with one default
   timeout instead of each page pinning an ad-hoc acknowledgement into its layout.

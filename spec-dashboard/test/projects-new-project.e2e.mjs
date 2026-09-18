@@ -48,6 +48,18 @@ test('Projects creates a cataloged Git project from an absent folder path', asyn
     const path = modal.locator('input.proj-add-path')
     await path.waitFor({ state: 'visible' })
     await path.fill(project)
+
+    // A selection that starts in the modal and releases on its backdrop must not turn the synthesized
+    // backdrop click into a dismissal ([[backdrop-dismiss]]).
+    const pathBox = await path.boundingBox()
+    const modalBox = await modal.boundingBox()
+    if (!pathBox || !modalBox) throw new Error('add-project modal geometry is unavailable')
+    await page.mouse.move(pathBox.x + pathBox.width - 8, pathBox.y + pathBox.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(modalBox.x - 24, pathBox.y + pathBox.height / 2, { steps: 8 })
+    await page.mouse.up()
+    await modal.waitFor({ state: 'visible' })
+
     await path.press('Enter')
 
     const create = modal.getByRole('button', { name: 'new project' })
