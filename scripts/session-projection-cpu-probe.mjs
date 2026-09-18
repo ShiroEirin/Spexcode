@@ -22,7 +22,7 @@ const self = fileURLToPath(import.meta.url)
 if (!process.argv.includes('--child')) {
   const outputs = []
   for (const [label, total, active] of [['roster-682', 682, 15], ['roster-15', 15, 15]]) {
-    const child = spawnSync(process.execPath, [self, '--child', '--total', String(total), '--active', String(active)], {
+    const child = spawnSync(process.execPath, [...process.execArgv, self, '--child', '--total', String(total), '--active', String(active)], {
       encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env, NODE_NO_WARNINGS: '1' },
     })
@@ -135,11 +135,17 @@ process.env.SPEXCODE_TMUX_PANES_FILE = paneFile
 process.env.PATH = `${fakeBin}:${process.env.PATH || ''}`
 process.chdir(project)
 
-// Dist is used so this probe can run with plain Node after `npm run build`.
+// Dist is the default so this probe runs with plain Node after `npm run build`.
+// `SPEX_PROBE_SOURCE=1 node --import tsx ...` is useful on a branch whose
+// unrelated type errors prevent build-dist from publishing a fresh dist tree.
+const modulePath = (name, extension) => new URL(
+  `../spec-cli/${process.env.SPEX_PROBE_SOURCE === '1' ? 'src' : 'dist'}/${name}.${process.env.SPEX_PROBE_SOURCE === '1' ? 'ts' : extension}`,
+  import.meta.url,
+).href
 const layout = await import('@spexcode/spec-core')
-const applicationModule = await import('../spec-cli/dist/session-application.js')
-const sessions = await import('../spec-cli/dist/sessions.js')
-const graph = await import('../spec-cli/dist/graphSnapshot.js')
+const applicationModule = await import(modulePath('session-application', 'js'))
+const sessions = await import(modulePath('sessions', 'js'))
+const graph = await import(modulePath('graphSnapshot', 'js'))
 const { configuredSessionApplication } = applicationModule
 const application = configuredSessionApplication()
 sessionsPath = layout.sessionsRoot()
