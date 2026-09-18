@@ -30,8 +30,8 @@
     "test:identity-e2e": "node test/identity-chain.e2e.mjs",
     "prebuild": "node scripts/patch-xterm-sync-resize.mjs",
     "build": "vite build --base ./",
-    "build:public": "VITE_PUBLIC_GRAPH_ONLY=1 vite build --outDir dist-public --base ./",
-    "build:public-single": "VITE_PUBLIC_GRAPH_ONLY=1 vite build --config vite.config.single.mjs --outDir dist-public-single --base ./",
+    "build:public": "cross-env VITE_PUBLIC_GRAPH_ONLY=1 vite build --outDir dist-public --base ./",
+    "build:public-single": "cross-env VITE_PUBLIC_GRAPH_ONLY=1 vite build --config vite.config.single.mjs --outDir dist-public-single --base ./",
     "prepack": "npm run build && npm run build:public && npm run build:public-single",
     "prepublishOnly": "node ../scripts/release-publish.mjs --from-package-publish",
     "preview": "vite preview"
@@ -48,14 +48,15 @@
     "@spexcode/spec-core": "0.7.0",
     "@spexcode/transcript": "0.7.0",
     "@spexcode/transcript-ui": "0.7.0",
-    "@xterm/xterm": "6.0.0",
+    "@vitejs/plugin-react": "^4.3.3",
     "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0",
     "@xyflow/react": "^12.3.5",
+    "cross-env": "^10.1.0",
     "katex": "^0.17.0",
     "markdown-it": "^14.3.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "@vitejs/plugin-react": "^4.3.3",
     "vite": "^5.4.10"
   }
 }

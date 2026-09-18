@@ -52,6 +52,19 @@ export function processStartToken(pid: number, procRoot = '/proc'): string | nul
     try { return parseProcStat(readFileSync(join(procRoot, String(pid), 'stat'), 'utf8')).startToken }
     catch { return null }
   }
+  if (platform() === 'win32') {
+    // Windows has no /proc and no `ps`; PowerShell's Get-Process exposes the same fact — a start time
+    // that stays fixed for the life of the process — as a FILETIME. An inaccessible PID returns null,
+    // which the callers already read as "identity unprovable" rather than "dead".
+    try {
+      const started = execFileSync(
+        'powershell.exe',
+        ['-NoProfile', '-NonInteractive', '-Command', `(Get-Process -Id ${pid}).StartTime.ToFileTime()`],
+        { encoding: 'utf8', timeout: 10_000, stdio: ['ignore', 'pipe', 'ignore'] }
+      ).trim()
+      return started || null
+    } catch { return null }
+  }
   try {
     const started = execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8' }).trim()
     return started || null

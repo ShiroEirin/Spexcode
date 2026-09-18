@@ -18,7 +18,11 @@ const show = (root: string, rev: string, path: string): string => {
 const nodeId = (path: string): string => basename(dirname(path))
 const parseFm = (source: string): Record<string, string[]> => {
   const out: Record<string, string[]> = {}
-  const match = source.match(/^---\n([\s\S]*?)\n---/)
+  // @@@ CRLF - normalize BEFORE parsing: a Windows checkout's CRLF leaves a trailing `\r` on every line,
+  // which defeats the list-item pattern below (`/^\s*-\s+(.*)$/` does not match `- value\r`), so every
+  // `code:`/`related:` list silently parsed empty while scalars survived on `.trim()`.
+  const text = source.replace(/\r\n/g, '\n')
+  const match = text.match(/^---\n([\s\S]*?)\n---/)
   if (!match) return out
   let key = ''
   for (const line of match[1].split('\n')) {
@@ -35,9 +39,12 @@ const parseFm = (source: string): Record<string, string[]> => {
 // 1-based line of the frontmatter's closing `---`, or 0 when the file opens with none. The body split
 // needs this on BOTH sides: a `-` line is addressed in the base file, a `+` line in the tip file.
 const frontmatterEnd = (source: string): number => {
+  // @@@ CRLF - split('\n') leaves a trailing `\r` on every line of a Windows checkout, so the exact-equality
+  // probes below (`'---'`) never matched and the function returned 0 for EVERY file — the body split then
+  // treated the frontmatter as body. Compare on the trimmed line instead.
   const lines = source.split('\n')
-  if (lines[0] !== '---') return 0
-  for (let index = 1; index < lines.length; index++) if (lines[index] === '---') return index + 1
+  if (lines[0]?.trim() !== '---') return 0
+  for (let index = 1; index < lines.length; index++) if (lines[index].trim() === '---') return index + 1
   return 0
 }
 

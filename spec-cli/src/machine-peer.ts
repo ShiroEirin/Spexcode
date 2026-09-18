@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { randomUUID, createHash } from 'node:crypto'
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { createConnection, createServer as createNetServer, type Server as NetServer } from 'node:net'
@@ -38,7 +38,16 @@ export type PeerGatewayFacts = { port: number; instanceId: string; credential: s
 type AcceptReply = { machineId: string; gateway: PeerGatewayFacts | null; backPort: number | null }
 
 export const peerStorePath = (): string => join(spexcodeHome(), 'gateway', 'peers.json')
-export const peerSocketPath = (): string => join(spexcodeHome(), 'gateway', 'peer.sock')
+// @@@ windows named pipe - a unix-domain socket PATH cannot be bound on win32: `server.listen(<path>)` there
+// answers EACCES (the address family is AF_UNIX but the path is not a pipe name), so `spex dashboard` died at
+// startup with `listen EACCES ... peer.sock` on every Windows host — the peer gateway never came up and the
+// whole dashboard was unreachable. Windows addresses a local socket as `\\.\pipe\<name>`, the same spelling
+// harness.ts and session-host.ts already use for their own sockets; the name is derived from the store's
+// absolute path so two SPEXCODE_HOME worlds on one box still get distinct pipes.
+export const peerSocketPath = (): string =>
+  process.platform === 'win32'
+    ? `\\\\.\\pipe\\spexcode-peer-${createHash('sha1').update(spexcodeHome()).digest('hex').slice(0, 24)}`
+    : join(spexcodeHome(), 'gateway', 'peer.sock')
 
 function validPort(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value > 0 && value < 65536
@@ -318,8 +327,16 @@ export class MachinePeerGateway {
   // ownership; only a connect does. A live gateway accepts the connection; a leftover path refuses it
   // (ECONNREFUSED). So a missing path is claimed at once, a refusing path is unlinked and reclaimed, and only an
   // accepting listener is "another `spex dashboard`" — the same test claude-rendezvous applies to its socket file.
+  // @@@ windows named pipe - a pipe name is NOT a filesystem path: it has no parent directory to create, no
+  // file to unlink, and `existsSync` on it is always false (the name only exists while a listener holds it).
+  // The stale-file dance is therefore unix-only; on win32 the bind itself is the ownership test — a second
+  // `spex dashboard` gets EADDRINUSE from listen() and is reported as such.
   private startControl(): Promise<void> {
     const path = peerSocketPath()
+    if (process.platform === 'win32') {
+      this.listenControl(path)
+      return Promise.resolve()
+    }
     mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
     if (!existsSync(path)) {
       this.listenControl(path)

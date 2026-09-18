@@ -83,10 +83,15 @@ const sleep = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(
 // header — author and instant. A sentinel carrying a trailing ` :: <attrs>` tail (a shape older
 // toolchains wrote) still parses as that same plain reply: the tail is ignored on read and, because
 // serialize writes bare sentinels only, dropped by the next rewrite of the file.
-const REPLY_RE = /^<!-- reply: (.+?) @ (.+?)(?: :: .+)? -->$/
+// @@@ CRLF - the reply sentinel's `$` anchor must tolerate the trailing `\r` a CRLF checkout leaves behind
+// (the parse below normalizes line endings first, so this is belt-and-braces for any caller that does not).
+const REPLY_RE = /^<!-- reply: (.+?) @ (.+?)(?: :: .+)? -->\r?$/
 
 function parse(id: string, text: string): Issue {
-  const m = text.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/)
+  // @@@ CRLF - normalize before parsing: a Windows checkout rewrites the committed issue files to CRLF, and
+  // a leftover `\r` would leave every frontmatter line unsplit and every reply sentinel unmatched.
+  const normalized = text.replace(/\r\n/g, '\n')
+  const m = normalized.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/)
   const fm: Record<string, string> = {}
   for (const line of (m ? m[1] : '').split('\n')) {
     const mm = line.match(/^([a-zA-Z]+):\s*(.*)$/)

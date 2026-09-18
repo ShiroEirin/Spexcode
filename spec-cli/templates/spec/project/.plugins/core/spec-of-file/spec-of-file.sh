@@ -33,8 +33,13 @@ repo=$(cd "$repo" 2>/dev/null && pwd -P) || exit 0
 
 hp_actionable_repo_path() {
   local raw="$1" target dir base abs rel
+  # @@@ Windows drive paths - a hook payload carries an ABSOLUTE path, and on Windows that is `C:/…`, not
+  # `/…`. The POSIX-only `/*` test sent every such path down the RELATIVE branch, which glued it onto $PWD
+  # (`/c/proj/C:/proj/src/x.ts`) — `cd` then failed, the function returned 1, and spec-of-file annotated
+  # NOTHING on Windows while looking perfectly healthy. Git Bash resolves `C:/…` natively (`cd` → `/c/…`),
+  # so the fix is to route drive-letter and UNC paths down the absolute branch too.
   case "$raw" in
-    /*) target="$raw" ;;
+    /*|[A-Za-z]:/*|[A-Za-z]:\\*|//*) target="$raw" ;;
     *)  target="$PWD/$raw" ;;
   esac
   dir=${target%/*}; base=${target##*/}

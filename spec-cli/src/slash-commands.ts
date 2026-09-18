@@ -95,7 +95,9 @@ const BUILT_IN: ReadonlyArray<readonly [string, string]> = [
 // describe precedence (mirrors CC): a `description:` frontmatter line wins, else the first non-empty body
 // line (leading `#` stripped). Frontmatter parsing is intentionally one `key: value` line.
 function describe(src: string): string {
-  const m = src.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/)
+  // @@@ CRLF - `\r?\n` so a Windows checkout's CRLF frontmatter still describes the command; LF-only
+  // silently fell through to the body's first line on every file.
+  const m = src.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/)
   const fm = m ? m[1] : ''
   const body = m ? m[2] : src
   for (const line of fm.split('\n')) {

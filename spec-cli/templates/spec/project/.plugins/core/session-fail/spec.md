@@ -5,12 +5,11 @@ status: active
 hue: 200
 desc: When a turn ends because the API failed rather than because the agent declared, marks the session `error` — and a subagent’s failed turn is never the session’s.
 events:
-- StopFailure
+  - StopFailure
 order: 10
 block: false
-code:
-- .spec/project/.plugins/core/session-fail/fail.sh
 ---
+
 The startup `SPEX_PROFILE` hook list may disable this lifecycle hook with a clean no-op; `full` and profiles that include `session-fail` retain it.
 When a turn ends not because the agent declared but because the API itself failed, this hook structurally marks the session `error`. A failed turn is a real outcome the board must show, and without this signal the session would freeze under whatever state it last held — reading as "active" or "awaiting" long after it actually died.
 

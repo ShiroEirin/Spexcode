@@ -253,7 +253,11 @@ export async function specInit(targetArg: string | undefined, presetArg?: string
   const specTreeExists = hasSpecTree(specDest)
   const includeSeedDir = (dir: string) => selectedNativeEvents === null || seedableForEvents(dir, selectedNativeEvents)
   if (specTreeExists) {
-    const roots = readdirSync(specDest, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name)
+    // dot-folders are MACHINERY, not tree roots — the issue store `.issues` (and anything a future feature
+    // drops there) must not count as a second root, or a project with issues enabled can never have its
+    // .plugins seeded. The reader (countSpecNodes) already skips dot-folders; the seed must agree with it.
+    const roots = readdirSync(specDest, { withFileTypes: true })
+      .filter((e) => e.isDirectory() && !e.name.startsWith('.')).map((e) => e.name)
     // a single root with no .plugins is a tree that arrived without the machinery — `spex init --pure`, an atlas
     // run, a hand-written or copied tree. Adopting it is the job, not an obstacle: say so, and leave every node.
     if (roots.length === 1 && !existsSync(join(specDest, roots[0], '.plugins')))

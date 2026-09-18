@@ -9,7 +9,9 @@ export function spexcodeHome(): string {
 }
 
 export function encodeProject(root: string): string {
-  return root.replace(/[/.]/g, '-')
+  // `/` and `.` flatten a path into one segment. `:` and `\` are illegal in a Windows file name, so a
+  // `C:/…` root would otherwise name a directory the OS refuses to create — one dash for any of them.
+  return root.replace(/[/.:\\]/g, '-')
 }
 
 export function projectRuntimeRoot(commonDir: string): string {

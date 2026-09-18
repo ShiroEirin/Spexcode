@@ -48,7 +48,12 @@ export function resolveDatabasePath(options: ResolveDatabasePathOptions = {}): s
   }
 
   if (databasePath === undefined) {
-    const home = env.SPEXCODE_HOME || (env.HOME ? join(env.HOME, '.spexcode') : undefined)
+    // Windows sets USERPROFILE, not HOME; a shell that never exported HOME would otherwise lose the
+    // default path to a loud error even though a home directory exists. HOME wins where a platform sets it.
+    const home =
+      env.SPEXCODE_HOME ||
+      (env.HOME ? join(env.HOME, '.spexcode') : undefined) ||
+      (env.USERPROFILE ? join(env.USERPROFILE, '.spexcode') : undefined)
     if (!home) {
       throw new DatabasePathError('PROTOCOL_PATH_INVALID', 'HOME or SPEXCODE_HOME is required for the default database path')
     }

@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { realpathSync, statSync, statfsSync } from 'node:fs'
-import { isAbsolute, dirname } from 'node:path'
+import { isAbsolute, dirname, parse } from 'node:path'
 
 import { DatabasePathError } from './storage-path.js'
 
@@ -180,9 +180,52 @@ export function requireLocalDatabasePathWithDetector(
 const readDarwinMountTable = (): string =>
   execFileSync('/sbin/mount', [], { encoding: 'utf8', timeout: 5_000, stdio: ['ignore', 'pipe', 'ignore'] })
 
+// @@@ windows-drive-row - Windows has no statfs magic to read; the probe asks the .NET `DriveInfo`
+// enum NAME (`Fixed` / `Network` / `Removable` / …) — an IL identifier, never localized, so the verdict
+// survives any console code page. The legacy `fsutil fsinfo drivetype` prose ("C: - Fixed Drive") is
+// still classified when handed in, since the match is keyword-based; a fixed drive is the local answer,
+// a remote one the network answer, and anything else (removable, CD-ROM, RAM disk, an empty or
+// unparsable line) stays undetermined rather than guessed. A UNC path has no drive letter to ask
+// about, so it refuses as undetermined too.
+export function classifyWindowsDriveType(output: string): FilesystemClassification {
+  const text = output.trim().toLowerCase()
+  if (!text) return { locality: 'undetermined', name: 'no drive type' }
+  if (text.includes('remote') || text.includes('network')) return { locality: 'network', name: 'network drive' }
+  if (text.includes('fixed')) return { locality: 'local', name: 'fixed drive' }
+  return { locality: 'undetermined', name: text }
+}
+
+export const windowsLocalityDetector = (readDriveType: (root: string) => string): LocalityDetector => ({
+  platform: 'win32',
+  classify: parentPath => {
+    // The probe reports "No such Root Directory" for a missing path without failing, so the parent's
+    // absence must be raised here for the resolver to keep its PROTOCOL_PATH_PARENT_MISSING error.
+    statSync(parentPath)
+    const root = parse(parentPath).root
+    if (!/^[A-Za-z]:[\\/]?$/.test(root)) return { locality: 'undetermined', name: `no drive letter for ${parentPath}` }
+    return classifyWindowsDriveType(readDriveType(root))
+  },
+})
+
+// @@@ locale-proof drive class - `fsutil fsinfo drivetype` prints a LOCALIZED line: "Fixed Drive" on a
+// cp65001 console, "固定驱动器" on a cp936 one — and Node decodes the child's bytes as UTF-8 either way,
+// so on a non-english console the classifier's english keyword match fails, the drive reads
+// `undetermined`, the locality gate refuses the store, and `spex serve` logs a refusal EVERY retry tick
+// (measured: cp936 host, one error per second, forever). The probe is therefore the structured .NET enum
+// NAME (`Fixed` / `Network` / `Removable` / …), which is invariant across locales and console code pages,
+// instead of the prose. Only a DRIVE ROOT is ever asked about (the caller parses it first, and statSync
+// has already proven the parent exists).
+const readWindowsDriveType = (root: string): string =>
+  execFileSync(
+    'powershell',
+    ['-NoProfile', '-NonInteractive', '-Command', `(New-Object System.IO.DriveInfo '${root}').DriveType`],
+    { encoding: 'utf8', timeout: 10_000, stdio: ['ignore', 'pipe', 'ignore'] },
+  )
+
 export function localityDetectorForPlatform(platform: string): LocalityDetector {
   if (platform === 'linux') return linuxLocalityDetector(parentPath => statfsSync(parentPath).type)
   if (platform === 'darwin') return darwinLocalityDetector(readDarwinMountTable)
+  if (platform === 'win32') return windowsLocalityDetector(readWindowsDriveType)
   return { platform }
 }
 

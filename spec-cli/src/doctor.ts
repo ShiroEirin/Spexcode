@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, readdirSync, accessSync, constants } from 'node:fs'
-import { join, dirname, basename } from 'node:path'
+import { join, dirname, basename, delimiter } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
 import { homedir } from 'node:os'
@@ -201,7 +201,11 @@ function hookState(hooksDir: string | null, name: string): HookState {
 // precondition behind a dozen confusing symptoms — a session shell whose PATH misses the global bin dir gets
 // `command not found` for spex/codex/claude (npm's global prefix landing off-PATH).
 function resolveOnPath(bin: string): string | null {
-  for (const d of (process.env.PATH || '').split(':')) {
+  // `:` is the POSIX separator; Windows uses `;` (node:path's delimiter). The spread copy also keeps
+  // Windows' `Path` casing, so read it case-insensitively rather than as `process.env.PATH`.
+  const pathValue =
+    process.env.PATH ?? Object.entries(process.env).find(([key]) => key.toLowerCase() === 'path')?.[1] ?? ''
+  for (const d of pathValue.split(delimiter)) {
     if (!d) continue
     const p = join(d, bin)
     try { accessSync(p, constants.X_OK); return p } catch { /* not here */ }

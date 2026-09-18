@@ -8,6 +8,7 @@ import {
   LocalityError,
   classifyDarwinMount,
   classifyFilesystemType,
+  classifyWindowsDriveType,
   darwinLocalityDetector,
   linuxLocalityDetector,
   localityDetectorForPlatform,
@@ -50,11 +51,28 @@ test('known network and unknown filesystem values fail closed with distinct code
 })
 
 test('a platform without a detector row refuses before probing', () => {
-  const error = localityError(() => requireLocalDatabasePathWithDetector(databasePath, {}, localityDetectorForPlatform('win32')))
+  // win32 HAS a detector row now (the DriveInfo probe), so the no-row case uses a platform that has none.
+  const error = localityError(() => requireLocalDatabasePathWithDetector(databasePath, {}, localityDetectorForPlatform('aix')))
   assert.equal(error.code, 'LOCALITY_DETECTOR_UNAVAILABLE')
-  assert.equal(error.message, 'no filesystem locality detector for platform win32; pass --assume-local-storage only after auditing /var/lib/spexcode')
+  assert.equal(error.message, 'no filesystem locality detector for platform aix; pass --assume-local-storage only after auditing /var/lib/spexcode')
   assert.equal(localityDetectorForPlatform('linux').platform, 'linux')
   assert.equal(localityDetectorForPlatform('darwin').platform, 'darwin')
+  assert.equal(localityDetectorForPlatform('win32').platform, 'win32')
+})
+
+test('the windows drive-type classifier admits fixed drives and refuses remote or unknown ones', () => {
+  // the production probe's answer: the .NET DriveInfo enum NAME — locale-proof, so a cp936 console
+  // classifies exactly like a cp65001 one (the fsutil prose is localized and was the bug).
+  assert.deepEqual(classifyWindowsDriveType('Fixed'), { locality: 'local', name: 'fixed drive' })
+  assert.deepEqual(classifyWindowsDriveType('Network'), { locality: 'network', name: 'network drive' })
+  assert.deepEqual(classifyWindowsDriveType('Removable'), { locality: 'undetermined', name: 'removable' })
+  assert.deepEqual(classifyWindowsDriveType('CDRom'), { locality: 'undetermined', name: 'cdrom' })
+  assert.deepEqual(classifyWindowsDriveType('NoRootDirectory'), { locality: 'undetermined', name: 'norootdirectory' })
+  // the legacy fsutil prose (english console) still classifies through the same keyword match
+  assert.deepEqual(classifyWindowsDriveType('C: - Fixed Drive'), { locality: 'local', name: 'fixed drive' })
+  assert.deepEqual(classifyWindowsDriveType('Z: - Remote/Network Drive'), { locality: 'network', name: 'network drive' })
+  assert.deepEqual(classifyWindowsDriveType('D: - Removable Drive'), { locality: 'undetermined', name: 'd: - removable drive' })
+  assert.deepEqual(classifyWindowsDriveType(''), { locality: 'undetermined', name: 'no drive type' })
 })
 
 test('a failed probe refuses and preserves its cause', () => {

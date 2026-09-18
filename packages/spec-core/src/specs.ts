@@ -1,6 +1,6 @@
 import { readFileSync, readdirSync, existsSync } from 'node:fs'
 import { readFile, readdir } from 'node:fs/promises'
-import { join, relative, basename } from 'node:path'
+import { join, relative, basename, isAbsolute } from 'node:path'
 import { repoRoot, historyIndex, rowsFor, historyStats, pathsStats, driftIndex, driftFor, fileDiffAt, gitRequiredA,
   sourceIndexes, treeTextFiles, primeAncestorClosures, ancestorsOf, inAncestors, type HistoryIndex, type DriftIndex } from './git.js'
 import { parseCodeEntry, parseRelation, relationClaimsPath } from './anchors.js'
@@ -15,8 +15,15 @@ type Raw = { id: string; parent: string | null; relPath: string; fm: Record<stri
 // line-based frontmatter: scalars are `key: value`; an empty key followed by `- item` lines is a list (e.g. `code:`).
 export function parseFrontmatter(src: string) {
   const fm: Record<string, FmValue> = {}
-  let body = src
-  const m = src.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/)
+  // @@@ CRLF - normalize line endings BEFORE parsing. On Windows (core.autocrlf=true) every checked-out
+  // file carries CRLF, and a leftover `\r` defeats the LIST-ITEM pattern below: `/^\s*-\s+(.*)$/` does not
+  // match `- PreToolUse\r`, so every `events:`/`code:`/`related:` list parsed EMPTY while scalars survived
+  // on their `.trim()` — a half-parsed frontmatter that silently disabled the whole hook surface (measured:
+  // `events:` empty on every plugin, hook manifest compiled to zero bytes, zero hooks fired). Normalizing
+  // once here keeps every downstream split/pattern on a single line-ending.
+  const text = src.replace(/\r\n/g, '\n')
+  let body = text
+  const m = text.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/)
   if (m) {
     let key: string | null = null
     for (const line of m[1].split('\n')) {
@@ -104,7 +111,10 @@ function walk(dir: string, parent: string | null, acc: Raw[]) {
   let myId = parent
   if (existsSync(join(dir, 'spec.md'))) {
     myId = basename(dir)
-    const relPath = relative(ROOT, join(dir, 'spec.md'))
+    // @@@ backslashes - relPath is a repo-relative KEY every consumer splits on '/', so it is normalized
+    // to forward slashes here: Windows' path.relative hands back backslashes and would silently break them
+    // all (a node's id, its `spex spec owner` row, the graph's file links).
+    const relPath = relative(ROOT, join(dir, 'spec.md')).replace(/\\/g, '/')
     const { fm, body } = parseFrontmatter(readFileSync(join(dir, 'spec.md'), 'utf8'))
     acc.push({ id: myId, parent, relPath, fm, body })
   }
@@ -166,7 +176,8 @@ async function walkAsync(dir: string, parent: string | null, acc: Raw[], root: s
   let myId = parent
   if (existsSync(join(dir, 'spec.md'))) {
     myId = basename(dir)
-    const relPath = relative(root, join(dir, 'spec.md'))
+    // @@@ backslashes - same normalization as walk(): every consumer treats relPath as a '/'-joined key.
+    const relPath = relative(root, join(dir, 'spec.md')).replace(/\\/g, '/')
     const { fm, body } = parseFrontmatter(await readFile(join(dir, 'spec.md'), 'utf8'))
     acc.push({ id: myId, parent, relPath, fm, body })
   }
@@ -198,7 +209,14 @@ async function rawsAsync(root: string, tip = 'HEAD', snapshot?: SpecTreeSnapshot
 
 // the claim rule shared by both relations (exact path, dir-prefix, or *-glob). See [[governed-related]].
 function claimMatcher(file: string): (cf: string) => boolean {
-  const rel = file.startsWith('/') ? relative(ROOT, file) : file
+  // @@@ Windows absolute paths - a hook payload carries an ABSOLUTE path (Claude/Snow send `C:/proj/src/x.ts`),
+  // and the POSIX-only `startsWith('/')` test treated every such path as ALREADY relative, so `relative(ROOT, …)`
+  // was never applied and the claim never matched: `spec-governors` returned nothing and the spec-first gate
+  // silently never fired on Windows. `isAbsolute` covers `/…`, `C:/…`, `C:\…` and UNC in one predicate.
+  // @@@ backslashes - `relative()` on win32 returns `src\main\java\…`, while every claim is written with `/`
+  // (and `relationClaimsPath` matches literally), so the separator must be normalized here too — the same
+  // normalization `walk`/`walkAsync` already apply to node relPaths.
+  const rel = isAbsolute(file) ? relative(ROOT, file).replace(/\\/g, '/') : file
   return (claim) => relationClaimsPath(claim, rel)
 }
 
@@ -491,7 +509,11 @@ function bundleFiles(dir: string): string[] {
     for (const e of readdirSync(d, { withFileTypes: true })) {
       const p = join(d, e.name)
       if (e.isDirectory()) walk(p)
-      else if (e.name !== 'spec.md') out.push(relative(ROOT, p))
+      // @@@ backslashes - these paths become the hook manifest's script column, which dispatch.sh reads and
+      // runs through bash, where a backslash is an escape character (`bash .spec\core\spec-first.sh` fails).
+      // The same normalization walk/walkAsync already apply to node relPaths; bundleFiles was the one
+      // remaining `relative()` that leaked win32 separators into a POSIX consumer.
+      else if (e.name !== 'spec.md') out.push(relative(ROOT, p).replace(/\\/g, '/'))
     }
   }
   walk(dir)
@@ -521,7 +543,7 @@ function loadSurface(surface: 'command' | 'system' | 'hook' | 'skill' | 'agent')
           title: str(fm.title, name),
           desc: str(fm.desc),
           kind: str(fm.kind, 'mutating'),
-          dir: relative(ROOT, nodeDir),
+          dir: relative(ROOT, nodeDir).replace(/\\/g, '/'),
           files: bundleFiles(nodeDir),
           body: body.trim(),
           events: list(fm.events),

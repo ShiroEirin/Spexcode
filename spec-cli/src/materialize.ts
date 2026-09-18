@@ -1,5 +1,5 @@
 import { writeFileSync, mkdirSync, readFileSync, existsSync, readdirSync, renameSync, rmSync, rmdirSync, copyFileSync, chmodSync } from 'node:fs'
-import { join, dirname, relative } from 'node:path'
+import { join, dirname, relative, delimiter } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
 import { loadSystemConfig, loadSkillConfig, loadAgentConfig, loadConfig, configPath } from '@spexcode/spec-core'
@@ -112,7 +112,11 @@ export function contentHash(proj: string): string {
   try {
     const harnessSh = join(PKG, 'hooks', 'harness.sh')
     const gitDir = dirname(gitBinary(process.env))
-    const env = { ...process.env, PATH: `${gitDir}:${process.env.PATH || ''}` }
+    // Windows keeps the variable name as `Path`, so drop every case variant before prepending: a child
+    // handed both `Path` and `PATH` sees an ambiguous pair. The separator is the platform's, not `:`.
+    const env: NodeJS.ProcessEnv = { ...process.env }
+    for (const key of Object.keys(env)) if (key.toLowerCase() === 'path') delete env[key]
+    env.PATH = `${gitDir}${delimiter}${process.env.PATH || ''}`
     return execFileSync('bash', ['-c', `cd "${proj}" && . "${harnessSh}" && hp_config_hash`], { env }).toString().trim()
   } catch { return '' }
 }

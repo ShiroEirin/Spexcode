@@ -19,14 +19,26 @@ const GIT_SYNC_MAX_BUFFER = 1 << 27
 export const BOARD_GIT_CONCURRENCY = 4
 const gitByPath = new Map<string, string>()
 
+// @@@ Windows PATH casing - Windows stores the variable as `Path`, not `PATH`, and a spread copy
+// (`{ ...process.env }`) keeps that casing — a case-sensitive `env.PATH` then reads undefined and a
+// present git looks missing. Read path-like variables case-insensitively so both the live process.env
+// and a spread copy resolve.
+function envVar(env: NodeJS.ProcessEnv, name: string): string | undefined {
+  const direct = env[name]
+  if (direct !== undefined) return direct
+  const lower = name.toLowerCase()
+  for (const key of Object.keys(env)) if (key.toLowerCase() === lower) return env[key]
+  return undefined
+}
+
 export function gitBinary(env: NodeJS.ProcessEnv = process.env): string {
-  const path = env.PATH || ''
+  const path = envVar(env, 'PATH') || ''
   const known = gitByPath.get(path)
   if (known) {
     try { accessSync(known, constants.X_OK); return known } catch {}
   }
   const names = process.platform === 'win32'
-    ? ['git', ...(env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean).map((extension) => `git${extension}`)]
+    ? ['git', ...(envVar(env, 'PATHEXT') || '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean).map((extension) => `git${extension}`)]
     : ['git']
   for (const dir of path.split(delimiter)) {
     for (const name of names) {
