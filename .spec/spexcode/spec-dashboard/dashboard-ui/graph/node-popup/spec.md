@@ -31,7 +31,9 @@ a node **double-click** on the board, the node menu's *view details* — leave t
 a document instead of raising the popup. `i`/Enter keep the lens.
 
 The node popup is the `i` surface: a fixed pop-out (`min(900px,90vw) × min(600px,84vh)`) with tabs, opened
-over the board and dismissed with `Esc`. It is **reference-only** (`NodeView.jsx`) — no `work` pane, no
+over the board and dismissed with `Esc`; its outside-close gesture follows [[backdrop-dismiss]], so selecting
+text in a popup field and releasing outside never turns that release into a close. It is **reference-only**
+(`NodeView.jsx`) — no
 embedded terminal — and it is a **lens on the focus, not a pinned document**: the popup renders whichever
 node currently holds board focus (keyed to it, remounting on change), so a focus move while it is open —
 [[keyboard-nav]]'s Shift+nav walk — swaps the reference in place instead of forcing close-move-reopen; that

@@ -88,3 +88,123 @@ CPU 分解 A/B（2026-09-18，本机同一份 678-record store，Linux 16 CPU；
 - 不是主要矛盾：subscriber 数量本身的线性复制；31 个 pane 的单独增加；daemon-runtime.ts 动态 import。
 
 修复优先级因此调整为：先对第一个 delta subscriber 激活后的共享 graph 路径做计数和降载（hot/warm poll、session refresh、rebuild build-ms），再消除 queue drain 的重复 liveSnapshot；随后把 hook commit 合并限制到一次 session projection/build dirty rerun。delivery/turn-failure 的 roster 扫描属于第二阶段底座优化，不应先拿它解释 macmini 的全部 40-50%。
+
+<!-- reply: 7690d008-1893-4d77-a6d3-16f051463169 @ 2026-09-18T02:55:57.535Z -->
+Spec: graph-stream, sessions, serve
+
+共享 graph 路径计数（不改代码；现有 `SPEXCODE_BOARD_DEBUG=1` + `SPEXCODE_TMUX_RECORD`，临时复制 store）
+
+窗口与可观测计数：
+
+- 无 stream 预热 25s：`list-panes` 记录 40 次，约 1.6/s。这里混有 queue supervisor 的全量 snapshot 和其它 liveness 读取，作为底座。
+- 接入 1 个 delta SSE 后 25s：新增 `list-panes` 63 次，约 2.5/s；相对无 stream增量 23 次/25s，约 0.92/s，与 warm poll 的 1s cadence 对齐。subscriber 退出前总活跃 span 62.7s，故 hot poll 理论 tick 约 627 次（100ms），warm poll 理论 tick 约 63 次（1s）。hot 不 spawn tmux，当前版本没有日志计数，只能用源码 cadence + warm 的外部 spawn 交叉验证。
+- 一次 delta subscriber 已足以打开这组 process-global poller；此前 1/5/14 subscriber 的 CPU 约 31.1/29.0/30.4%，没有按 subscriber 线性增加。
+
+hook/session projection 计数：
+
+- 使用 15 个 `archived=false, stopped=false` 的真实记录，执行 5 轮 idle→active 交替（150 次有效写入尝试）。
+- `graph latency ... stage=sessions-signal`：116 次。其余尝试落在同一状态/被状态机拒绝，没有把失败当作 signal。
+- `graph broadcast`：69 次，其中 68 次 `sessionRefresh=true`；说明 116 个 signal 被 debounce/in-flight dirty 合并为 68 个 session projection broadcast，而不是一一对应。
+- broadcast build-ms：n=69，min=243ms，max=3446ms，avg=404.6ms。日志中出现过 `sessions` build 282/432/243/…ms；初始 session refresh 3495ms，full build 1368ms。
+- 触发 tags 主要是 `{sessions}`（58 次）；另有 patrol+sessions / patrol 混合，说明 patrol 也会与 hook signal 竞争 build，不是单独的空闲成本。
+- 同窗口 `list-panes` 总数 212，另有 `capture-pane` 116 次；后者来自现有 session projection/route 的 pane capture，不是 warm poll 本身，说明 session refresh 的 build 内部还有 pane 读取成本。
+
+主要矛盾（计数版）：
+
+1. graph 的第一个 delta subscriber 使每秒新增约 1 次全量 warm tmux census，并同时使 hot 100ms poll 常驻；它贡献共享 steady overhead，但不是按 tab 复制。
+2. hook burst 时 116 个 sessions signal 只合并成 68 次 projection，但每次平均 build 404.6ms，最大 3.45s；这部分是 CPU 的主要可变项。debounce 目前只能合并同一窄时间窗，无法抵消 build 期间 dirty rerun。
+3. queue/roster 读取是 baseline，不能解释 hook burst 的额外 build；`list-panes` 计数的 stream 增量约 1/s 与 warm poll 对齐，说明 warm poll 是固定项，不是本次 69 builds 的全部来源。
+
+下一步降载顺序（仍未实现）：先把 `sessionRefresh` 的 build 次数/build-ms 降下来（build-in-flight 期间只保留一个 dirty session revision，并合并跨 hook 的 session keys），再处理 warm/hot 的固定 census；最后消除 queue drain 重复 `liveSnapshot()`。不要先只改 100ms 为更大的数，因为 69 次 session projection 的 404.6ms 平均才是 hook burst 的主要可变 CPU。
+
+<!-- reply: 7690d008-1893-4d77-a6d3-16f051463169 @ 2026-09-18T04:28:36.812Z -->
+Spec: graph-stream, graph-cache, serve
+
+已实现第一步“in-flight session refresh 只允许一次 wake，其余 session signal 合并到 dirty/requested wave”。
+
+代码：
+- `graphStream.ts` 新增 session-wait 状态闸门：session signal 可以第一次越过一个正在等待的 unrelated full，但当真实 session splice 已在途时，后续 signal 不再 wake/preempt 当前 wait；它们由现有 dirty/sessionRefreshRequested 在当前 producer 完成后消费。
+- `graphCache.ts` 暴露 `sessionSpliceInFlight()`，区分“真正 session splice 在途”和“session refresh 只是 join 了 full build”，避免破坏 route-owned full 的 session-over-full 优先级。
+
+提交：`1cc1d5638 fix(graph-stream): coalesce in-flight session refresh wakes`
+Spec-OK：`efd682683 ack: Spec-OK graph-cache, graph-stream`
+
+验证：
+- `graphStream.api.test.ts` 全量 11/11 通过，包括 blinded patrol、failed refresh recovery、route-owned full/session overtaking、hook-authored commit、database patrol repair。
+- eslint 两个改动文件通过。
+- `spex spec lint` 0 errors（仓库已有 53 warnings）。
+- `npm run typecheck`/`npm run build` 仍被仓库已有的 DisplayStatus/archived 类型错误阻断，错误不在本次改动文件。
+
+CPU A/B（同一临时 678-record store、一个 delta stream、15 个 live records、150 次并发 idle↔active 尝试）：
+- 旧 dist：burst 50.74%，after 28.38%，12 broadcasts。
+- 新 src：burst 53.18%，after 29.50%，13 broadcasts。
+
+结论保持诚实：这一步没有可测的 CPU 降幅。原因是 `graphCache` 原有 `sessionFlight` 已经把底层 splice 单飞；本次改动只消除重复 wake/preemption 的正确性/边界浪费，而主要 CPU 仍在每次 splice 的全 roster `listSessions()`、tmux/liveness 和 capture 读取。下一步若继续降 CPU，应改 `spliceSessions()` 的输入范围/快照复用（按受影响 session ids 局部重算），而不是继续调整 wake 闸门或只放大 poll interval。
+
+<!-- reply: 7690d008-1893-4d77-a6d3-16f051463169 @ 2026-09-18T04:39:00.719Z -->
+Spec: graph-stream, graph-cache, sessions, serve
+
+更正主要矛盾：之前的“重复 wake/preemption”不是 CPU 主因，代码改动已作废并撤回（工作树基线已恢复）。原因是 `graphCache` 原本已有 `sessionFlight` 单飞；旧 dist 与尝试修改后的 src 在并发 burst 下几乎相同：
+
+- 旧 dist：burst 50.74%，after 28.38%，12 broadcasts
+- 新 src：burst 53.18%，after 29.50%，13 broadcasts
+
+真正的主要矛盾是“sessions-only”并不是真正按受影响 session 局部刷新：
+
+`canonical lifecycle commit` → `notifyBoardChanged('sessions')` → `fireChanged` → `invalidateBoard('sessions')` → `getBoardForSessionRefresh()` → `startSessionSplice()` → `graphSnapshot.spliceSessions(prev)` → `listSessions()`。
+
+而 `listSessions()` 每次都会：
+
+- 枚举整个 session roster；
+- 读取每个 record/canonical state/prompt/runtime projection；
+- 共享 `liveSnapshot()`，做全局 tmux `list-panes` census；
+- 对 pane/session 做 liveness/rendezvous 判断；
+- 重新读取 session-side files/web/widgets/activity。
+
+因此一个 hook 只改 session A，实际付的是整个 roster 的 projection 成本。并发 A/B 的 debug 日志也证明了这一点：每次 broadcast 的 changed keys 经常包含 9-10 个 `sess:*`，而不是只包含触发 hook 的一个 id；build 平均约 800ms，最高约 6.3s。说明主要成本在“每次 projection 扫全 roster + liveness/capture”，不是 wake 次数。
+
+这也解释了 CPU A/B：
+
+- 678 records 无 stream 稳定约 16.3%
+- 同一 roster 一个 delta stream 稳定约 29.5%
+- 15 live records + stream 的 hook burst 约 40-50%
+- 31 panes + stream 与 records + stream 同量级
+- subscriber 数 1/5/14 不线性增长
+
+正确修复方向不是继续调 wake 或 poll interval，而是把 session projection 真正做成局部：
+
+1. canonical commit/DB watcher 传递受影响 session ids 和一个 revision；未知/结构变化才退回 full roster。
+2. cache 保留现有 board rows；session splice 只重算受影响 ids，复用其他 rows 的 immutable projection。
+3. liveness/capture 也按 affected ids 读取；warm poll 的全局 liveness 仍单独负责它自己的 sessions-domain 更新。
+4. 一批 hook commit 合并为一个 affected-id set + 一个 revision；build 期间只保留下一版，不重复扫描全 roster。
+5. 用“一条 session 变更”和“15 条并发 hook burst”分别验证 changed keys、listSessions roster reads、tmux/capture 调用数和 CPU。
+
+当前代码未留下这次无收益修复；保留的只有诊断 issue 记录和 A/B 证据。
+
+<!-- reply: 7690d008-1893-4d77-a6d3-16f051463169 @ 2026-09-18T04:46:56.679Z -->
+Spec: graph-stream, graph-cache, sessions, serve
+
+单变量实验筛选（旧 dist、同一临时 store/一个 delta stream/同一 15 条有效写入 burst；每轮只改一个因素，不叠加）
+
+| 实验 | steady | burst | after | session signals | 结论 |
+|---|---:|---:|---:|---:|---|
+| 682-record roster，正常 session-db watcher | 35.20% | 51.96% | 31.40% | 18 | 基线 |
+| 同一 682 roster，仅 `SPEXCODE_DISABLE_WATCHERS=session-db` | 33.80% | 31.58% | 31.80% | 2 | 关闭 hook→graph 入口后，burst 降约 20.4pp；session-db signal 是主要可变来源 |
+| 仅 roster 缩到 15 条，其余不变 | 6.60% | 13.49% | 3.39% | 52 | steady 降约 28.6pp、burst 降约 38.5pp；projection 成本随 roster 规模增长 |
+
+之前的独立 pane 实验（682 records + 一个 delta stream，0 panes vs 31 panes）约 `29.5%` vs `30.4%`，所以 pane 数不是第一矛盾。之前的 stream A/B 也显示第一个 delta subscriber 会增加共享 graph steady cost，但 subscriber 数 1/5/14 不线性。
+
+主要矛盾现在可以定论：
+
+```text
+hook lifecycle commit
+  -> session-db watcher
+  -> notifyBoardChanged('sessions')
+  -> sessions-only splice
+  -> listSessions() 全量枚举 roster
+  -> liveness/tmux/capture/record projection 全量重算
+```
+
+“sessions-only”只意味着不重建 spec/Git topology；它并不意味着只重算受影响 session。一个 hook 改 A，实际扫 682 条 roster，所以 CPU 同时受两个因素控制：session-db signal 频率 × roster 规模。
+
+之前做的 wake/coalesce 改动已撤回：`sessionFlight` 已经让底层 splice 单飞，且 before/after CPU 无收益。下一步应该只围绕真正有效的点设计：让 session-db commit 携带 affected session ids/revision，session splice 只重算 affected rows，复用其余 projection；未知/结构变化才 fallback 全 roster。先做一个单变量实验验证“局部 1-row splice”是否把 682 roster 的 burst 从约 52% 拉近 13 条 roster 的量级，再考虑理论抽象和正式实现。
