@@ -40,7 +40,7 @@ export type HarnessLaunchReadinessFence = {
   validate(current: () => HarnessLaunchReadyRecord | null): Promise<boolean>
 }
 export type TurnFailure = { message: string; completedAt: number | null }
-export type NativeIdentityChange = { previousSessionId: string; nextSessionId: string }
+export type NativeIdentityChange = { previousThreadId: string; nextThreadId: string; runtimeKey: string }
 export type FailureSubscription = { close(): void; readonly closed: Promise<string | null>; readonly ready?: Promise<boolean> }
 // An adapter's native input transport can be ready, temporarily inconclusive, or proven unreachable. This is
 // deliberately separate from agent liveness: sessions.ts joins an unreachable transport with its independent
@@ -79,6 +79,9 @@ export type SharedRuntimeDescriptor = {
   // every loaded id, but only reads native status for those references; unowned history stays visible as
   // unknown without replaying it on every report.
   probe(referenceIds?: readonly string[]): Promise<SharedRuntimeProbe>
+  // One observer per shared generation, not one observer per governed session. The runtime owns the native
+  // notification stream; product code maps an exact predecessor/successor pair back to its stable session id.
+  observeNativeIdentity?(onIdentityChange: (change: NativeIdentityChange) => void): FailureSubscription
 }
 export type SharedRuntimeMutationGuard = {
   healthy: boolean
@@ -323,6 +326,9 @@ export interface Harness {
   // session id; native-assigned adapters return only a captured id; adapters with no native conversation return
   // null. This is deliberately unrelated to OS leaf ownership and runtime liveness.
   exactNativeTargetId(rec: HarnessLivenessRecord & { harnessSessionId?: string | null }): string | null
+  // Commit a native predecessor/successor replacement in the adapter's runtime authority. The session layer
+  // owns the record lock and runtime binding; the adapter owns any generation-specific ledger mutation.
+  rebindNativeIdentity?(rec: HarnessLivenessRecord & { harnessSessionId?: string | null }, change: NativeIdentityChange): void
   // Poke a live session and report whether this immediate channel accepted the attempt. Claude-family adapters
   // write one idempotent rendezvous reply; native adapter uses JSON-RPC on the same app-server WebSocket the
   // visible TUI uses — it reads the thread live and either `turn/steer`s the message INTO an in-progress turn
@@ -334,13 +340,8 @@ export interface Harness {
   // witness by sessions.ts, which is the only place allowed to call a live agent's transport stranded.
   deliveryTransport?(rec: HarnessDeliveryRecord): Promise<DeliveryTransportState>
   // Observe native turn failures that this harness does not expose as a lifecycle hook. The adapter owns the
-  // transport subscription; sessions owns observer reconciliation and the active-only lifecycle CAS. A native
-  // runtime may also report that its current conversation address was replaced by an exact successor (for
-  // example a TUI rewind forks the current thread); the session layer owns that rebind under its record lock.
-  observeTurnFailures?(rec: HarnessDeliveryRecord, onFailure: (failure: TurnFailure) => void, onIdentityChange?: (change: NativeIdentityChange) => void): FailureSubscription
-  // Observe replacement of the native conversation address without subscribing to a turn history. This is
-  // separate from turn-failure observation so waiting sessions can follow a native fork cheaply.
-  observeNativeIdentity?(rec: HarnessDeliveryRecord, onIdentityChange: (change: NativeIdentityChange) => void): FailureSubscription
+  // transport subscription; sessions owns observer reconciliation and the active-only lifecycle CAS.
+  observeTurnFailures?(rec: HarnessDeliveryRecord, onFailure: (failure: TurnFailure) => void): FailureSubscription
   // Hard-interrupt the current turn through the harness's native control plane. Optional: a headless harness
   // without a confirmed native interrupt refuses rather than emulating one with a signal; a pane-backed TUI
   // without one receives the operator's own interrupt key in its pane (sessions.ts interruptSession).
