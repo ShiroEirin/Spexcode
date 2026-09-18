@@ -16,7 +16,7 @@ export const ComposerTextarea = forwardRef(function ComposerTextarea({ value, cl
     fitTextarea(textarea, parseFloat(styles.maxHeight) || Infinity, parseFloat(styles.minHeight) || 0, styles)
   }, [value])
 
-  return <textarea ref={innerRef} value={value} className={`composer-textarea ${className}`.trim()} {...props} />
+  return <textarea ref={innerRef} value={value} className={`composer-textarea ${className}`.trim()} {...props} data-composer-focus />
 })
 
 // forwardRef so a host that FLOATS the shell (the prose send card) can measure and clamp it into the

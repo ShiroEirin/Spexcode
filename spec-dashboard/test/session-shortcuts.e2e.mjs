@@ -6,9 +6,9 @@ import { once } from 'node:events'
 import net from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
-const root = resolve(new URL('../..', import.meta.url).pathname)
+const root = resolve(fileURLToPath(new URL('../..', import.meta.url)))
 const cliRoot = join(root, 'spec-cli')
 const dashboardRoot = join(root, 'spec-dashboard')
 const dependencyRoot = existsSync(join(root, 'node_modules', 'tsx', 'dist', 'cli.mjs')) ? root : resolve(root, '..', '..')
@@ -140,6 +140,21 @@ try {
   await dockRow(leaf).click()
   await page.keyboard.press('Alt+Shift+ArrowDown')
   assert.equal(await page.locator('.dock-session-list .si-item.on').getAttribute('data-sid'), leaf, 'leaf disclosure is a consumed no-op')
+
+  // Shift+Escape is the global route back to whichever visible dashboard composer is mounted.
+  await page.locator('.si-pill.new').click()
+  await page.locator('.si-input:visible').waitFor({ state: 'visible' })
+  await page.locator('.si-zone').first().click()
+  await page.keyboard.press('Shift+Escape')
+  await page.waitForFunction(() => document.activeElement?.matches('.si-input'))
+  await dockRow(leaf).click()
+  await page.locator('.si-tool.command').waitFor({ state: 'visible' })
+  await page.locator('.si-tool.command').click()
+  await page.locator('.si-command-input:visible').waitFor({ state: 'visible' })
+  await page.locator('.si-zone').first().click()
+  await page.keyboard.press('Shift+Escape')
+  await page.waitForFunction(() => document.activeElement?.matches('.si-command-input'))
+
   await page.screenshot({ path: join(out, 'session-shortcuts-final.png'), fullPage: true })
   const video = page.video(); await context.close(); const videoPath = await video.path()
   console.log(JSON.stringify({ ok: true, parent, child, leaf, video: videoPath, screenshot: join(out, 'session-shortcuts-final.png') }))
