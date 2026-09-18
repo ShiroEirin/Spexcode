@@ -40,6 +40,8 @@ test('close uses a target tmux probe when the global listing is busy', { concurr
   let leaf: ReturnType<typeof spawn> | null = null
 
   mkdirSync(project, { recursive: true })
+  mkdirSync(join(project, '.spec'), { recursive: true })
+  writeFileSync(join(project, '.spec', 'spexcode.json'), `${JSON.stringify({ resources: { sampleMs: 10_000 } })}\n`)
   execFileSync('git', ['-C', project, 'init', '-q', '-b', 'main'])
   execFileSync('git', ['-C', project, 'config', 'user.email', 'close-probe@example.test'])
   execFileSync('git', ['-C', project, 'config', 'user.name', 'Close Probe'])
@@ -90,7 +92,9 @@ esac
     codexHarness.cleanupRuntime = async () => {}
     const selfSend = await sendText(id, 'self-send lock probe', id, { deferDrain: true })
     assert.equal(selfSend.ok, true, 'a session can send to its own address without re-entering its record lock')
+    const closeStarted = Date.now()
     assert.equal(await closeSession(id), true)
+    assert.ok(Date.now() - closeStarted < 8_000, 'close response does not wait for the configured CPU sample window')
     assert.equal(existsSync(sessionRecordPath(id)), true, 'the target close retains the record after the cold proof')
     const retained = JSON.parse(readFileSync(sessionRecordPath(id), 'utf8'))
     assert.equal(retained.archived, true, 'the retained row projects closed')
@@ -199,12 +203,19 @@ setTimeout(() => process.exit(0), 50)
     const cleanWarnings: string[] = []
     const originalWarn = console.warn
     console.warn = (...args: unknown[]) => cleanWarnings.push(args.join(' '))
-    try { assert.equal(await closeSession(cleanId), true) } finally { console.warn = originalWarn }
+    try {
+      assert.equal(await closeSession(cleanId), true)
+      await new Promise((resolve) => setImmediate(resolve))
+    } finally { console.warn = originalWarn }
     assert.equal(cleanWarnings.some((line) => line.includes('detached process residue')), false, 'a clean close emits no residue warning')
 
     const residueWarnings: string[] = []
     console.warn = (...args: unknown[]) => residueWarnings.push(args.join(' '))
-    try { assert.equal(await closeSession(residueId), true) } finally { console.warn = originalWarn }
+    try {
+      assert.equal(await closeSession(residueId), true)
+      for (let attempt = 0; attempt < 50 && !residueWarnings.some((line) => line.includes(`pid=${residuePid}`)); attempt++)
+        await new Promise((resolve) => setTimeout(resolve, 20))
+    } finally { console.warn = originalWarn }
     const warning = residueWarnings.find((line) => line.includes(`pid=${residuePid}`))
     assert.ok(warning, `close reports the detached PID: ${residueWarnings.join('\n')}`)
     assert.match(warning!, /command=.*worktree=.*residue-worktree/)

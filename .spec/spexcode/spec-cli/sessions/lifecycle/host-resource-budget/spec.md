@@ -142,7 +142,12 @@ After a successful `close`, the lifecycle path performs one best-effort read-onl
 If the sweep finds a still-resident session-owned or owner-record-absent process, close reports each PID, its
 identifying command and recorded worktree path, and tells the operator to inspect and handle it through its owning
 harness/runtime. A sweep failure is itself an advisory warning and never changes a successful close into a failure;
-the report has no signal or cleanup route.
+the report has no signal or cleanup route. This close residue observation reuses the same process ownership
+inventory as the full report, but it is an identity-only read: it does not wait for the CPU sample window, read
+PSS, calculate budget/reclaim projections, or probe unrelated shared runtimes. It runs after the close transition
+and its record/candidate locks have been released, and it is invalidated when the same session has resumed with a
+different current archive fact. The full CPU/PSS/shared-runtime report remains the monitor and explicit resources
+API surface, not a prerequisite for a lifecycle response.
 This classification survives parent death and reparenting because it uses the process's retained project/session
 identity, not a live parent edge. A process that has cleared those identity variables, or never carried them, is
 outside this session-specific guarantee and remains unattributed rather than being guessed from command text or path.

@@ -28,7 +28,7 @@ import { shQuote } from './sh.js'
 import {
   composeSessionPrompt, launchScript, launchShellCommand, nodeFromPrompt, slugify, titleFromPrompt,
 } from './session-prompt.js'
-import { assertSessionOwnerSafe, assertSessionStopSafe, collectResourceReport, ResourceConflict } from './host-resources.js'
+import { assertSessionOwnerSafe, assertSessionStopSafe, collectSessionResidues, type SessionResidue, ResourceConflict } from './host-resources.js'
 import { processStartToken } from '@spexcode/spec-core'
 import { bindCodexGeneration, codexGenerationBindingForSession, commitCodexGenerationRegistration, prepareCodexGenerationRegistration, readCodexGenerationLedger } from './codex-runtime-generations.js'
 import { cliEntrypointArgs } from './tsx-bin.js'
@@ -3501,22 +3501,49 @@ async function assertUnboundCloseSafe(id: string, rec: SessRec): Promise<void> {
     throw new ResourceConflict(`refusing to close unbound session ${id}: ${leaf.state === 'unknown' ? leaf.reason : 'target leaf identity is live or ambiguous'}`)
 }
 
+type CloseResidueTarget = { id: string; worktreePath: string; closedAt: string }
+
 // Close has already completed its destructive boundary here. The sweep is advisory evidence only: detached
 // descendants can outlive the exact leaf teardown, so surface them without inventing a second cleanup authority.
-async function reportCloseResidue(id: string, worktreePath: string): Promise<void> {
+function reportCloseResidue(target: CloseResidueTarget, residues: readonly SessionResidue[]): void {
   try {
-    const report = await collectResourceReport({ persist: false })
-    const owners = report.owners.filter((owner) => owner.processes.length > 0
-      && ((owner.kind === 'session' || owner.kind === 'orphan') && owner.id === id))
-    if (!owners.length) return
-    console.warn(`spex: close ${id} completed, but detached process residue remains:`)
-    for (const owner of owners) for (const process of owner.processes) {
-      console.warn(`  pid=${process.pid} start=${process.startToken} command=${process.command || 'unknown'} worktree=${worktreePath}`)
+    const before = readRecord(target.id)
+    if (!before?.archived || before.closedAt !== target.closedAt) return
+    const after = readRecord(target.id)
+    // A resume can legitimately bind a new runtime while this best-effort read is queued. Do not report
+    // that new generation as residue from the close we are observing.
+    if (!after?.archived || after.closedAt !== target.closedAt) return
+    if (!residues.length) return
+    console.warn(`spex: close ${target.id} completed, but detached process residue remains:`)
+    for (const process of residues) {
+      console.warn(`  pid=${process.pid} start=${process.startToken} command=${process.command || 'unknown'} worktree=${target.worktreePath}`)
     }
     console.warn('  inspect these PIDs and handle them through their owning harness/runtime; close does not kill detached descendants.')
   } catch (error) {
-    console.warn(`spex: close ${id} completed, but the residual-process sweep failed: ${error instanceof Error ? error.message : String(error)}`)
+    console.warn(`spex: close ${target.id} completed, but the residual-process sweep failed: ${error instanceof Error ? error.message : String(error)}`)
   }
+}
+
+const pendingCloseResidueTargets = new Map<string, CloseResidueTarget>()
+let closeResidueSweepScheduled = false
+function scheduleCloseResidueReport(target: CloseResidueTarget): void {
+  pendingCloseResidueTargets.set(target.id, target)
+  if (closeResidueSweepScheduled) return
+  closeResidueSweepScheduled = true
+  setImmediate(() => {
+    closeResidueSweepScheduled = false
+    const targets = [...pendingCloseResidueTargets.values()]
+    pendingCloseResidueTargets.clear()
+    let residues: Map<string, SessionResidue[]>
+    try {
+      residues = collectSessionResidues(targets.map((candidate) => candidate.id))
+    } catch (error) {
+      for (const target of targets)
+        console.warn(`spex: close ${target.id} completed, but the residual-process sweep failed: ${error instanceof Error ? error.message : String(error)}`)
+      return
+    }
+    for (const target of targets) reportCloseResidue(target, residues.get(target.id) ?? [])
+  })
 }
 
 async function closeOwnedSessionUnlocked(id: string, wt: { path: string; branch: string | null; rec: SessRec }, _source: CloseSource, unboundStopped = false): Promise<boolean> {
@@ -3566,7 +3593,6 @@ async function closeOwnedSessionUnlocked(id: string, wt: { path: string; branch:
   }
   if (slot) { try { rmSync(slot, { recursive: true, force: true }) } catch { /* best-effort GC */ } }
   requestQueueDrain()   // a close frees a slot — start the next queued session if any
-  await reportCloseResidue(id, wt.rec.worktreePath)
   return true
 }
 async function closeSessionUnlocked(id: string, source: CloseSource): Promise<boolean> {
@@ -3615,11 +3641,22 @@ async function closeSessionUnlocked(id: string, source: CloseSource): Promise<bo
 }
 export const closeSession = (id: string, rawSource?: unknown): Promise<boolean> => {
   const source = normalizeCloseSource(rawSource)
+  let residueTarget: CloseResidueTarget | null = null
   return withSessionTransition(id, () => withRecordLock(id, async () => {
     const closed = await closeSessionUnlocked(id, source)
-    if (closed) revokeSenderDelivery(id)
+    if (closed) {
+      revokeSenderDelivery(id)
+      const archived = readRecord(id)
+      if (!archived?.archived || !archived.closedAt) throw new ResourceConflict(`refusing to finish close for ${id}: archived record disappeared after sender revocation`)
+      residueTarget = { id, worktreePath: archived.worktreePath, closedAt: archived.closedAt }
+    }
     return closed
-  }))
+  })).then((closed) => {
+    // The advisory observer starts only after every lifecycle/record lock has been released. It is not part of
+    // the close result, and its own target identity check prevents a fast resume from being reported as residue.
+    if (closed && residueTarget) scheduleCloseResidueReport(residueTarget)
+    return closed
+  })
 }
 
 function quarantineRecord(id: string): string | null {
