@@ -34,8 +34,10 @@ receipt; launch/bind adds a candidate, while stop, close, archive, and a state/d
 one exact id. A candidate is therefore a runtime-ownership fact, not the existence of `agent.pid` in retained
 history. Archived, stopped, queued, unbound, and hazard rows stay out of the hot tier; hazards use the close/repair
 and warm evidence paths. The 100ms tier only checks the current owned-candidate set, so retained archive records do
-not create a polling cost. A missed candidate event is repaired by the bounded recovery/patrol path, never by
-making every historical row a hot candidate.
+not create a polling cost. The pid-reuse latch is shared with warm evidence for pane-visible non-candidates and is
+removed only when the pid artifact disappears or explicit leaf cleanup forgets it; hot eligibility must never prune
+that latch. A missed candidate event is repaired by the bounded recovery/patrol path, never by making every
+historical row a hot candidate.
 
 **Derivation.** Most interactive adapters derive that answer from process/transport probes. Headless adapters deliberately
   derive it from their runtime owner: a Claude-headless or other leaf-backed controller is online only when its
