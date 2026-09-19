@@ -436,3 +436,19 @@ Archived/stopped/queued/unbound/hazard rows保留为历史或 repair 输入，�
 报告：[[file:active-runtime-cpu-report.html]]
 
 macmini/macOS 未操作。fixC 的 macOS FSEvents、高 contention lock 仍是后续平台覆盖项，不影响当前 Linux isolated proof。
+
+<!-- reply: 7690d008-1893-4d77-a6d3-16f051463169 @ 2026-09-19T10:25:12.962Z -->
+Spec: liveness, sessions-core, graph-stream, application-composition, serve
+
+Deployment update 2026-09-19:
+- Landed and pushed `main` at `0712e63cfa5df69eff54ea0515d1170c7b4cca54` via verified no-ff merge.
+- macmini-tail was updated from npm-global `0.7.0-next.20` to packed `spexcode 0.7.0` built from that main; package version verified on host.
+- Restarted only the existing `gugu-backend`/`gugu-web` tmux service sessions using their launch scripts; no lane/session data was touched.
+- Backend and dashboard health both returned `ok`.
+
+Read-only macmini-tail monitoring after restart:
+- nostream 20s window: CPU avg `44.13%`, RSS avg `335,517 KiB` (min `324,048`, max `344,192`).
+- correctly quoted delta SSE 20s window: CPU avg `30.07%`, RSS avg `499,937 KiB` (min `488,848`, max `511,040`), health `ok`.
+- macOS native `top` samples for worker pid `26870`: `0.0%` at first sample, then `25.9%`, `37.2%`; RSS about `450–454M`, process CPU time advancing normally.
+
+These are live post-restart observations, not a controlled before/after macmini A/B: the machine has 17 active lanes and existing workload. No process other than the two named Spex service sessions was killed/restarted.
