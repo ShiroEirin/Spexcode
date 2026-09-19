@@ -26,6 +26,7 @@ related:
   - spec-cli/test/pty-bridge.osc8.ts
   - spec-cli/test/pty-bridge.visibility-lifecycle.ts
   - spec-cli/test/terminal-socket-lifecycle.ts
+  - spec-cli/test/service-cwd.e2e.mjs
   - spec-cli/test/pty-bridge.reseed-reconnect.ts
   - spec-cli/test/pty-bridge.scroll-redraw.ts
   - spec-cli/test/pty-bridge.stress.ts
@@ -101,6 +102,13 @@ own viewer; it cannot keep a dead sibling terminal alive or leave another browse
 The helper's stdout is raw terminal output and its stdin is a small resize/navigation/input control stream.
 Closing the parent pipe kills the helper and its PTY, including on backend restart. UTF-8 locale is explicit
 at the tmux boundary so wide characters are not replaced by host-locale fallbacks.
+
+The helper's working directory is stated, never inherited: the bridge starts it on the filesystem root
+([[service-cwd]]). The helper and its tmux client read nothing relative to a directory, so neither a backend
+launched from a since-deleted directory nor a closed session's removed worktree can make a viewer's terminal
+unstartable. This does not reach the session. Attaching is transport, tmux consults a client's directory only
+for a client that has no session, and the agent's pane — like any pane later split from the browser's own
+client — keeps the directory its session was launched with.
 
 The helper loads `node-pty` from the dashboard package's `daemon-pty.mjs`, the daemon runtime's home ([[packaging]]).
 Before its first native spawn, the helper resolves the exact addon `node-pty` loaded and checks for

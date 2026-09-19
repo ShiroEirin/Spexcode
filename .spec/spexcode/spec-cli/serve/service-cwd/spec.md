@@ -9,6 +9,7 @@ related:
   - spec-cli/src/supervise.ts
   - spec-cli/src/cli.ts
   - spec-cli/src/pty-bridge.ts
+  - spec-cli/test/service-cwd.e2e.mjs
 ---
 # service-cwd
 
