@@ -243,8 +243,9 @@ export async function hotSignature(): Promise<string> {
     present.push(id)
     pairs.push(`${id}:${alive ? 1 : 0}`)
   }
-  // Prune only the bounded ownership registry, never the durable session roster.
-  for (const k of [...pidRegistry.keys()]) if (!hotCandidateIds.has(k)) pidRegistry.delete(k)
+  // Do not prune against hotCandidateIds here. Warm census calls agentAlive for pane-visible sessions outside the
+  // hot set, and their ESRCH latch must survive until the pid file is rewritten or leaf cleanup explicitly forgets
+  // it. Pruning by hot eligibility would let a recycled OS pid revive a dead idle/awaiting/parked session.
   return pairs.sort().join(',') + '|' + present.sort().join(',')
 }
 
