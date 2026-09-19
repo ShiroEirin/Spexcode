@@ -491,3 +491,26 @@ The archived pid artifacts are therefore no longer the 100ms hot pressure source
 macOS native `sample` of the live worker did not show a hot pid/stat stack; the visible native work was dominated by SQLite `DatabaseSync::Prepare`/`StatementSync::All`, `fs ReadFileUtf8`/`ExistsSync`, event-loop callbacks, and GC. This points to remaining DB/file-read and memory pressure, not archived-agent liveness patrol. RSS was about `888–897MB` during the top window; that is a separate memory/retained-read investigation, not evidence that archived pid files are still in hot 100ms pressure.
 
 Read-only windows after restart: nostream CPU avg `44.13%`, correctly quoted delta stream CPU avg `30.07%` in one earlier window; after the latch-fix restart, delta stream CPU avg `39.70%`, RSS avg `268,638 KiB` in a short window. These are live workload observations, not matched A/B. Health stayed `ok`; no lane/session data or unrelated process was changed.
+
+<!-- reply: 7690d008-1893-4d77-a6d3-16f051463169 @ 2026-09-19T12:26:48.013Z -->
+Spec: sessions-core, delivery-queue, liveness, serve
+
+最新 macmini sample + 私有 dist 消融把剩余 steady 根因进一步拆开：
+
+- macmini 550 records 中 532 archived / 82 archived pid / 18 active pid；tmux panes 21，其中 archived 仅 1、active 18、unknown 2。active-owned hot registry 已排除 archived pid，archived 不是 100ms hot stat 压力。
+- macOS sample 的可见 native work 主要是 SQLite `DatabaseSync::Prepare`/`StatementSync::All`/sqlite stepping，以及 `fs ReadFileUtf8`/`ExistsSync`、event loop/GC；没有明确 archived pid hot stack。
+- 私有当前 dist 单变量消融（682 fixture、15 active、667 archived、真实 worker/SSE/hook）显示 stream CPU baseline `28.25%`：禁 delivery `23.11%`（约 -5.1pp），禁 queue `24.24%`（约 -4.0pp），禁 turn-failure `27.41%`（当前事件驱动已很小）。
+
+因此 archived 的准确结论是：
+
+```text
+archived pid artifact -> 已不再进入 hot liveness
+archived runtime.json/records -> 仍被 delivery/queue durable-roster sweeps 读到
+```
+
+源码路径：
+- `superviseDelivery()` 每 1s `reconcileWatchDeliveries()` 先遍历 `listSessionIds()` 读 records，再遍历全 session ids 检查 pending delivery；
+- `drainQueueUnlocked()` 每 3s `listSessions(false, ..., includePendingArchived=true)`，先枚举/读取/投影完整 roster，再按 queue 状态使用；
+- archived 最终不进工作板，但已付出 SQLite/file-read 成本。
+
+所以当前剩余 steady 主要矛盾已经从 archived hot patrol 转为“delivery/queue supervisor 对 durable roster 的全量 DB/file 扫描”。下一步应按 [[delivery-queue]] / [[sessions-core]] 设计有债务集合或 active/bound recipient index：空债务时不扫全 roster；archived/unbound queue 不轮询；unknown source 才 bounded recovery。暂不直接改代码，先走 spec-first 单变量设计。macmini 未写入或杀进程；health 保持 ok。
