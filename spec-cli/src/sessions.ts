@@ -36,6 +36,7 @@ import { TMUX_PROBE_TIMEOUT_MS, TARGET_TMUX_CLOSE_SETTLE_MS, sessionHost } from 
 import {
   agentAlive, clearLaunched, forgetAgentPid, liveness, liveSnapshot, markLaunched, paneActivity,
   readAgentPid,
+  registerHotLivenessCandidate, unregisterHotLivenessCandidate,
   type Liveness, type LiveSnap,
 } from './session-liveness.js'
 
@@ -2791,6 +2792,7 @@ function bindNativeRuntimeUnlocked(rec: SessRec): void {
 // record it wrote here; nothing to release is a no-op.
 function releaseDetachedRuntimeUnlocked(rec: SessRec): void {
   if (!rec.stopped && !rec.archived) return
+  unregisterHotLivenessCandidate(rec.session)
   const application = configuredSessionApplication()
   const current = application.resolveRuntime(rec.session, 'spex-governed')
   if (current?.status !== 'bound') return
@@ -2856,6 +2858,7 @@ function bindHarnessSessionIdUnlocked(rec: SessRec, harnessSessionId: string, ge
     throw error
   }
   if (codex && generationId) commitCodexGenerationRegistration(root, id, harnessSessionId, generationId)
+  registerHotLivenessCandidate(id)
 }
 
 type StagedHarnessLaunchProof = {
@@ -3138,12 +3141,14 @@ function writeSessionLeafReceipt(id: string, receipt: SessionLeafReceipt): void 
     writeFileSync(temp, `${JSON.stringify(receipt)}\n`, { mode: 0o600 })
     renameSync(temp, path)
   } finally { rmSync(temp, { force: true }) }
+  registerHotLivenessCandidate(id)
 }
 
 function clearSessionLeafArtifacts(id: string): void {
   rmSync(sessionArtifactPath(id, 'agent.pid'), { force: true })
   forgetAgentPid(id)
   rmSync(sessionLeafReceiptPath(id), { force: true })
+  unregisterHotLivenessCandidate(id)
 }
 
 type LeafIdentity = { pid: number; startToken: string; receipt: SessionLeafReceipt }

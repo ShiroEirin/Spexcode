@@ -201,6 +201,11 @@ failure reaches one record-locked compare-and-set that changes only a live, unde
 A declaration that landed first is authoritative, so a late process close, delayed native completion, or
 restart reconciliation cannot overwrite it.
 
+The same active/runtime boundary governs hot liveness: a retained archive row is history, not a runtime candidate.
+Only a canonical active/starting record with an owned leaf receipt or adapter runtime binding enters the fast
+probe set; stop, queue, archive, unbound, and hazard rows are handled by their lifecycle/repair paths. Close's
+cold proof is the authority that permits archive publication, so liveness never becomes a second cleanup protocol.
+
 The record's existing `name` is the one human display override: CLI creation may set it once with `--name`, and
 rename later replaces or clears that same field. It affects only the shared label/title projection;
 the branch, worktree slug, and stored prompt title retain their own responsibilities.

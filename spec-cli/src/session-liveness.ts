@@ -3,7 +3,7 @@
 // joining this reading onto the lifecycle the agent wrote is [[state]]'s question, not this one's — which is
 // what leaves this module importing no runtime value from sessions.ts at all. [[liveness]] has the tier,
 // witness, and fail-loud rules the code below implements.
-import { readFileSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { processStartToken, runtimeRoot, sessionArtifactPath, listSessionIds } from '@spexcode/spec-core'
 import {
   defaultHarness, harnessById, procSnapshot, rendezvousListening,
@@ -11,6 +11,7 @@ import {
 } from './harness.js'
 import { TMUX_PROBE_TIMEOUT_MS, TARGET_PROBE_TIMEOUT_MS, sessionHost, probeTimedOut } from './session-host.js'
 import { readRecord, SessionRecordUnusable, type SessRec } from './session-record.js'
+import { configuredSessionApplication } from './session-application.js'
 
 // The reading this module produces. It lives here rather than in the session core because it is this
 // module's own answer; every other file reads it as a type imported FROM the prober.
@@ -153,23 +154,97 @@ export async function liveSnapshot(targetId?: string): Promise<LiveSnap> {
   })
   return rememberSnapshot({ probeFailed: false, windows, titles, sockets, unproven }, targetId)
 }
-// Avoid process spawns on the hot path; old sessions without agent.pid remain warm-tier only.
-let hotIds: string[] = []
-let hotIdsAt = 0
+// The hot tier is a runtime-ownership registry, not a durable-roster scan. Retained records are seeded once at
+// backend recovery; lifecycle/runtime seams and watcher subjects re-evaluate one exact id afterward. A pid file or
+// receipt by itself cannot add a historical row: the record must still be canonical active and owned.
+const hotCandidateIds = new Set<string>()
+let hotCandidatesSeeded = false
+
+function hasLeafReceipt(id: string): boolean {
+  const receiptPath = sessionArtifactPath(id, 'agent.identity.json')
+  if (!existsSync(receiptPath) || !existsSync(sessionArtifactPath(id, 'agent.pid'))) return false
+  try {
+    const value = JSON.parse(readFileSync(receiptPath, 'utf8')) as Record<string, unknown>
+    return value.version === 1 && value.kind === 'session-leaf' && value.sessionId === id
+      && Number.isSafeInteger(value.pid) && (value.pid as number) > 0
+      && typeof value.startToken === 'string' && value.startToken.length > 0
+      && Number(readFileSync(sessionArtifactPath(id, 'agent.pid'), 'utf8').trim()) === value.pid
+  } catch { return false }
+}
+
+function hasAdapterBinding(rec: SessRec): boolean {
+  if (!rec.harnessSessionId) return false
+  try { return configuredSessionApplication().resolveRuntime(rec.session, 'spex-governed')?.status === 'bound' }
+  catch { return false }
+}
+
+export function hotLivenessRecordEligible(
+  rec: Pick<SessRec, 'governed' | 'stopped' | 'archived' | 'status'>,
+  ownedRuntime: boolean,
+): boolean {
+  return rec.governed && !rec.stopped && !rec.archived && rec.status === 'active' && ownedRuntime
+}
+
+function ownsHotRuntime(rec: SessRec): boolean {
+  const harness = harnessById(rec.harness || defaultHarness.id)
+  const owned = sessionHost().kind === 'process-host'
+    ? !!sessionHost().witness(rec.session)
+    : harness.runtimeOwnership === 'adapter' ? hasAdapterBinding(rec) : hasLeafReceipt(rec.session)
+  return hotLivenessRecordEligible(rec, owned)
+}
+
+function hotCandidateEligible(id: string): boolean {
+  try {
+    const rec = readRecord(id)
+    return !!rec && ownsHotRuntime(rec)
+  } catch (error) {
+    if (error instanceof SessionRecordUnusable) return false
+    return false
+  }
+}
+
+/** Register a runtime owner after launch/receipt or native binding has committed. */
+export function registerHotLivenessCandidate(id: string): void {
+  if (typeof id === 'string' && id.length) hotCandidateIds.add(id)
+}
+
+/** Remove a runtime owner after stop/close/archive has released its exact resource. */
+export function unregisterHotLivenessCandidate(id: string): void {
+  hotCandidateIds.delete(id)
+}
+
+/** Re-evaluate one lifecycle/runtime subject without scanning unrelated historical records. */
+export function refreshHotLivenessCandidate(id: string): void {
+  if (!id) return
+  if (hotCandidateEligible(id)) hotCandidateIds.add(id)
+  else hotCandidateIds.delete(id)
+}
+
+/** Recovery and unknown-source repair are the only full candidate rebuilds. */
+export function seedHotLivenessCandidates(force = false): void {
+  if (hotCandidatesSeeded && !force) return
+  const next = new Set<string>()
+  // A launch/receipt seam may register a candidate before the first backend recovery pass. Preserve that
+  // explicit ownership handoff while the initial durable scan fills in sessions that survived a restart.
+  if (!force) for (const id of hotCandidateIds) next.add(id)
+  for (const id of listSessionIds()) if (hotCandidateEligible(id)) next.add(id)
+  hotCandidateIds.clear()
+  for (const id of next) hotCandidateIds.add(id)
+  hotCandidatesSeeded = true
+}
+
 export async function hotSignature(): Promise<string> {
-  const now = Date.now()
-  if (now - hotIdsAt >= 1000) { hotIds = listSessionIds(); hotIdsAt = now }
+  seedHotLivenessCandidates()
   const pairs: string[] = []
   const present: string[] = []
-  for (const id of hotIds) {
+  for (const id of hotCandidateIds) {
     const alive = agentAlive(id)
     if (alive === undefined) continue   // no agent.pid → the warm tier's concern, not the hot death detector
     present.push(id)
     pairs.push(`${id}:${alive ? 1 : 0}`)
   }
-  // prune latch entries for ids no longer registered (closed sessions), keeping the registry bounded.
-  const live = new Set(hotIds)
-  for (const k of [...pidRegistry.keys()]) if (!live.has(k)) pidRegistry.delete(k)
+  // Prune only the bounded ownership registry, never the durable session roster.
+  for (const k of [...pidRegistry.keys()]) if (!hotCandidateIds.has(k)) pidRegistry.delete(k)
   return pairs.sort().join(',') + '|' + present.sort().join(',')
 }
 

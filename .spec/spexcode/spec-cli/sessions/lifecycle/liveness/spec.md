@@ -28,6 +28,15 @@ the boot window's two edges and push them in through `markLaunched`/`clearLaunch
 and clearing a session's leaf artifacts drops its latched death through `forgetAgentPid` — verbs, not mutable
 module state, so no caller can corrupt the pid-reuse guard by hand.
 
+The hot tier does not derive its candidates from the durable session roster. A backend start performs one bounded
+recovery pass over records that are canonical `active`/starting and still own a runtime binding or a valid leaf
+receipt; launch/bind adds a candidate, while stop, close, archive, and a state/database event remove or re-evaluate
+one exact id. A candidate is therefore a runtime-ownership fact, not the existence of `agent.pid` in retained
+history. Archived, stopped, queued, unbound, and hazard rows stay out of the hot tier; hazards use the close/repair
+and warm evidence paths. The 100ms tier only checks the current owned-candidate set, so retained archive records do
+not create a polling cost. A missed candidate event is repaired by the bounded recovery/patrol path, never by
+making every historical row a hot candidate.
+
 **Derivation.** Most interactive adapters derive that answer from process/transport probes. Headless adapters deliberately
   derive it from their runtime owner: a Claude-headless or other leaf-backed controller is online only when its
   registered controller process is alive (the tmux pane or its fallback shell is not the session), while Codex-headless

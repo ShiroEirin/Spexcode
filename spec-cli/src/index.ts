@@ -20,6 +20,7 @@ import { pluginDetail, pluginsView } from './plugins-view.js'
 import { readLedger } from './hook-ledger.js'
 import { cockpitReview } from './cockpit.js'
 import { EMPTY_PROMPT_ERROR, listSessions, listArchivedSessionIndex, sendText, drainSession, markHumanPromptActive, interruptSession, rawKey, stopSession, closeSession, resumeSession, captureSessionResult, sessionPrompt, renameSession, setSessionSort, linkZCodeChildSession, projectCreatedSession, sessionCreateRequest, superviseQueue, superviseTurnFailures, superviseDelivery, reconcileLaunchedRuntimes, startWorktreeTrashReaper, notifyTurnFailureObservers } from './sessions.js'
+import { refreshHotLivenessCandidate, seedHotLivenessCandidates } from './session-liveness.js'
 import { mergeSession, retractDiffComment, saveDiffComment, sendDiffComments, sessionDiff } from './session-review.js'
 import { sessionHost } from './session-host.js'
 import { quarantineCorruptRecord, readRecord, restoreQuarantinedRecord, SessionRecordUnusable, withRecordLock, withSessionRecordLockSync } from './session-record.js'
@@ -61,6 +62,7 @@ const app = new Hono()
 setSessionApplicationCommitObserver((change) => {
   if (!(change.changeMask & (SESSION_CHANGE.state | SESSION_CHANGE.topology))) return
   notifyTurnFailureObservers(change.subjectSessionIds)
+  for (const id of change.subjectSessionIds) refreshHotLivenessCandidate(id)
   notifyBoardChanged('sessions', change.subjectSessionIds)
 })
 startUploadReaper()
@@ -1155,6 +1157,7 @@ superviseBridges()   // restore visible helpers after failure; their viewer subs
 superviseQueue()     // launch queued sessions as slots free (catches agent-authored proposals/crashes the server never sees directly)
 superviseTurnFailures() // reconcile adapter-owned native failure subscriptions across backend replacement
 await reconcileLaunchedRuntimes()   // launched sessions get the binding their run state implies before the sweep below polls them
+seedHotLivenessCandidates()
 superviseDelivery()  // hand over messages an earlier pass could not ([[delivery-queue]]): the retry half of dispatch
 
 let graphWatchersClosed = false

@@ -6,7 +6,7 @@ import { sessionsRoot, gitCommonDir, repoRoot, isTrashWorktreePath } from '@spex
 import { resolveDatabasePath } from '@spexcode/session-application'
 import { configuredSessionApplication } from './session-application.js'
 import { listSessions, pendingSessionCreateWorktreePaths, notifyTurnFailureObservers } from './sessions.js'
-import { hotSignature, warmSignature } from './session-liveness.js'
+import { hotSignature, refreshHotLivenessCandidate, seedHotLivenessCandidates, warmSignature } from './session-liveness.js'
 import { getBoard, getBoardForSessionRefresh, invalidateBoard, patrolBoard, boardIdentity, readBoard, type Board } from './graphCache.js'
 import { diffFromPosition, positionOf, type Position } from '@spexcode/spec-core'
 const { streamSSE } = await daemonRuntime()
@@ -478,11 +478,13 @@ function ensureWatcher(root: string): void {
     onInput: (_event, relativePath) => {
       const id = relativePath.split(/[\\/]/)[0]
       if (id && !id.includes('.')) notifyTurnFailureObservers([id])
+      if (id && !id.includes('.')) refreshHotLivenessCandidate(id)
       fireChanged('sessions', id && !id.includes('.') ? [id] : undefined)
     },
     onFailure: (error) => {
       if (storeWatcher === registry) storeWatcher = null
       noteSourceFailure('store', error)
+      seedHotLivenessCandidates(true)
       fireChanged('sessions')
     },
   })
@@ -541,12 +543,16 @@ function sessionDatabaseChangedIds(notify = true): readonly string[] | null {
     const application = configuredSessionApplication()
     const changed = application.readChangedSessionIdsSince(sessionDatabaseWatermark ?? 0)
     sessionDatabaseWatermark = changed.watermark
-    if (notify && changed.subjectSessionIds.length) notifyTurnFailureObservers(changed.subjectSessionIds)
+    if (notify && changed.subjectSessionIds.length) {
+      notifyTurnFailureObservers(changed.subjectSessionIds)
+      for (const id of changed.subjectSessionIds) refreshHotLivenessCandidate(id)
+    }
     return changed.subjectSessionIds
   } catch (error) {
     console.error(`spec-cli: session-db change cursor failed — ${(error as Error).message}`)
     sessionDatabaseWatermark = null
     notifyTurnFailureObservers()
+    seedHotLivenessCandidates(true)
     return null
   }
 }
@@ -575,6 +581,7 @@ function ensureSessionDatabaseWatcher(): void {
     noteSourceFailure(SESSION_DB_SOURCE, error)
     sessionDatabaseWatermark = null
     notifyTurnFailureObservers()
+    seedHotLivenessCandidates(true)
     fireChanged('sessions')
   })
   sessionDatabaseWatcher = registry
