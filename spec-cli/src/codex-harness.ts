@@ -935,20 +935,18 @@ async function codexScopedCollection(sock: string, scope: CodexRowScope, archive
 const codexPresenceFromStatus = (status: CodexThreadStatus | undefined): SharedRuntimeMutationGuard['targetTurnPresence'] =>
   status === 'idle' || status === 'active' ? status : 'unknown'
 
-async function codexTargetMutationGuard(threadId: string, scope: CodexProofScope, dir = runtimeRoot(), endpoint = legacyCodexGenerationEndpoint(dir)): Promise<SharedRuntimeMutationGuard> {
+async function codexTargetMutationGuard(threadId: string, scope: { cwd: string }, dir = runtimeRoot(), endpoint = legacyCodexGenerationEndpoint(dir)): Promise<SharedRuntimeMutationGuard> {
   const generationBefore = codexMutationGeneration(dir, endpoint)
   if (!generationBefore) return { healthy: false, referenceIds: [], targetTurnPresence: 'unknown', descendantIds: [], error: 'Codex shared app-server generation is unproven' }
   const sock = endpoint.socketPath
-  const targetCwd = codexScopeCwd(scope)
+  const targetCwd = scope.cwd
   // The descendant collections are ancestor-filtered and therefore exclude the target itself, so the
   // target's own turn state comes from the rows scoped to its record's cwd. These run concurrently.
   const [loaded, activeDescendants, archivedDescendants, targetRows] = await Promise.all([
     codexLoadedReferenceIds(sock),
     codexThreadList(sock, { ancestorThreadId: threadId, archived: false, sourceKinds: [] }),
     codexThreadList(sock, { ancestorThreadId: threadId, archived: true, sourceKinds: [] }),
-    codexCollectionPair((archived) => targetCwd !== null
-      ? codexScopedCollection(sock, { cwd: targetCwd }, archived)
-      : codexThreadCollection(sock, { archived, sourceKinds: [] })),
+    codexCollectionPair((archived) => codexScopedCollection(sock, { cwd: targetCwd }, archived)),
   ])
   const referenceIds = loaded.ok ? loaded.referenceIds : []
   const descendantIds = activeDescendants.ok && archivedDescendants.ok
@@ -1049,9 +1047,10 @@ function makeCodexColdPlan(input: {
 // record binds the exact worktree cwd its thread was started in, so the proof costs the target subtree. An
 // unreadable record binds nothing: quarantine alone keeps the whole-host census rather than trusting a cwd it
 // cannot prove. The scope rides inside the receipt, so one scope's receipt never authorizes another's proof.
-type CodexProofScope = { cwd: string } | { wholeHost: true }
+type CodexBoundProofScope = { cwd: string }
+type CodexProofScope = CodexBoundProofScope | { wholeHost: true }
 const codexScopeCwd = (scope: CodexProofScope): string | null => 'cwd' in scope ? scope.cwd : null
-const codexRecordScope = (rec: { worktreePath?: string | null }): CodexProofScope | null =>
+const codexRecordScope = (rec: { worktreePath?: string | null }): CodexBoundProofScope | null =>
   typeof rec.worktreePath === 'string' && rec.worktreePath ? { cwd: rec.worktreePath } : null
 const CODEX_NO_SCOPE = 'the governed record binds no worktree cwd, so the native subtree proof has no scope'
 
@@ -1404,10 +1403,7 @@ async function codexMutationGuard(
   if (opts.coldReceipt.targetCwd !== codexScopeCwd(scope))
     return refusedReceipt('adapter cold teardown receipt was proven in a different scope than this record binds')
   const current = await codexColdPreflight(threadId, scope, dir, opts.coldReceipt.generation, endpoint)
-  if (!current.ok) {
-    const guard = await codexTargetMutationGuard(threadId, scope, dir, endpoint)
-    return { ...guard, healthy: false, coldTeardownAuthorized: false, error: current.reason }
-  }
+  if (!current.ok) return refusedReceipt(current.reason)
   const authorized = sameIdSet(opts.coldReceipt.descendantIds, current.receipt.descendantIds) &&
     sameParentEdges(opts.coldReceipt.parentEdges, current.receipt.parentEdges) &&
     sameIdSet(opts.coldReceipt.activeIds, current.receipt.activeIds) &&

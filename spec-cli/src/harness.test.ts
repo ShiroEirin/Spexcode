@@ -1094,6 +1094,36 @@ test('Codex stop guard refuses a cold receipt whose scope is not what the record
   })
 })
 
+test('Codex stop guard does not retry a failed receipt proof through a second guard census', async () => {
+  let failScopedRead = false
+  await withNativeThreads(subtreeTable(), {
+    answer: (params, rows, table) => {
+      if (!failScopedRead || typeof params.cwd !== 'string') return rows
+      return table.map((row) => ({ id: row.id, parentThreadId: row.parent ?? null, cwd: row.cwd ?? FIXTURE_CWD, status: { type: 'idle' } }))
+    },
+  }, async ({ root, lists }) => {
+    const guardOf = codexHarness.sharedRuntimes?.(root)[0]?.mutationGuard
+    if (!guardOf) throw new Error('Codex exposes its target mutation guard')
+    const preflight = await codexHarness.coldPreflight?.(subtreeRec('target'))
+    if (!preflight?.ok) throw new Error('clean preflight refused')
+
+    failScopedRead = true
+    const before = lists.length
+    const result = await guardOf('target', { coldReceipt: preflight.receipt, targetCwd: FIXTURE_CWD })
+    assert.equal(result.healthy, false)
+    assert.equal(result.coldTeardownAuthorized, false)
+    assert.match(result.error ?? '', /outside its requested cwd .* scope/)
+    // The failed receipt proof itself has two ancestor reads and two target-cwd reads. A second target guard
+    // would add five more native reads without changing the refusal or making teardown safer.
+    assert.deepEqual(lists.slice(before).map(({ ancestorThreadId, cwd, archived }) => ({ ancestorThreadId, cwd, archived })), [
+      { ancestorThreadId: 'target', cwd: undefined, archived: false },
+      { ancestorThreadId: 'target', cwd: undefined, archived: true },
+      { ancestorThreadId: undefined, cwd: FIXTURE_CWD, archived: false },
+      { ancestorThreadId: undefined, cwd: FIXTURE_CWD, archived: true },
+    ], 'a failed receipt proof has no fallback census')
+  })
+})
+
 test('Codex cold teardown compensates a failed archive through the plan\'s own scopes, never a whole-host read', async () => {
   // the deepest member archives, the ancestor's archive is REFUSED by the server, so compensation must undo
   // the committed member — and must read the collections it reads through the scopes the plan was proven at
