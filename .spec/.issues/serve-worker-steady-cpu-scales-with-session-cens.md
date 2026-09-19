@@ -436,3 +436,28 @@ Archived/stopped/queued/unbound/hazard rows保留为历史或 repair 输入，�
 报告：[[file:active-runtime-cpu-report.html]]
 
 macmini/macOS 未操作。fixC 的 macOS FSEvents、高 contention lock 仍是后续平台覆盖项，不影响当前 Linux isolated proof。
+
+<!-- reply: 7690d008-1893-4d77-a6d3-16f051463169 @ 2026-09-19T10:25:12.962Z -->
+Spec: liveness, sessions-core, graph-stream, application-composition, serve
+
+Deployment update 2026-09-19:
+- Landed and pushed `main` at `0712e63cfa5df69eff54ea0515d1170c7b4cca54` via verified no-ff merge.
+- macmini-tail was updated from npm-global `0.7.0-next.20` to packed `spexcode 0.7.0` built from that main; package version verified on host.
+- Restarted only the existing `gugu-backend`/`gugu-web` tmux service sessions using their launch scripts; no lane/session data was touched.
+- Backend and dashboard health both returned `ok`.
+
+Read-only macmini-tail monitoring after restart:
+- nostream 20s window: CPU avg `44.13%`, RSS avg `335,517 KiB` (min `324,048`, max `344,192`).
+- correctly quoted delta SSE 20s window: CPU avg `30.07%`, RSS avg `499,937 KiB` (min `488,848`, max `511,040`), health `ok`.
+- macOS native `top` samples for worker pid `26870`: `0.0%` at first sample, then `25.9%`, `37.2%`; RSS about `450–454M`, process CPU time advancing normally.
+
+These are live post-restart observations, not a controlled before/after macmini A/B: the machine has 17 active lanes and existing workload. No process other than the two named Spex service sessions was killed/restarted.
+
+<!-- reply: 626f0c29-f847-41c0-8714-889c6fc787a8 @ 2026-09-19T10:30:18.918Z -->
+Spec: liveness, graph-stream
+
+对已落地 hot tier（066ce77b8）的一条复核备注。只读了 main 上的代码和 spec，没有对它跑实验。
+
+1. 证据范围。落地的不是我测过的 fixH2，而是另一种机制：事件维护的 ownership registry，资格为 `governed && !stopped && !archived && status === 'active' && ownedRuntime`，没有每秒的全 roster 分类。报告里 fixH2 的 13.50% 稳态和四场景检测延迟属于 fixH2 的形状，不能当作 066ce77b8 的证据。差异里有两项是 [[liveness]] 已明文写下的取舍，不是缺陷：归档但物理存活的 pid 不再由 hot tier 检测（fixH2 里实测 ≤100 ms，现在走 warm / close-repair 路径）；非 active 的 session（idle、awaiting、asking、parked，agent 还坐在 REPL 里）的死亡检测从 100 ms 变为 warm tier 的约 1 s。CPU 上它应当比 fixH2 更省（没有那趟 1 s 的 roster 扫描），我没测。
+
+2. 一处 spec 与代码不一致，值得看一眼。`session-liveness.ts:247` 在每个 100 ms tick 里把 `pidRegistry` 中不属于 `hotCandidateIds` 的键全部删除；而 `:124` 的 `liveSnapshot()` 会为每个有窗口的 session 调 `agentAlive()`、从而建锁存项。结果是：所有「有 pane 但不是 hot 候选」的 session——idle、awaiting、parked，以及 agent 已死而 pane 还在的——其 ESRCH 死亡锁存最多存活 100 ms，下一次 warm census 会重新 `kill(pid, 0)`。[[liveness]] 仍写着锁存「只有 relaunch 的新写入才重置」，这对它们不再成立；一旦该 OS pid 被回收，死掉的 session 会在 census 里读成 `pidAlive = true`。改动前修剪按的是全 roster，锁存与 session 同寿。macOS 的 pid 空间约 10 万，繁忙机器上几小时内回收是现实的。这是从代码读出来的，没有复现。修法很小：修剪只按全 roster 做、且放在低频路径上（fixH2 是放在 1 s 刷新块里），或者让 warm census 用不写锁存表的只读探测。
