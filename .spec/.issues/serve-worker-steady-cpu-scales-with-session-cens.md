@@ -473,3 +473,21 @@ Follow-up regression fix landed and deployed:
 - macmini backend/dashboard health `ok`; macOS top samples after restart: worker pid 71290 at `0.0%`, `28.4%`, `27.4%`; corrected delta-window 20s average CPU `39.70%`, RSS avg `268,638 KiB` (range `250,336–289,216 KiB`), health `ok`.
 
 This preserves the spec invariant: only relaunch/mtime rewrite resets a death latch; hot eligibility no longer destroys warm evidence.
+
+<!-- reply: 7690d008-1893-4d77-a6d3-16f051463169 @ 2026-09-19T12:03:04.569Z -->
+Spec: liveness, graph-stream, serve
+
+macmini-tail post-deploy read-only attribution (0.7.0, worker pid 71290):
+
+- durable runtime records: `550`
+- archived records: `532`
+- archived records with historical `agent.pid`: `82`
+- active/other records: `18`
+- active records with `agent.pid`: `18`
+- tmux panes: `21` total = `18` active, `1` archived, `2` unknown
+
+The archived pid artifacts are therefore no longer the 100ms hot pressure source: active-owned candidate registry only admits canonical active/owned runtime, and the 82 archived pid files are excluded. One archived pane remains visible to warm evidence, but that is one pane, not 82 pid polls.
+
+macOS native `sample` of the live worker did not show a hot pid/stat stack; the visible native work was dominated by SQLite `DatabaseSync::Prepare`/`StatementSync::All`, `fs ReadFileUtf8`/`ExistsSync`, event-loop callbacks, and GC. This points to remaining DB/file-read and memory pressure, not archived-agent liveness patrol. RSS was about `888–897MB` during the top window; that is a separate memory/retained-read investigation, not evidence that archived pid files are still in hot 100ms pressure.
+
+Read-only windows after restart: nostream CPU avg `44.13%`, correctly quoted delta stream CPU avg `30.07%` in one earlier window; after the latch-fix restart, delta stream CPU avg `39.70%`, RSS avg `268,638 KiB` in a short window. These are live workload observations, not matched A/B. Health stayed `ok`; no lane/session data or unrelated process was changed.
