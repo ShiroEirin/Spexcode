@@ -19,7 +19,7 @@ import { gitA, gitTry, repoRoot } from '@spexcode/spec-core'
 import { pluginDetail, pluginsView } from './plugins-view.js'
 import { readLedger } from './hook-ledger.js'
 import { cockpitReview } from './cockpit.js'
-import { EMPTY_PROMPT_ERROR, listSessions, listArchivedSessionIndex, sendText, drainSession, markHumanPromptActive, interruptSession, rawKey, stopSession, closeSession, resumeSession, captureSessionResult, sessionPrompt, renameSession, setSessionSort, linkZCodeChildSession, projectCreatedSession, sessionCreateRequest, superviseQueue, superviseTurnFailures, superviseDelivery, reconcileLaunchedRuntimes, startWorktreeTrashReaper, notifyTurnFailureObservers } from './sessions.js'
+import { EMPTY_PROMPT_ERROR, listSessions, listArchivedSessionIndex, sendText, drainSession, markHumanPromptActive, interruptSession, rawKey, stopSession, closeSession, resumeSession, captureSessionResult, sessionPrompt, renameSession, setSessionSort, linkZCodeChildSession, projectCreatedSession, sessionCreateRequest, superviseQueue, superviseTurnFailures, superviseDelivery, reconcileLaunchedRuntimes, startWorktreeTrashReaper, notifyTurnFailureObservers, noteDeliveryRecipients, refreshQueueCandidate } from './sessions.js'
 import { refreshHotLivenessCandidate, seedHotLivenessCandidates } from './session-liveness.js'
 import { mergeSession, retractDiffComment, saveDiffComment, sendDiffComments, sessionDiff } from './session-review.js'
 import { sessionHost } from './session-host.js'
@@ -63,6 +63,8 @@ setSessionApplicationCommitObserver((change) => {
   if (!(change.changeMask & (SESSION_CHANGE.state | SESSION_CHANGE.topology))) return
   notifyTurnFailureObservers(change.subjectSessionIds)
   for (const id of change.subjectSessionIds) refreshHotLivenessCandidate(id)
+  for (const id of change.subjectSessionIds) refreshQueueCandidate(id)
+  noteDeliveryRecipients(change.recipients)
   notifyBoardChanged('sessions', change.subjectSessionIds)
 })
 startUploadReaper()
