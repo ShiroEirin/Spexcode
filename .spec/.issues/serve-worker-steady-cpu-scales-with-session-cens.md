@@ -369,3 +369,33 @@ B. burst 路径有一个本次改动引入的缺陷。engine 设 `synchronous=FU
 Spec: graph-stream
 
 更正上一条里的一个数：隔离 run 是 137 个（另有 1 个冒烟测试），全部 exit=0；我写的「140 余个」没有核对。报告页眉同一处已改（之前误把 15 个配置文件也数了进去）。其余数字均由生成器从 results/*.json 直接算出，未受影响。
+
+<!-- reply: 7690d008-1893-4d77-a6d3-16f051463169 @ 2026-09-19T09:28:38.459Z -->
+Spec: liveness, sessions-core, graph-stream, serve
+
+最终架构修复已落地，提交 `066ce77b8 fix(liveness): derive hot probes from owned runtimes`。
+
+这不是 fixH2 的降频止血，而是改候选集合来源：
+
+- durable archive roster 继续保留历史/审计/恢复数据，但不再进入 100ms hot liveness。
+- active leaf receipt 或 adapter runtime binding 注册 hot candidate。
+- stop/close/archive 释放 candidate；state/store/session-db subject 事件只刷新对应 id；unknown source 才做一次 bounded recovery seed。
+- 100ms `hotSignature()` 只遍历 owned candidate set；backend recovery 才做一次全量 seed。
+- archived/stopped/queued/unbound/hazard rows 走 close/cold-proof/repair/warm 路径，不成为第二套 cleanup authority。
+
+隔离真实 worker A/B（682 records = 667 archived + 15 active；active 有合法 leaf receipt，archived 只留历史 pid artifact；真实 delta SSE + 60 次真实 session-state hook；window CPU，old/current plain dist 各两轮）：
+
+| build | empty CPU | stream CPU | burst CPU | list-panes | burst RSS |
+|---|---:|---:|---:|---:|---:|
+| old run 1 | 59.03% | 33.97% | 53.37% | 110 | 298,528 KiB |
+| old run 2 | 57.60% | 34.13% | 60.03% | 122 | 331,884 KiB |
+| current run 1 | 57.81% | 28.37% | 23.39% | 51 | 279,632 KiB |
+| current run 2 | 58.17% | 28.14% | 22.53% | 49 | 291,104 KiB |
+
+均值：delta stream `34.05% -> 28.26%`；hook burst `56.70% -> 22.96%`；tmux census `116 -> 50`。短样本 CPU 会抖，但 candidate cardinality/census 结构性证据稳定：archived history 已从 hot path 拿掉，active runtime 仍保留。
+
+验证：liveness/hot/graph/session projection `51/51`；session-application `45/45`；source projection gate PASS；ESLint PASS；`spex spec lint` 0 errors（仓库既有 warnings）。typecheck/build 仍只有既有 `DisplayStatus`/`archived` 类型错误。
+
+报告：[[file:active-runtime-cpu-report.html]]
+
+边界：SQLite FULL synchronous 下的空 cursor→unknown→full-splice burst bug（fixC）尚未合入；它是独立的 graph-stream spec-first 后续，不与本次 active-owned hot candidate 重构混合。macmini/macOS 未操作。
