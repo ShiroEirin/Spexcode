@@ -77,6 +77,8 @@ export interface ChangedSessionIds {
   dataVersion: number
   /** Distinct event subjects appended after the requested watermark. */
   subjectSessionIds: string[]
+  /** Watcher recipients currently attached to those subjects, resolved inside the same read barrier. */
+  recipientSessionIds: string[]
 }
 
 export interface NativeRuntimeIdentity {
@@ -677,10 +679,13 @@ export function openProjectSessionApplication(options: ProjectSessionApplication
         if (!Number.isSafeInteger(nextWatermark) || nextWatermark < watermark) {
           throw new Error('session event watermark is outside the safe integer range')
         }
+        const subjectSessionIds = [...new Set(rows.map(row => String(row.subject_session_id)))]
+        const recipientSessionIds = [...new Set(subjectSessionIds.flatMap(subject => topology.recipients(subject, tx)))]
         return {
           watermark: nextWatermark,
           dataVersion: Number(tx.query('PRAGMA data_version')[0]?.data_version),
-          subjectSessionIds: [...new Set(rows.map(row => String(row.subject_session_id)))],
+          subjectSessionIds,
+          recipientSessionIds,
         }
       })
     },

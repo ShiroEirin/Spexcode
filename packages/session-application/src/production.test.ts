@@ -74,17 +74,22 @@ test('session event watermark returns only subjects appended after the prior cur
     assert.ok(first.watermark > 0)
     assert.ok(Number.isSafeInteger(first.dataVersion))
     assert.deepEqual(first.subjectSessionIds, ['first'])
+    assert.deepEqual(first.recipientSessionIds, [])
 
+    app.createSession({ sessionId: 'watcher' })
+    app.attachAndNotify('watcher', 'first', 'watch', { kind: 'fixture.watch.v1', body: Buffer.from('watch') })
     app.createSession({ sessionId: 'second' })
     app.transitionSession('first', { status: 'active' })
     const second = app.readChangedSessionIdsSince(first.watermark)
     assert.ok(second.watermark > first.watermark)
-    assert.deepEqual(second.subjectSessionIds, ['second', 'first'])
+    assert.deepEqual(second.subjectSessionIds, ['watcher', 'second', 'first'])
+    assert.deepEqual(second.recipientSessionIds, ['watcher'])
 
     const settled = app.readChangedSessionIdsSince(second.watermark)
     assert.equal(settled.watermark, second.watermark)
     assert.equal(settled.dataVersion, second.dataVersion)
     assert.deepEqual(settled.subjectSessionIds, [])
+    assert.deepEqual(settled.recipientSessionIds, [])
   } finally {
     app.close()
   }

@@ -884,7 +884,6 @@ async function withSessionTransition<T>(id: string, body: () => Promise<T>): Pro
   }
 }
 setRecordTransitionWrapper(withSessionTransition)
-let draining = false   // re-entrancy guard: only one drain pass runs at a time (no double-launch)
 // A native receipt is bound before the readiness fence validates it. Suppress only that immediate wake so
 // queued prompts cannot drain during the candidate window; the successful publication path drains normally.
 const readinessWakeSuppressed = new Set<string>()
@@ -949,6 +948,77 @@ function noteQueuedLaunchFailureUnlocked(id: string, error: unknown, terminal = 
   }
 }
 
+const deliveryDebtIds = new Set<string>()
+let deliveryNeedsRecovery = true
+let deliveryRecoveryRoot: string | null = null
+
+export function noteDeliveryRecipients(ids: readonly string[]): void {
+  ensureDeliveryRecoveryRoot()
+  for (const id of ids) if (typeof id === 'string' && id.length) deliveryDebtIds.add(id)
+}
+
+export function requestDeliveryRecovery(): void {
+  ensureDeliveryRecoveryRoot()
+  deliveryNeedsRecovery = true
+}
+
+function ensureDeliveryRecoveryRoot(): void {
+  const root = runtimeRoot()
+  if (deliveryRecoveryRoot === root) return
+  deliveryRecoveryRoot = root
+  deliveryDebtIds.clear()
+  deliveryNeedsRecovery = true
+}
+
+const queueCandidateIds = new Set<string>()
+let queueCandidatesSeeded = false
+let queueNeedsRecovery = true
+let queueCandidatesRoot: string | null = null
+
+function ensureQueueCandidatesRoot(): void {
+  const root = runtimeRoot()
+  if (queueCandidatesRoot === root) return
+  queueCandidatesRoot = root
+  queueCandidatesSeeded = false
+  queueNeedsRecovery = true
+  queueCandidateIds.clear()
+}
+
+function queueCandidateEligible(rec: SessRec): boolean {
+  return !rec.archived || !!rec.launchReadinessPending
+}
+
+export function refreshQueueCandidate(id: string): void {
+  ensureQueueCandidatesRoot()
+  try {
+    const rec = readRecord(id)
+    if (rec && queueCandidateEligible(rec)) queueCandidateIds.add(id)
+    else queueCandidateIds.delete(id)
+  } catch { queueCandidateIds.delete(id) }
+}
+
+export function seedQueueCandidates(force = false): void {
+  ensureQueueCandidatesRoot()
+  if (queueCandidatesSeeded && !force) return
+  const next = new Set<string>()
+  for (const id of listSessionIds()) {
+    try {
+      const entry = readPublicRecordEntry(id)
+      if (entry.kind !== 'ok') continue
+      const raw = entry.raw
+      if (!raw.archived || raw.launch_readiness_pending) next.add(id)
+    } catch { /* the next event/recovery pass retries an unreadable row */ }
+  }
+  queueCandidateIds.clear()
+  for (const id of next) queueCandidateIds.add(id)
+  queueCandidatesSeeded = true
+  queueNeedsRecovery = false
+}
+
+export function requestQueueRecovery(): void {
+  queueNeedsRecovery = true
+}
+
 function clearReadinessResidueUnlocked(rec: SessRec, clearDiagnostic: boolean): void {
   const application = configuredSessionApplication()
   const next = {
@@ -975,15 +1045,25 @@ export function sessionHasPendingDelivery(
     & Partial<Pick<ProductionSessionApplication, 'resolveRuntime'>>
     = configuredSessionApplication(),
 ): boolean {
+  ensureDeliveryRecoveryRoot()
   const runtime = application.resolveRuntime?.(id, 'spex-governed')
-  if (runtime !== undefined && runtime?.status !== 'bound') return false   // no binding, or one released by a stop/close
+  if (runtime !== undefined && runtime?.status !== 'bound') {
+    deliveryDebtIds.delete(id)
+    return false   // no binding, or one released by a stop/close
+  }
   try {
-    return application.readPendingMessages(id).length > 0
+    const pending = application.readPendingMessages(id).length > 0
+    if (pending) deliveryDebtIds.add(id)
+    else deliveryDebtIds.delete(id)
+    return pending
   } catch (error) {
     // A legacy record can outlive its migrated protocol address. It has no canonical queue to drain;
     // treating that address as owed makes the supervisor retry the same impossible lookup forever.
     if ((error as { code?: string })?.code === 'PROTOCOL_SESSION_UNKNOWN'
-      || /unknown protocol address/i.test(error instanceof Error ? error.message : String(error))) return false
+      || /unknown protocol address/i.test(error instanceof Error ? error.message : String(error))) {
+      deliveryDebtIds.delete(id)
+      return false
+    }
     throw error
   }
 }
@@ -1222,14 +1302,22 @@ function readQueueRecord(id: string): SessRec | null {
   }
 }
 
+let queueDrainFlight: Promise<void> | null = null
 async function drainQueueUnlocked(): Promise<void> {
-  if (draining) return
-  draining = true
-  try {
+  if (queueDrainFlight) {
+    const previous = queueDrainFlight
+    await previous
+    if (queueDrainFlight === previous) queueDrainFlight = null
+  }
+  if (queueDrainFlight) return queueDrainFlight
+  const run = (async () => {
+    ensureQueueCandidatesRoot()
     const cap = maxActive()   // read once per drain pass (.spec/spexcode.json → env → default); won't shift mid-burst
     for (;;) {
+      if (queueNeedsRecovery || !queueCandidatesSeeded) seedQueueCandidates(true)
+      const candidateIds = [...queueCandidateIds]
       const snap = await liveSnapshot()
-      const sessions = await listSessions(false, undefined, snap, true)
+      const sessions = await listSessions(false, candidateIds, snap, true)
       const records = new Map(sessions.map((session) => [session.id, readQueueRecord(session.id)]))
       const reservations = new Set(sessions.filter((session) => session.status === 'corrupt' || session.liveness === 'unknown'
         || !records.get(session.id) || records.get(session.id)?.launchReadinessPending).map((session) => session.id))
@@ -1316,7 +1404,11 @@ async function drainQueueUnlocked(): Promise<void> {
         break   // launch failed → stop this pass; a later tick retries
       }
     }
-  } finally { draining = false }
+  })()
+  queueDrainFlight = run
+  try { await run } finally {
+    if (queueDrainFlight === run) queueDrainFlight = null
+  }
 }
 export const drainQueue = (): Promise<void> => drainQueueUnlocked()
 const requestQueueDrain = (): void => {
@@ -1339,6 +1431,7 @@ export function setDeliveryHandover(handover: (id: string) => Promise<void>): vo
 // recipient with no bound runtime (stopped, closed, not yet launched) is not woken until a launch binds it.
 function wakeCommittedRecipients(recipients: readonly string[]): void {
   const wakeRecipients = recipients.filter(recipient => !readinessWakeSuppressed.has(recipient))
+  noteDeliveryRecipients(wakeRecipients)
   queueMicrotask(() => {
     void Promise.resolve().then(async () => {
       // Transition commits already carry the durable subject event. Reconcile that event into the watcher's
@@ -1418,6 +1511,7 @@ async function reconcileWatchDeliveries(application: ProductionSessionApplicatio
         idempotencyKey: `watch-event:${item.event.eventId}`,
       }, { text: rendered.text, from: item.subjectSessionId })
     }
+    noteDeliveryRecipients([item.watcherSessionId])
     application.advanceFollowCursor(item.watcherSessionId, item.subjectSessionId, item.event.eventSeq)
   }
 }
@@ -1433,10 +1527,16 @@ export function superviseDelivery(intervalMs = 1000): void {
   supervisingDelivery = true
   const tick = async () => {
     try {
+      ensureDeliveryRecoveryRoot()
       const application = configuredSessionApplication()
-      await reconcileWatchDeliveries(application)
+      if (deliveryNeedsRecovery) {
+        deliveryNeedsRecovery = false
+        await reconcileWatchDeliveries(application)
+        // A restart or unknown source pays the full recovery once; steady ticks carry only actual debt ids.
+        for (const id of listSessionIds()) sessionHasPendingDelivery(id, application)
+      }
       // Each owed queue gets its own loop; a harness holding one insert on its wall must not hold the others' retries.
-      for (const id of listSessionIds()) {
+      for (const id of [...deliveryDebtIds]) {
         if (!sessionHasPendingDelivery(id, application)) continue
         void drainSession(id).catch((error) => {
           console.error(`spex: delivery retry failed for ${id}: ${error instanceof Error ? error.message : String(error)}`)
@@ -3991,6 +4091,7 @@ export async function sendText(id: string, text: string, from?: string, opts: Se
   }
   const accepted = message
   if (!accepted) return { ok: false, error: `could not append the message to session ${id}'s application queue: no message was recorded` }
+  noteDeliveryRecipients([id])
   if (recordless) return { ok: true, delivery: 'queued', messageId: accepted.messageId, recordless: true }
     // Acceptance and handover are separate boundaries. A committed SQLite message remains a successful
     // command even when the runtime is currently unbound; binding/resume is the explicit event that makes
@@ -4047,7 +4148,10 @@ export async function drainSession(id: string): Promise<void> {
   if (rec.launchReadinessPending) return
   // An empty canonical queue is a successful no-op. Do not turn a resume with no owed prompt into a
   // runtime-binding error; require a bound adapter only when there is a message that must be handed over.
-  if (application.readPendingMessages(id).length === 0) return
+  if (application.readPendingMessages(id).length === 0) {
+    deliveryDebtIds.delete(id)
+    return
+  }
   const binding = application.resolveRuntime(id, 'spex-governed')
   if (!binding || binding.status !== 'bound') throw new ResourceConflict(`canonical delivery for ${id} remains pending: no bound spex-governed runtime`)
   // The queued row is the "still owed" mark: the running loop reads the queue again before it stops.

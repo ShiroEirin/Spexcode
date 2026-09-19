@@ -5,7 +5,7 @@ import { join, dirname, relative, resolve, basename } from 'node:path'
 import { sessionsRoot, gitCommonDir, repoRoot, isTrashWorktreePath } from '@spexcode/spec-core'
 import { resolveDatabasePath } from '@spexcode/session-application'
 import { configuredSessionApplication } from './session-application.js'
-import { listSessions, pendingSessionCreateWorktreePaths, notifyTurnFailureObservers } from './sessions.js'
+import { listSessions, pendingSessionCreateWorktreePaths, notifyTurnFailureObservers, refreshQueueCandidate, requestQueueRecovery, requestDeliveryRecovery, noteDeliveryRecipients } from './sessions.js'
 import { hotSignature, refreshHotLivenessCandidate, seedHotLivenessCandidates, warmSignature } from './session-liveness.js'
 import { getBoard, getBoardForSessionRefresh, invalidateBoard, patrolBoard, boardIdentity, readBoard, type Board } from './graphCache.js'
 import { diffFromPosition, positionOf, type Position } from '@spexcode/spec-core'
@@ -479,12 +479,15 @@ function ensureWatcher(root: string): void {
       const id = relativePath.split(/[\\/]/)[0]
       if (id && !id.includes('.')) notifyTurnFailureObservers([id])
       if (id && !id.includes('.')) refreshHotLivenessCandidate(id)
+      if (id && !id.includes('.')) refreshQueueCandidate(id)
       fireChanged('sessions', id && !id.includes('.') ? [id] : undefined)
     },
     onFailure: (error) => {
       if (storeWatcher === registry) storeWatcher = null
       noteSourceFailure('store', error)
       seedHotLivenessCandidates(true)
+      requestQueueRecovery()
+      requestDeliveryRecovery()
       fireChanged('sessions')
     },
   })
@@ -551,7 +554,11 @@ function sessionDatabaseChangedIds(notify = true): readonly string[] | null {
     sessionDatabaseVersion = changed.dataVersion
     if (notify && changed.subjectSessionIds.length) {
       notifyTurnFailureObservers(changed.subjectSessionIds)
-      for (const id of changed.subjectSessionIds) refreshHotLivenessCandidate(id)
+      for (const id of changed.subjectSessionIds) {
+        refreshHotLivenessCandidate(id)
+        refreshQueueCandidate(id)
+      }
+      noteDeliveryRecipients(changed.recipientSessionIds)
     }
     return changed.subjectSessionIds
   } catch (error) {
@@ -561,6 +568,8 @@ function sessionDatabaseChangedIds(notify = true): readonly string[] | null {
     sessionDatabaseMoved = true
     notifyTurnFailureObservers()
     seedHotLivenessCandidates(true)
+    requestQueueRecovery()
+    requestDeliveryRecovery()
     return null
   }
 }
@@ -596,6 +605,8 @@ function ensureSessionDatabaseWatcher(): void {
     sessionDatabaseMoved = true
     notifyTurnFailureObservers()
     seedHotLivenessCandidates(true)
+    requestQueueRecovery()
+    requestDeliveryRecovery()
     fireChanged('sessions')
   })
   sessionDatabaseWatcher = registry

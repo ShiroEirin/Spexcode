@@ -147,6 +147,13 @@ or closed session holds no binding, so its debt is kept but not polled: retrying
 be work that grows with every such session and delivers nothing, and the resume that binds it hands the debt over.
 Neither is privileged — the lock, not the process, is the guarantee.
 
+The retry supervisor's work set is debt-driven, not roster-driven. A backend seeds the set once at startup (or
+after an unknown source/recovery failure), adding only recipients with a bound runtime and pending debt; enqueue,
+post-commit wake, runtime bind, and an exact session event add or re-evaluate one recipient. Ordinary ticks inspect
+only that set and remove an id when its queue is empty or its binding is released. Durable archive rows and unbound
+queues remain retained facts, but do not cause a per-tick record or SQLite read. A full recovery pass is bounded and
+explicit, and remains the fallback when the event source cannot account for a change.
+
 The launch drainer uses the working projection, not the archive index. A settled archived row is historical
 data and never enters queue admission; the only terminal row admitted to this pass is one carrying an archived
 `launch_readiness_pending` original, because that durable resume transaction still owns a capacity slot. Queue
