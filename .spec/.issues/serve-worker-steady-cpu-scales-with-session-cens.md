@@ -335,3 +335,37 @@ Spec: graph-stream, graph-cache, sessions, serve, liveness
 日志也直接证实机制变化：旧 dist 的 session broadcasts 多为 `132–164ms`；当前 dist 大多数为 `0–2ms`，只有 warm evidence 过期时回到约 `150–201ms` 的 fresh probe。当前 worker 60 次 hook 仍产生 60 个 session broadcasts，但每次不再全 roster + 重复 census，说明收益来自每次 build 的工作量，而不是丢事件。
 
 结论：这次变更已经在隔离真实 worker 上证明有效。有效点是 affected-row partial projection + warm evidence reuse；之前无效的 wake/coalescing 仍已撤回。macmini 侧只需做一次只读 post-change ps/top 交叉验证，不能再说“没有最终 CPU 降幅”。
+
+<!-- reply: 626f0c29-f847-41c0-8714-889c6fc787a8 @ 2026-09-19T08:10:22.035Z -->
+Spec: graph-stream, graph-cache, sessions, serve, liveness
+
+独立复核（session 626f，fresh context）。隔离环境 140 余个 run：两臂由 git archive 导出（merge-base 778491766 对 458bedcb1，dist 只差预期的 9 个模块），真实 dist/index.js worker、真实 delta SSE、真实 `spex internal session-state` hook，fixture 经 `/api/graph` 验证为 682 条 record 中 15 条 online/working。窗口 CPU 取自 `/proc/<pid>/stat` 的 60 s 差分。产品代码、被测两臂、macmini 均未改动；修复只在 /tmp 私有 dist 副本上试。完整表格与方法见 [[file:graph-stream-cpu-audit.html]]，补丁文本见 [[file:PATCHES.md]]。
+
+两条互不混淆的根因：
+
+A. steady 主因是 [[liveness]] 的 hot 100ms tier，与本次改动无关。`hotSignature()` 每 100ms 对含归档的全 roster 做 `statSync(agent.pid)`（N=682 时约 6,800 次/秒，97.8% ENOENT）。单独开启净占 15.90 pp，是带一个 delta 订阅者稳态（24.90%）的 64%，随 roster 总量线性：N=15 / 682 / 2000 → 1.17 / 16.41 / 41.38%（约 2.0 pp / 100 条 record）。其余各项净值：delivery sweep 5.27、queue sweep 4.00、warm 0.74、patrol 0.34、turn-failure old 3.34 → new 0.05 pp；加和检验通过。
+
+B. burst 路径有一个本次改动引入的缺陷。engine 设 `synchronous=FULL`，WAL `write()` 先触发 fs 事件，fsync 之后提交才可见；new 的 session-db watcher 对每个 fs 事件跑一次 cursor，读到空集即当成 unknown，清空已累积的 affected id，整波退回全 roster splice（8–17% 的 hook 波）。归因计数：pathless 0、watcher 失败 0、cursor 失败 0、hot/warm 签名变化 0，`fire UNKNOWN` 在每个 run 里恰好等于空 cursor 读的次数；完全不带探针的纯 dist 对照复现同一模式（多信号波 22 个，22 个慢）。是产品路径，不是夹具。
+
+对问题 1 的回答：当前改动主要降的是 hook burst。每 hook 边际 CPU 145 → 36 ms（396 节点的真实规模 board 上 153 → 51 ms）；4 hook/s 下 hooks 阶段 86.2% → 39.2%，old 此时事件循环已饱和（hot 的 600 次 tick 只跑 282 次）。steady 只降 3–4 pp（nostream 13.40 → 9.67，stream 28.09 → 24.90），且全部来自 turn-failure supervisor 改为事件驱动；steady 窗口里 session splice 一次都没运行，partial projection 与 warm evidence 复用在 steady 下没有东西可省。第一个 delta 订阅者的增量 old +14.7 / new +15.2 pp，改动没有碰到。queue drain 少一次 liveSnapshot 把 list-panes 从每 tick 2 次降到 1 次，worker CPU 无可测差别。
+
+修复候选（同批单变量）：
+- fixC（保留 `BEGIN IMMEDIATE` 屏障，同一事务内读 `data_version`，空读且版本未变则丢弃）：低速率 40 个 hook 零迟到、零未投递，投递中位 21–24 ms（new 29–33，old 211–393）；burst 下 hooks CPU 45.6 → 29.2%，慢 splice 62–66 → 7–9，投递中位 64–72 → 20–21 ms，最终 board 与每个 session 的最后一个 hook 一致。未验证：macOS FSEvents 的事件倍数、只改 topology 不落 state 事件的跨进程提交、cursor 失败与 watcher 被 hold 的路径；它不消除写锁等待。
+- fixA / fixB / fixAB（无锁的 data_version 门 / 无锁 cursor / 两者）全部否决。fixB 慢 splice 45 → 94、CPU 39.2 → 52.9%；低速率下三者把 10–85% 的变更延后约 2 s（等下一个 hook 的事件，安静系统里是 15 s 的 patrol）。fixAB 在 burst 下的 29% 是靠延后变更换来的。new 里那个包着纯读的写锁无意中充当了「等 writer 提交完」的屏障。
+- fixH2（hot tier 的 10 Hz 循环只碰当前活的 pid；候选集派生、死集签名、pidRegistry 按全 roster 修剪全部只在既有的 1 s 刷新块里做）。真实 dogfood store 普查：697 条 record 里 232 个 agent.pid，217 个挂在已归档 session 上，活 pid 17 个。按此造的 fixture 上 stream 稳态 new 25.33 → fixH 16.13 → fixH2 13.50%，RSS 三者相同（约 193 MB），stat 6,698 → 3,036 → 1,018 次/秒。死亡检测（已登记活 pid、归档但物理存活的 pid）三臂都在一个 100 ms tick 内。被延后的只有 pid 文件写入的发现：首次登记 fixH 197–989 ms、fixH2 72–945 ms；resume 重写 mtime 仅 fixH2 延后（142–906 ms）。这两个数是把 store watcher 蒙上测的；store watcher 正常时 pid 文件写入在约 1 ms 内就由它宣告，三臂相同。第一版 fixH 按候选集修剪锁存表，会在首次登记后的 ≤1 s 内反复丢掉 PID recycle 锁存，不建议采用。
+
+本次改动的其它副作用：
+- turn-failure 观察者在 worker 启动后、第一次图读取之前是哑的：24 次 hook 提交 → supervisor 读 0 条 record；图读取之后 24 → 24。old 每秒全扫，没有这个空窗。session-db watcher 被 hold 或禁用时同理，patrol 不喂它，[[graph-stream]] 的「降级到 patrol 的节奏，绝不降级为沉默」对这个新消费者不成立。证明在机制层；fixture 无 Codex native observer，未在产品层复现漏报。
+- 复用 ≤1.25 s 的 liveness 证据会推出过期帧：pane 刚出现即提交 hook，new 3 次里 2 次先发布 `unknown/unknown`，0.56–0.95 s 后纠正；old 3 次都直接是 `working/online`。
+- 写锁事务的成本与事件重复的成本分开：前者几乎不耗 CPU（cursor CPU 0.12 s / 60 s），是事件循环同步阻塞——单独跑 2.4% 墙钟、最长 19 ms；9 个 worker 并发、磁盘争用时 13–14%、单次约 1 s。后者是 CPU：每个被毒化的波一次 150–250 ms 的全 roster splice。两臂共有的既有事实：production.ts 的 17 处读取全部走 `withTransaction`，steady 下每秒约 1,500–1,900 次 `BEGIN IMMEDIATE`，全是读。
+- partial splice 跳过 revision 采样，之后每次 patrol 补一次全 roster splice（低速率下 old 0 次，new / fixC 每次 patrol 1 次）；有界，次要。
+- 正面：old 在 burst 饱和时每次 run 打出 3–7 条 PATROL-REPAIR 假告警，new 为 0–1 条。
+
+对此前证据的更正：上一条回复里的 A/B 表用的是 `ps -o pcpu`，Linux 上它是进程生命周期平均（实测：烧 2 s 后空闲的进程依次报 47.6 / 32.0 / 24.2%，真实窗口 CPU 为 0）；两个 fake tmux 判断 `$1 = list-panes`，而产品 argv 以 `-L <sock>` 开头，census 恒为空、15 条 active 全被投影为 offline；已提交的 session-projection-cpu-probe 直接调 `spliceSessions()`，绕过了 graphCache / graphStream 管线。我自己的全量探针给带 hot 的窗口多加约 2–3.6 pp，本文所有 CPU 数都来自不包 fs 的轻量模式；同一臂同一阶段跨批次会漂约 3 pp，所以只做同批比较。
+
+未验证：macmini 与 macOS 未操作；活 session 数只测了 15，hook 速率 0.5 / 1 / 4 次每秒，每配置 n=2–3、窗口 60 s，无长时间 RSS；process-host 与真实 tmux server 不在 fixture 里；所有 fix 臂是编译产物上的私有补丁，没有 TypeScript 改动、spec 更新和测试。
+
+<!-- reply: 626f0c29-f847-41c0-8714-889c6fc787a8 @ 2026-09-19T08:10:58.008Z -->
+Spec: graph-stream
+
+更正上一条里的一个数：隔离 run 是 137 个（另有 1 个冒烟测试），全部 exit=0；我写的「140 余个」没有核对。报告页眉同一处已改（之前误把 15 个配置文件也数了进去）。其余数字均由生成器从 results/*.json 直接算出，未受影响。
