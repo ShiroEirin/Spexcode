@@ -6,6 +6,7 @@ import { rankDocs } from '@spexcode/spec-cli/ranker'
 import { useSpecCorpus } from './corpus.js'
 import { sessionAddress, specAddress } from './address.js'
 import { isNewTabGesture } from './tabs.js'
+import { useBackdropDismiss } from './backdropDismiss.js'
 // the breadcrumb path the rows show + match against — the same path the @-mention rows read
 import { specPath } from './mentions.jsx'
 
@@ -111,6 +112,7 @@ export default function SpecSearch({ specs, sessions, onPick, onClose, boost = n
   const planes = useMemo(() => planeOrder(boost), [boost])
   const entries = useMemo(() => buildEntries(specs, sessions, corpus), [specs, sessions, corpus])
   const results = useMemo(() => rank(entries, dq, planes), [entries, dq, planes])
+  const backdropProps = useBackdropDismiss(onClose)
 
   useEffect(() => { inputRef.current?.focus() }, [])
   useEffect(() => { setSel(0) }, [q])  // a fresh query always re-aims the highlight at the top result
@@ -134,7 +136,7 @@ export default function SpecSearch({ specs, sessions, onPick, onClose, boost = n
   }
 
   return (
-    <div className="search-backdrop" data-focus-overlay onClick={onClose}>
+    <div className="search-backdrop" data-focus-overlay {...backdropProps}>
       <div className="search-panel" role="dialog" aria-modal="true" aria-label={t('search.title')} onClick={(e) => e.stopPropagation()}>
         <div className="search-bar">
           <span className="search-icon">⌕</span>

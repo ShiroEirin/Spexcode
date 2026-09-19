@@ -14,6 +14,7 @@ import {
   readCodexGenerationLedger,
   codexGenerationLedgerCacheStatsForTests,
   reclaimDrainingCodexGeneration,
+  rebindCodexGeneration,
   rotateCodexCurrentGeneration,
   resolveCodexGenerationForResume,
   resolveCodexGenerationForClose,
@@ -102,6 +103,12 @@ test('detached-v3 switch preserves a populated legacy generation while new traff
 
     bindCodexGeneration(root, 'new-governed', 'thread-new-governed', current.id)
     assert.equal(resolveCodexGenerationForSession(root, 'new-governed', 'thread-new-governed')?.id, current.id)
+    rebindCodexGeneration(root, 'new-governed', 'thread-new-governed', 'thread-new-governed-successor')
+    assert.equal(readCodexGenerationLedger(root).bindings['new-governed']?.threadId, 'thread-new-governed-successor')
+    assert.equal(resolveCodexGenerationForSession(root, 'new-governed', 'thread-new-governed-successor')?.id, current.id)
+    assert.equal(resolveCodexGenerationForSession(root, 'new-governed', 'thread-new-governed'), null,
+      'the predecessor is no longer a routable target after a native fork successor is committed')
+    assert.throws(() => rebindCodexGeneration(root, 'new-governed', 'thread-new-governed', 'stale-successor'), /no exact predecessor binding/)
     const recoveredRegistration = 'registration-recovered'
     const recoveredThread = 'thread-registration-recovered'
     mkdirSync(join(root, 'sessions', recoveredRegistration))

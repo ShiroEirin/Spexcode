@@ -54,3 +54,11 @@ test:distribution` runs the gate's exact argv, taken from the script, against a 
 dynamic-workflow branch — headless auto-approves `CreateWorkflow` and waits for the run to settle — on a real
 repository with no `.spec/`, measured by what lands: a spec tree that passes lint, diagrams that pass their
 check, and a page that opens from disk.
+
+**What the script ASSEMBLES cannot be translated by a prompt.** Every agent in the run is told to write in the
+reader's language, and the tree came back entirely in it — while the handover report still carried an English
+heading, English section titles and English skip reasons. Two different causes, one lesson: the report is built
+by the script itself, so its fixed words are data the language instruction never reaches, and they sit beside
+`LANGUAGE` to be translated by the same edit; and the planner, which produces the skip reasons, was the one
+prompt that never named the language. A run is not in the reader's language until the parts nobody prompted
+are too.

@@ -116,7 +116,9 @@ walk — is [[session-forest]]'s. The forest registers that walk with the shared
 the rows it owns; the document keeps the input, menu, and plain-arrow portions of the console scope. It keeps
 no BOOKKEEPING for the walk either — no second index of which rows are foldable — because a derived set kept
 beside a mechanism it no longer drives is how the two drift back apart. The document is bounded by
-the routed page's viewport and owns the terminal/timeline surface without a second navigation scrollbar.
+the routed page's viewport and owns the terminal/timeline surface without a second navigation scrollbar. The
+archive overlay's outside-close gesture follows [[backdrop-dismiss]], so dragging a search selection beyond
+the page does not dismiss the index.
 
 **New Session** is the console's launch tab — the [[launch-hero]] wordmark over the launch composer and the launcher
 picker; its grammar, background fire, and picker are [[new-session-tab]]'s. Its focused composer submits on plain
@@ -125,7 +127,7 @@ is the pointer twin, while an open completion menu consumes Enter for its highli
 When its create response publishes a session id, the address is marked for a new tab before routing so creation
 appends a fresh workspace tab and cannot replace the session tab the reader was on.
 The picker has no configuration or add action; its pop-out exposes a settings link, and launcher profiles are
-owned by the routed Settings page.
+owned by the routed Settings page. Its outside-close backdrop follows [[backdrop-dismiss]] as well.
 The default Conversation launch also carries `initialReplyVia:"note"` in the create request, so a pane-backed launcher
 receives the first-turn note-flow guidance before the timeline can show its reply; a launch whose resolved base
 surface is Terminal leaves that field absent and keeps ordinary terminal output.

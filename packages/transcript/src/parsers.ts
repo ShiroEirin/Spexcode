@@ -165,7 +165,7 @@ const blockText = (content: unknown): string | null => typeof content === 'strin
   ? string(content)
   : items(content).map((block) => string(object(block)?.text)).filter(Boolean).join('\n') || null
 
-export function codexEvent(value: unknown): ParsedEvent | null {
+export function codexEvent(value: unknown, responseItemProse = false): ParsedEvent | null {
   const entry = object(value)
   const payload = object(entry?.payload)
   if (!entry || !payload) return null
@@ -185,10 +185,14 @@ export function codexEvent(value: unknown): ParsedEvent | null {
   // reading both would say every sentence twice. An empty event (a final answer that was a tool call) is a clock,
   // not a turn. Structured reasoning stays private.
   if (entry.type === 'event_msg' && type === 'agent_message') {
+    if (responseItemProse) return { at: eventAt, turn: null }
     const text = string(payload.message ?? payload.text)
     return text ? { at: eventAt, turn: { id: idOf(payload) ?? idOf(entry), at: eventAt, role: 'assistant', text, tools: [] } } : { at: eventAt, turn: null }
   }
-  if (entry.type === 'response_item' && type === 'message' && payload.role === 'assistant') return { at: eventAt, turn: null }
+  if (entry.type === 'response_item' && type === 'message' && payload.role === 'assistant') {
+    const text = responseItemProse ? blockText(payload.content) : null
+    return text ? { at: eventAt, turn: { id: idOf(payload) ?? idOf(entry), at: eventAt, role: 'assistant', text, tools: [] } } : { at: eventAt, turn: null }
+  }
   if (entry.type === 'response_item' && (type === 'custom_tool_call' || type === 'function_call')) {
     const id = string(payload.call_id ?? payload.id) ?? 'tool'
     const rawInput = payload.input === undefined && payload.arguments === undefined ? undefined : compact(payload.input ?? payload.arguments)
@@ -212,6 +216,17 @@ export function codexEvent(value: unknown): ParsedEvent | null {
     return id ? { at: eventAt, turn: null, toolOutputs: [{ id, text: resultText(output) }] } : null
   }
   return null
+}
+
+// Codex 0.153 moved prose out of event_msg/agent_message and leaves the same final answer only in
+// response_item/message. Keep the version choice at the native parser seam: older rollouts retain the
+// event form, while the current form is read once here instead of making every transcript surface guess.
+export function codexRolloutEvent(header: unknown): Parse {
+  const entry = object(header)
+  const version = entry?.type === 'session_meta' ? string(object(entry.payload)?.cli_version) : null
+  const [major, minor] = version ? version.split('.').map(Number) : []
+  const responseItemProse = major > 0 || (major === 0 && minor >= 153)
+  return (value) => codexEvent(value, responseItemProse)
 }
 
 // A file edit names the paths it touched, and its result is the diff the app-server already computed. Both

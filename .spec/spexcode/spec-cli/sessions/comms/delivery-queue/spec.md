@@ -75,6 +75,10 @@ refuses, cannot reach, or that throws ENDS the loop with the entry still queued,
 behind it — order is a property of a conversation, so a message is never skipped to deliver a later one. A loop
 that ends on a held head logs the adapter's reason once per message and reason, so owed debt is never silent and
 a retried refusal does not repeat.
+An attached runtime that is still inside [[stop-resume]]'s pending publication transaction is not yet admitted
+for ordinary input. Both the drain entry and each claimed head recheck the same fence, retaining debt until
+readiness publication completes. A binding alone cannot bypass that ordering boundary; interrupted recovery
+settles the transaction before handing over the messages owed during restore.
 
 The lock spans one insert deliberately, never a whole queue, and it is NOT the record lock: the record lock cannot
 span an adapter call (a native turn runs lifecycle hooks that re-enter the record writer, which is a deadlock),
@@ -142,6 +146,13 @@ holds no record for the session answers `404` instead of an `ok` it cannot honou
 or closed session holds no binding, so its debt is kept but not polled: retrying a runtime that is not there would
 be work that grows with every such session and delivers nothing, and the resume that binds it hands the debt over.
 Neither is privileged — the lock, not the process, is the guarantee.
+
+The launch drainer uses the working projection, not the archive index. A settled archived row is historical
+data and never enters queue admission; the only terminal row admitted to this pass is one carrying an archived
+`launch_readiness_pending` original, because that durable resume transaction still owns a capacity slot. Queue
+capacity is derived from the current pass's typed record outcomes (`corrupt`, `unknown`, or pending), while
+diagnostic deduplication is separate logging state. This keeps the queue's work set bounded by runnable or
+in-flight work rather than by the lifetime of archived history.
 
 **Delivery has exactly one shape: an ordinary prompt.** The agent receives a message the same way it receives
 anything else a human types, through the harness adapter's control channel. There is no second injection path

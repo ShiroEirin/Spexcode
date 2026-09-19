@@ -27,6 +27,17 @@ const visibleNow = (el) => {
 }
 const focusableNow = (el) => !!(el && el.isConnected && !el.disabled && visibleNow(el))
 
+// The shared authored-input target for the keyboard service. Querying the marker keeps this boundary
+// independent of which routed home is showing, while `focusableNow` filters warm hidden documents and busy
+// disabled composers out of the candidates.
+export function focusComposer() {
+  if (typeof document === 'undefined') return false
+  const target = [...document.querySelectorAll('[data-composer-focus]')].find(focusableNow)
+  if (!target) return false
+  target.focus({ preventScroll: true })
+  return document.activeElement === target
+}
+
 if (typeof window !== 'undefined') {
   window.addEventListener('focusin', (e) => {
     const el = e.target

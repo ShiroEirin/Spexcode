@@ -53,14 +53,18 @@ name collision.
 
 Launch readiness is the one durable internal publication fence within that record. Its pending value freezes
 the exact pre-resume lifecycle/proposal/note/stopped/archived and offline projection while the raw candidate is
-available to the adapter's post-launch validator. The record/layout boundary owns one public-record parser:
+available to the adapter's post-launch validator. [[resume-record-projection]] owns the one public-record parser:
 list/API/graph, resource owners and shared references, resolved-layout settings, and the timeline observer all
 consume that same three-way projected entry rather than raw candidate fields. A successful fence clear
-publishes the final record and its lifecycle event once; failure or stale recovery restores the original and
-emits nothing. Malformed pending bytes are a corrupt/unknown public entry everywhere, never a reason to reuse a
+publishes the final record and its lifecycle event once; proven-offline failure/stale recovery detaches the
+candidate binding before restoring the original, while a live or ambiguous candidate retains the fence.
+Failed/offline recovery emits nothing. Malformed pending bytes are a corrupt/unknown public entry everywhere, never a reason to reuse a
 last-known online row, perform a git walk, or infer an owner from candidate lifecycle fields. "Malformed"
 includes a structurally complete original whose lifecycle or proposal string is outside the same closed enums
-the typed session reader accepts. While the fence exists, the compact public display is pinned offline rather
+the typed session reader accepts ([[session-state-model]] includes the human-owned archived terminal marker,
+while declaration writers accept only its narrower work-state domain). The typed writer validates a composed
+pending fence before atomic publication, so it cannot publish bytes its own readers reject.
+While the fence exists, the compact public display is pinned offline rather
 than reconciled from candidate runtime evidence, even if the frozen original says `stopped:false` with an
 `active`/`idle` lifecycle and a candidate process is live.
 

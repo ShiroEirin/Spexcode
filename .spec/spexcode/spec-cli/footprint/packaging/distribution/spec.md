@@ -68,7 +68,11 @@ the instruction, not an assumption: npx reads npm's config from the working dire
 directory is the repository being drawn — a company monorepo routinely ships an `.npmrc` pinning an internal
 registry that has never heard of SpexCode, so the skill's first command dies against a host the reader cannot
 reach. Every package names the public registry for its own fetch, which says nothing about how that repository
-installs its own dependencies.
+installs its own dependencies. **Generated is not the same as covered.** The ZCode package also ships a
+hand-written workflow script the generator never touches, and it drifted exactly where nobody was looking:
+every `SKILL.md` moved to the public registry and off the prerelease pin while that script kept fetching
+`spexcode@next` with no registry, in the very argv ZCode executes. A gate that reads only the generated files
+cannot see a hand-written one, so the gate reads every shipped file that spells the command.
 
 **A package is installable by the command its host actually offers.** Matching a host's file shape is only half
 of it: Claude Code and Codex both resolve a plugin out of a MARKETPLACE, never a bare plugin directory. A plugin
@@ -93,8 +97,11 @@ job left for them.
 **Generated from one source, written by hand where a person decides.** `npm run build:distribution` writes every
 manifest and every `SKILL.md` from the atlas preset in `.plugins`, read through the same projection that writes
 the init templates, so each package says what adopters are seeded; it adds only the lines a repository without
-SpexCode needs first and the line that hands over the page. Versions follow the repository's version, and while
-that is a prerelease every command names npm's `next` tag, the only tag carrying these verbs. The gugu tab's
+SpexCode needs first and the line that hands over the page. Versions follow the repository's version, and the TAG follows from it: while
+that version is a prerelease every command names npm's `next` tag, the only tag then carrying these verbs;
+once it is a release they name no tag at all, because `latest` is the release and `next` is by then the older
+of the two — a package still pinning `@next` hands an adopter a build older than the one they would get by
+asking for nothing. The gugu tab's
 copies of archify — the renderer bundled for a browser, the focus module, the stylesheet — are generated from
 `packages/archify` with a pinned esbuild, so they stay byte-for-byte what the dashboard draws. gugu's shelf parses
 each `.js` file as a classic script, so the generated focus helper and prompt expose globals. Archify keeps its

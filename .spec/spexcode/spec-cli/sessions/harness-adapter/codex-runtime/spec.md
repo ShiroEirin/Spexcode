@@ -162,6 +162,19 @@ authoritative resolved `launch` payload remains means resume replays that payloa
 adapter's proof that identity AND the first durable turn both landed may bind the id and consume the payload. A
 missing payload leaves the record unchanged and refuses loudly.
 
+### Native thread succession
+
+The SpexCode session id is the stable product address; the Codex thread id is a replaceable native
+execution address. Codex TUI rewind/backtrack may fork the current conversation and switch the TUI to a
+new thread whose `forkedFromId` is the previously bound thread. The shared-runtime adapter opens one
+observer for the app-server generation and reports exact `{ previousThreadId, nextThreadId, runtimeKey }`
+successor pairs. The session layer maps the predecessor to its unique SpexCode record, then rebinds the same
+record, runtime binding, and generation ledger entry under the record lock, preserving the generation while
+replacing only the native target. A notification with no exact parent,
+an already changed record, or a failed rebind is ignored or reported as a refusal; it must never guess from
+cwd, title, rollout order, or another loaded thread. All later transcript, delivery, liveness, resume, and
+cold-operation reads resolve the newly bound child through the unchanged SpexCode session id.
+
 ## Liveness is the pane's process tree
 
 A session is live when its tmux window is up AND a codex process lives among the pane pid's DESCENDANTS —
@@ -241,29 +254,54 @@ unknown probe returns an unknown refcount rather than a record-derived fallback,
 uncertainty as its own fail-closed blocker.
 
 **Projection and mutation are separate capabilities, and cost decides the boundary.** Resource reporting may read
-every loaded reference to describe turn presence. Lifecycle mutation uses the paginated loaded-ID set, both exact
-target descendant collections, and the whole-collection census — whose rows already carry each thread's live turn
-state, so presence for every member is answered by reads the proof performs anyway. A gate asks whether a turn is
-in flight at the TIP, so its cost must track how many threads exist, never how much history any one holds: a
-per-thread transcript read makes a long-lived session unmutatable against any fixed budget, and raising the
-budget only moves the threshold. Turn IDENTITY is the separate question — only interrupt must name the turn it
-interrupts, so only interrupt pays a transcript read, against a target that is active by definition. Presence the
-daemon did not report, including two native sources contradicting each other, never becomes an `active` verdict.
+every loaded reference to describe turn presence. Lifecycle mutation proves one target subtree, so its cost tracks
+that subtree: never how much history any one thread holds, and never how many threads the host has ever created.
+Both grow without bound on a long-lived host. A per-thread transcript read makes a long-lived session unmutatable
+against any fixed budget, and raising the budget only moves the threshold. A whole-collection census makes every
+close slower than the one before it, because each close adds a row to the archived collection the next close
+reads. So a record-backed mutation reads the paginated loaded-ID set, both exact target descendant collections,
+and scoped rows only: the target's own rows through the exact `cwd` its governed record binds, the rows of any
+descendant whose `cwd` differs through that `cwd`, and each subtree member's direct children through
+`parentThreadId`. Every `thread/list` row already carries its live turn state, its direct parent, and its `cwd`,
+so presence and ownership for every member are answered by reads the proof performs anyway. Turn IDENTITY is the
+separate question — only interrupt must name the turn it interrupts, so only interrupt pays a transcript read,
+against a target that is active by definition. Presence the daemon did not report, including two native sources
+contradicting each other, never becomes an `active` verdict.
 The periodic report keeps a short bounded probe budget while a mutation's target census gets its own longer one,
 so a busy daemon cannot turn a safe proof into a false refusal; a transport-local census refusal retries a small
 bounded number of times under the same generation fence, while a semantic ownership refusal returns at once.
 
-**Teardown.** Ordinary stop reads the target and refuses descendants. Cold archive treats the native
-`ancestorThreadId` result as an ownership closure at all depths excluding the ancestor, verifies every member's
-direct-parent chain against the active and archived collections, establishes every loaded member's turn presence
-from those same collections, and archives the initially-active closure deepest-first with the ancestor last;
-already-archived members are proof, not mutation. Afterwards it re-censuses the identical closure and requires
-the whole subtree unloaded and uniquely archived while unrelated loaded siblings stay intact. Duplicate
-active/archived membership, a member absent from both collections, changed ancestry, or a late replacement fails
-closed. For Codex cold teardown alone, an otherwise uniquely-owned member with unknown presence may consult the
-final record in its durable rollout tail: a terminal native event proves the turn settled, while a missing,
-unreadable, incomplete, or non-terminal tail stays fail-closed and names both the live client and the rollout
-evidence in its refusal. A live `active` report remains an immediate refusal the tail cannot override.
+**A filter is a request, not a proof.** The native server silently ignores a filter key it does not know and
+answers with the whole collection. Every scoped read therefore checks each returned row against the predicate it
+asked for — the row's `cwd` equals the requested `cwd`, the row's `parentThreadId` equals the requested parent —
+and one violating row refuses the mutation and names the filter. A record that binds no worktree `cwd` refuses
+too, rather than widening its own scope. The whole-collection census survives only where no record exists to
+bind a `cwd` (quarantine, below).
+
+**Teardown.** Ordinary stop reads the target through its record's `cwd` and refuses descendants. Cold archive
+treats the native `ancestorThreadId` result as an ownership closure at all depths excluding the ancestor, and
+holds every fact about that closure to a second native witness before it may mutate. The target must occur in
+exactly one of the active and archived collections scoped to its record's `cwd`, on a row whose `cwd` is that
+binding. Every descendant must occur in exactly one collection scoped to its own `cwd`, and that assignment must
+equal the descendant collection that returned it. Every member's direct-parent chain must reach the target
+without a gap or a cycle, and the closure must equal the union of the subtree's direct-children reads: a child
+the closure lacks, a closure member no parent returned, or one id under two parents refuses. Every loaded
+member's turn presence comes from those same rows. It then archives the initially-active closure deepest-first
+with the ancestor last; already-archived members are proof, not mutation. The proof taken before the mutation and
+the one taken after must name the same subtree, the same parent edges, and the same collection assignment, in
+the same scope — a receipt carries its scope, and a receipt of one scope never authorizes a proof in another.
+Scope agreement is settled where the teardown is still preventable: the stop guard compares the receipt's scope
+against what the target's record binds NOW, before it re-proves anything, and refuses a mismatch or an absent
+binding without a native read. Re-proving in the receipt's own scope would agree with itself, pass the guard,
+let the leaf teardown proceed, and only then meet the commit's scope check — a teardown performed for a proof
+that was already refused. A refused receipt authorizes no cold teardown on any seam that reads it.
+Afterwards the whole subtree must be unloaded and uniquely archived while unrelated loaded siblings stay intact.
+Duplicate active/archived membership, a member absent from both collections, a wrong `cwd` binding, changed
+ancestry, or a late replacement fails closed. For Codex cold teardown alone, an otherwise uniquely-owned member
+with unknown presence may consult the final record in its durable rollout tail: a terminal native event proves
+the turn settled, while a missing, unreadable, incomplete, or non-terminal tail stays fail-closed and names both
+the live client and the rollout evidence in its refusal. A live `active` report remains an immediate refusal the
+tail cannot override.
 
 When the exact bound generation is already reclaimed, close treats generation death as a positive empty-control
 plane proof: it skips native subtree census, removes the stale binding, and completes the record's own cold-stop
@@ -278,7 +316,9 @@ falling back to current or legacy), then that exact stable generation, zero othe
 one-thread closure, no descendants, and an idle known turn; an already-archived target is accepted only after
 that exact target is proven unloaded. It then archives only that target, re-censuses the same generation and
 target while preserving every loaded sibling reference, and returns public audit facts plus an in-memory
-compensation closure.
+compensation closure. With no record to bind a `cwd`, quarantine reads the target's own rows from the whole
+collections under the same member verification; it is an incident path, and its cost is accepted rather than
+bought down with a binding it cannot prove.
 
 **The fence, and what compensation may undo.** Every mutation proof fences the shared
 PID/start/detached-receipt/socket generation across its reads, so an unrelated slow sibling remains a protective
@@ -290,8 +330,10 @@ when every stored field equals the exact live Linux identity; reporting and ever
 repairs a receipt. Missing, malformed, or mismatched legacy evidence is an unproven generation and refuses before
 any teardown. Compensation lives outside the native RPC boundary: until the product commits the archive record
 and its final offline proof, a failure returns the same receipt to `restoreRuntime`, which restores all and only
-its originally-active subtree members, and only on the unchanged original generation. A receipt-free resume
-remains the normal parent-only restore.
+its originally-active subtree members, and only on the unchanged original generation. The receipt carries the
+scope each member was proven at, and compensation reads those same scopes: a failure path must not put back the
+whole-host cost the proof removed. A receipt-free resume remains the normal parent-only restore, read through
+its own record's `cwd` and refused without one.
 
 ## Headless readiness
 

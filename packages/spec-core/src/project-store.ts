@@ -8,8 +8,14 @@ export function spexcodeHome(): string {
   return process.env.SPEXCODE_HOME || join(homedir(), '.spexcode')
 }
 
+// A project's absolute path flattened into ONE directory name, so every runtime artifact for that project
+// groups under it. Every character that cannot appear in a path segment has to go, and on Windows that is two
+// more than on POSIX: the separator is `\\`, and an absolute path opens with a drive letter whose COLON is
+// illegal in a filename. Leaving it in produced `…/projects/C:-Users-…`, and the mkdir for it failed — which
+// took out `spex spec lint` and `spex graph --public --html` on every Windows machine. `:` and `\\` never
+// occur in a POSIX absolute path, so an existing Linux or macOS store keeps the exact name it already has.
 export function encodeProject(root: string): string {
-  return root.replace(/[/.]/g, '-')
+  return root.replace(/[/\\:.]/g, '-')
 }
 
 export function projectRuntimeRoot(commonDir: string): string {

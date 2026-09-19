@@ -20,6 +20,10 @@ The timeline is a history: events are shown in occurrence order, sequence breaki
 (`session.state.migrated.v1` / `session.message.migrated.v1`, appended after the live events but older than them)
 appears where it happened and maps to the same status and sent rows as its live counterparts. The stamp stays the
 last appended sequence, which is what a follower's cheap tick compares.
+The human-owned terminal `archived` event belongs to [[session-state-model]]'s complete lifecycle domain and
+has an explicit display word, including the CLI follow glyph; it is never an unsupported cast into work state.
+Historical display-status entries are decoded by that same module's explicit legacy history mapping. An
+unknown lifecycle or proposal is a loud read failure, not a cast into valid history or a silently missing event.
 
 **This is where a window is cut, and the two orders are kept apart.** [[session-timeline]] defines the window a
 reader holds; the projection is what answers it. A growth read (`since`) is served from the event store's own

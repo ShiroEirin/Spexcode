@@ -19,6 +19,7 @@ import { startResourceMonitor } from './host-resources.js'
 import { reapOrphanBackendInstances, registerBackendInstance, unregisterBackendInstance } from './runtime-ownership.js'
 import { sessionIdentityEnvVars } from './harness.js'
 import { serverEntrypointArgs } from './tsx-bin.js'
+import { anchorServiceCwd, serviceCwdLoss } from './service-cwd.js'
 
 // the supervisor OWNS the public port, so it must outlive any transient throw: an uncaught error here is
 // logged and survived, never an exit that closes the port (and the tmux session) and takes the frontend down.
@@ -36,7 +37,9 @@ try {
   console.error(`spec-cli: invalid PORT — ${(error as Error).message}`)
   process.exit(2)
 }
-const projectRoot = servedRepoRoot() // the actual git tree whose source/spec/config the child serves
+// the actual git tree whose source/spec/config the child serves — and, from here on, the directory this serve
+// and everything it starts stand on ([[service-cwd]]), whatever directory the launcher happened to be in.
+const projectRoot = anchorServiceCwd(servedRepoRoot())
 // The face this supervisor exposes. `spex serve` is a LOCAL backend, so its declared default is loopback, the
 // same face `spex serve ui` and `spex dashboard` declare — widen it deliberately with --host/SPEXCODE_HOST.
 // Public mode declares the opposite default, because being the internet face is the whole request.
@@ -136,7 +139,7 @@ async function boot(): Promise<Backend | null> {
   // process.env.SPEXCODE_API_URL: the env this serve itself inherited may carry ANOTHER project's backend
   // (the exact misroute [[remote-client]]'s ladder exists to kill), and a worker's env is its routing
   // LIFELINE — it must be a deterministic backend-injected fact, not an inheritance gamble.
-  const child = spawn(process.execPath, entryArgs, { stdio: 'inherit', env: { ...process.env, PORT: String(port), SPEXCODE_API_URL: childApiBase, SPEXCODE_INSTANCE_ID: instanceId } })
+  const child = spawn(process.execPath, entryArgs, { cwd: projectRoot, stdio: 'inherit', env: { ...process.env, PORT: String(port), SPEXCODE_API_URL: childApiBase, SPEXCODE_INSTANCE_ID: instanceId } })
   // if the ACTIVE backend dies unexpectedly (crash, OOM), restart it so the public port keeps serving.
   // Planned retirement sets current to the NEW child first, so the old child's exit fails this identity
   // check and is ignored. boot()'s ~5s health budget rate-limits any crash loop.
@@ -233,9 +236,9 @@ function dropEndpoint(): void {
   try { dropOwnEndpoint(instanceId, projectRoot) } catch { /* not ours / already gone */ }
 }
 
-const shutdown = () => { if (restartRetryTimer) clearTimeout(restartRetryTimer); restartRetryAttempt = 0; dropEndpoint(); unregisterBackendInstance(instanceId); try { current?.child.kill('SIGTERM') } catch { /* */ } process.exit(0) }
-process.on('SIGINT', shutdown)
-process.on('SIGTERM', shutdown)
+const shutdown = (code = 0) => { if (restartRetryTimer) clearTimeout(restartRetryTimer); restartRetryAttempt = 0; dropEndpoint(); unregisterBackendInstance(instanceId); try { current?.child.kill('SIGTERM') } catch { /* */ } process.exit(code) }
+process.on('SIGINT', () => shutdown())
+process.on('SIGTERM', () => shutdown())
 
 const first = await boot()
 if (!first) { console.error('[supervisor] initial backend failed to start'); process.exit(1) }
@@ -285,6 +288,13 @@ const scanMtime = async (): Promise<number> => {
 let lastMtime = await scanMtime()   // baseline at boot — only a LATER change reloads
 let scanning = false
 setInterval(() => {
+  // @@@ served root lost ([[service-cwd]]) - not a transient throw to survive: every git read, spec read and
+  // spawn below this point would now fail or answer from a stale cache, so release the port and say why.
+  const lost = serviceCwdLoss(projectRoot)
+  if (lost) {
+    console.error(`[supervisor] served root lost — ${lost}. Nothing is left to serve; exiting so the port is released. Start \`spex serve\` again from the project's checkout.`)
+    shutdown(1)
+  }
   if (scanning) return
   scanning = true
   void scanMtime().then((m) => {

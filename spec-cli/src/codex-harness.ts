@@ -8,12 +8,12 @@ import { parse as parseToml } from 'smol-toml'
 import { codexSlashCommands } from './slash-commands.js'
 import { runtimeRoot, mainCheckout, harnessIdentity } from '@spexcode/spec-core'
 import { detachedRuntimeGenerationToken, migrateLegacyDetachedRuntimeReceipt, processStartToken, verifyDetachedRuntime, type VerifiedDetachedRuntime } from '@spexcode/spec-core'
-import { codexGenerationEndpoints, codexGenerationSocketPath, currentCodexGeneration, legacyCodexGenerationEndpoint, readCodexGenerationLedger, prepareCodexGenerationClose, resolveCodexGenerationForClose, resolveCodexGenerationForResume, resolveCodexGenerationForSession, type CodexGenerationEndpoint } from './codex-runtime-generations.js'
+import { codexGenerationEndpoints, codexGenerationSocketPath, currentCodexGeneration, legacyCodexGenerationEndpoint, readCodexGenerationLedger, prepareCodexGenerationClose, resolveCodexGenerationForClose, resolveCodexGenerationForResume, resolveCodexGenerationForSession, rebindCodexGeneration, type CodexGenerationEndpoint } from './codex-runtime-generations.js'
 import { spawnDetachedRuntime } from './runtime-ownership.js'
 import { codexRolloutPath, codexTranscript } from '@spexcode/transcript'
 import { shQuote } from './sh.js'
 import { writeFileIfChanged } from './file-write.js'
-import type { Harness, HarnessLivenessRecord, HarnessDeliveryRecord, HarnessLaunchReadyRecord, SharedRuntimeDescriptor, SharedRuntimeMutationGuard, SharedRuntimeProbe, HarnessOrphanThreadQuarantine, DispatchResult, PaneProbe, TurnFailure, FailureSubscription } from './harness.js'
+import type { Harness, HarnessLivenessRecord, HarnessDeliveryRecord, HarnessLaunchReadyRecord, SharedRuntimeDescriptor, SharedRuntimeMutationGuard, SharedRuntimeProbe, HarnessOrphanThreadQuarantine, DispatchResult, PaneProbe, TurnFailure, NativeIdentityChange, FailureSubscription } from './harness.js'
 
 
 import { buildShim, cleanHarness, headlessTurnFailureShell, listenerAt, noLaunchEnv, paneTreeRuns, sessionIdentityEnvVars, SPEX } from './harness-shim.js'
@@ -472,6 +472,67 @@ export function codexTurnFailureObserver(
   return { close: () => finish(null), closed, ready }
 }
 
+// One observer belongs to one shared app-server generation. It never resumes a thread or reads conversation
+// history; it only turns the app-server's global thread/started notification into an exact native successor pair.
+export function codexGenerationIdentityObserver(
+  endpoint: CodexGenerationEndpoint,
+  runtimeKey: string,
+  onIdentityChange: (change: NativeIdentityChange) => void,
+): FailureSubscription {
+  const conn: Socket = createConnection(endpoint.socketPath)
+  const frames: FrameState = { buf: Buffer.alloc(0), fragOp: 0, fragBuf: Buffer.alloc(0) }
+  let upgraded = false, settled = false, readySettled = false
+  let resolveReady!: (ready: boolean) => void
+  const ready = new Promise<boolean>((resolve) => { resolveReady = resolve })
+  let resolveClosed!: (reason: string | null) => void
+  const closed = new Promise<string | null>((resolve) => { resolveClosed = resolve })
+  const finish = (reason: string | null) => {
+    if (settled) return
+    settled = true
+    if (!readySettled) { readySettled = true; resolveReady(false) }
+    clearTimeout(timer)
+    try { conn.destroy() } catch {}
+    resolveClosed(reason)
+  }
+  const timer = setTimeout(() => finish(`Codex generation observer did not subscribe within ${CODEX_TURN_OBSERVER_SUBSCRIBE_MS}ms`), CODEX_TURN_OBSERVER_SUBSCRIBE_MS)
+  timer.unref?.()
+  const send = (message: JsonRpc) => conn.write(wsText(JSON.stringify(message)))
+  conn.on('error', (error) => finish(`Codex generation observer connection failed: ${rpcError(error)}`))
+  conn.on('close', () => finish('Codex generation observer connection closed'))
+  conn.on('connect', () => conn.write(WS_UPGRADE(randomBytes(16).toString('base64'))))
+  const handle = (json: string) => {
+    let message: JsonRpc
+    try { message = JSON.parse(json) } catch { return }
+    if (message.error) return finish(`Codex generation observer request failed: ${message.error.message || JSON.stringify(message.error)}`)
+    if (message.id === 1 && message.result) {
+      send({ method: 'initialized', params: {} })
+      if (!readySettled) { readySettled = true; resolveReady(true) }
+      return
+    }
+    if (message.method !== 'thread/started') return
+    const params = message.params as { thread?: { id?: unknown; forkedFromId?: unknown } } | undefined
+    const nextThreadId = params?.thread?.id
+    const forkedFromId = params?.thread?.forkedFromId
+    if (typeof nextThreadId === 'string' && nextThreadId && typeof forkedFromId === 'string' && forkedFromId)
+      onIdentityChange({ previousThreadId: forkedFromId, nextThreadId, runtimeKey })
+  }
+  conn.on('data', (chunk: Buffer) => {
+    frames.buf = Buffer.concat([frames.buf, chunk])
+    if (!upgraded) {
+      const split = frames.buf.indexOf('\r\n\r\n')
+      if (split < 0) return
+      const head = frames.buf.slice(0, split).toString('utf8')
+      if (!/^HTTP\/1\.1 101/.test(head)) return finish(`Codex app-server refused generation observer: ${head.split('\r\n')[0]}`)
+      upgraded = true
+      frames.buf = frames.buf.slice(split + 4)
+      send(wsInitialize)
+    }
+    if (drainWsFrames(frames, conn, handle))
+      finish('Codex app-server closed the generation observer')
+  })
+  return { close: () => finish(null), closed, ready }
+}
+
 // Protocol-verified cold/restore/control seam. The Codex schema (`codex app-server generate-json-schema --experimental`)
 // defines thread/archive, thread/delete, and thread/unarchive with {threadId}, plus turn/interrupt with {threadId, turnId}; no
 // guessed method or process command is used.
@@ -817,7 +878,7 @@ const codexRowStatus = (row: { status?: unknown }): CodexThreadStatus => {
 }
 
 type CodexThreadCollectionResult =
-  | { ok: true; ids: string[]; parentById: Map<string, string | null>; statusById: Map<string, CodexThreadStatus> }
+  | { ok: true; ids: string[]; parentById: Map<string, string | null>; statusById: Map<string, CodexThreadStatus>; cwdById: Map<string, string | null> }
   | { ok: false; error: string }
 
 function codexThreadCollection(sock: string, params: Record<string, unknown>): Promise<CodexThreadCollectionResult> {
@@ -826,6 +887,7 @@ function codexThreadCollection(sock: string, params: Record<string, unknown>): P
     : [...CODEX_THREAD_SOURCE_KINDS]
   const parentById = new Map<string, string | null>()
   const statusById = new Map<string, CodexThreadStatus>()
+  const cwdById = new Map<string, string | null>()
   const conflictingParents = new Set<string>()
   return codexPagedIds(sock, 'thread/list', { ...params, sourceKinds, useStateDbOnly: true }, (item) => {
     if (typeof item === 'string') return item
@@ -833,11 +895,12 @@ function codexThreadCollection(sock: string, params: Record<string, unknown>): P
     return typeof id === 'string' ? id : null
   }, 'thread/list', (item) => {
     if (!item || typeof item !== 'object') return
-    const row = item as { id?: unknown; parentThreadId?: unknown; status?: unknown }
+    const row = item as { id?: unknown; parentThreadId?: unknown; status?: unknown; cwd?: unknown }
     if (typeof row.id !== 'string') return
     const parent = typeof row.parentThreadId === 'string' ? row.parentThreadId : null
     if (parentById.has(row.id) && parentById.get(row.id) !== parent) conflictingParents.add(row.id)
     parentById.set(row.id, parent)
+    cwdById.set(row.id, typeof row.cwd === 'string' && row.cwd ? row.cwd : null)
     // Parent ownership is a fact about the graph, so a disagreement across pages is a census fault.
     // Turn state is live, so a mid-drain change is not a fault — it is simply no longer knowable here.
     const status = codexRowStatus(row)
@@ -845,8 +908,25 @@ function codexThreadCollection(sock: string, params: Record<string, unknown>): P
   }).then((result) => {
     if (!result.ok) return result
     if (conflictingParents.size) return { ok: false as const, error: `Codex thread/list returned conflicting parent ownership for ${[...conflictingParents].join(', ')}` }
-    return { ...result, parentById, statusById }
+    return { ...result, parentById, statusById, cwdById }
   })
+}
+
+// @@@ scoped read - a filter is a request, not a proof. The native server silently IGNORES a filter key it does
+// not know and answers with the whole collection (measured on 0.144.3 and 0.146.0), so a scoped read that
+// trusted its own request would turn back into a whole-host census that the proof then misreads as targeted.
+// Every returned row is therefore held to the predicate that was asked for; one violating row fails the read.
+type CodexRowScope = { cwd: string } | { parentThreadId: string }
+async function codexScopedCollection(sock: string, scope: CodexRowScope, archived: boolean): Promise<CodexThreadCollectionResult> {
+  const result = await codexThreadCollection(sock, { ...scope, archived, sourceKinds: [] })
+  if (!result.ok) return result
+  for (const id of result.ids) {
+    if ('cwd' in scope ? result.cwdById.get(id) !== scope.cwd : result.parentById.get(id) !== scope.parentThreadId) {
+      const asked = 'cwd' in scope ? `cwd ${scope.cwd}` : `parentThreadId ${scope.parentThreadId}`
+      return { ok: false, error: `Codex thread/list returned ${id} outside its requested ${asked} scope; the native filter was not honored` }
+    }
+  }
+  return result
 }
 
 // The gate's question is about the tip — is a turn in flight right now — and thread/list already answers it
@@ -855,18 +935,18 @@ function codexThreadCollection(sock: string, params: Record<string, unknown>): P
 const codexPresenceFromStatus = (status: CodexThreadStatus | undefined): SharedRuntimeMutationGuard['targetTurnPresence'] =>
   status === 'idle' || status === 'active' ? status : 'unknown'
 
-async function codexTargetMutationGuard(threadId: string, dir = runtimeRoot(), endpoint = legacyCodexGenerationEndpoint(dir)): Promise<SharedRuntimeMutationGuard> {
+async function codexTargetMutationGuard(threadId: string, scope: { cwd: string }, dir = runtimeRoot(), endpoint = legacyCodexGenerationEndpoint(dir)): Promise<SharedRuntimeMutationGuard> {
   const generationBefore = codexMutationGeneration(dir, endpoint)
   if (!generationBefore) return { healthy: false, referenceIds: [], targetTurnPresence: 'unknown', descendantIds: [], error: 'Codex shared app-server generation is unproven' }
   const sock = endpoint.socketPath
+  const targetCwd = scope.cwd
   // The descendant collections are ancestor-filtered and therefore exclude the target itself, so the
-  // target's own turn state comes from the whole-collection census. These run concurrently with the rest.
-  const [loaded, activeDescendants, archivedDescendants, activeList, archivedList] = await Promise.all([
+  // target's own turn state comes from the rows scoped to its record's cwd. These run concurrently.
+  const [loaded, activeDescendants, archivedDescendants, targetRows] = await Promise.all([
     codexLoadedReferenceIds(sock),
     codexThreadList(sock, { ancestorThreadId: threadId, archived: false, sourceKinds: [] }),
     codexThreadList(sock, { ancestorThreadId: threadId, archived: true, sourceKinds: [] }),
-    codexThreadCollection(sock, { archived: false, sourceKinds: [] }),
-    codexThreadCollection(sock, { archived: true, sourceKinds: [] }),
+    codexCollectionPair((archived) => codexScopedCollection(sock, { cwd: targetCwd }, archived)),
   ])
   const referenceIds = loaded.ok ? loaded.referenceIds : []
   const descendantIds = activeDescendants.ok && archivedDescendants.ok
@@ -875,10 +955,10 @@ async function codexTargetMutationGuard(threadId: string, dir = runtimeRoot(), e
   if (!loaded.ok) return { healthy: false, referenceIds, targetTurnPresence: 'unknown', descendantIds, error: loaded.error }
   if (!activeDescendants.ok) return { healthy: false, referenceIds, targetTurnPresence: 'unknown', descendantIds, error: activeDescendants.error }
   if (!archivedDescendants.ok) return { healthy: false, referenceIds, targetTurnPresence: 'unknown', descendantIds, error: archivedDescendants.error }
-  if (!activeList.ok) return { healthy: false, referenceIds, targetTurnPresence: 'unknown', descendantIds, error: activeList.error }
-  if (!archivedList.ok) return { healthy: false, referenceIds, targetTurnPresence: 'unknown', descendantIds, error: archivedList.error }
+  if (!targetRows.ok) return { healthy: false, referenceIds, targetTurnPresence: 'unknown', descendantIds, error: targetRows.error }
+  // A loaded target whose row the scope did not return has no reported turn state: unknown, never idle.
   const targetTurnPresence: SharedRuntimeMutationGuard['targetTurnPresence'] = referenceIds.includes(threadId)
-    ? codexPresenceFromStatus(activeList.statusById.get(threadId) ?? archivedList.statusById.get(threadId))
+    ? codexPresenceFromStatus(targetRows.pair.active.statusById.get(threadId) ?? targetRows.pair.archived.statusById.get(threadId))
     : 'none'
   if (codexRuntimeGeneration(dir, endpoint) !== generationBefore)
     return { healthy: false, referenceIds, targetTurnPresence, descendantIds, error: 'shared Codex app-server generation changed during target guard' }
@@ -888,11 +968,16 @@ async function codexTargetMutationGuard(threadId: string, dir = runtimeRoot(), e
 const CODEX_COLD_PLAN = Symbol('codex-cold-plan')
 type CodexColdPlan = Readonly<{
   [CODEX_COLD_PLAN]: true
-  kind: 'codex-cold-subtree-v1'
+  kind: 'codex-cold-subtree-v2'
   unmaterialized?: true
   threadId: string
   generation: string
   endpoint: CodexGenerationEndpoint
+  // The worktree cwd the proof was scoped to; null is the whole-host scope only quarantine may use.
+  targetCwd: string | null
+  // Where each subtree member's rows live, so compensation reads the same scope the proof did. Empty under
+  // the whole-host scope, which has no binding to carry.
+  memberCwd: readonly (readonly [string, string])[]
   guard: SharedRuntimeMutationGuard
   descendantIds: readonly string[]
   parentEdges: readonly (readonly [string, string])[]
@@ -908,12 +993,15 @@ const sameIdSet = (left: readonly string[], right: readonly string[]) =>
 const sameParentEdges = (left: readonly (readonly [string, string])[], right: readonly (readonly [string, string])[]) =>
   left.length === right.length && left.every(([id, parent]) => right.some(([otherId, otherParent]) => id === otherId && parent === otherParent))
 
+const codexPlanScope = (plan: CodexColdPlan): CodexProofScope => plan.targetCwd === null ? { wholeHost: true } : { cwd: plan.targetCwd }
+
 const isCodexColdPlan = (value: unknown): value is CodexColdPlan => {
   if (!value || typeof value !== 'object') return false
   const plan = value as Partial<CodexColdPlan>
-  return plan[CODEX_COLD_PLAN] === true && plan.kind === 'codex-cold-subtree-v1' && typeof plan.threadId === 'string' &&
-    typeof plan.generation === 'string' && isEndpointLike(plan.endpoint) && Array.isArray(plan.descendantIds) &&
-    Array.isArray(plan.parentEdges) && Array.isArray(plan.subtreeIds) &&
+  return plan[CODEX_COLD_PLAN] === true && plan.kind === 'codex-cold-subtree-v2' && typeof plan.threadId === 'string' &&
+    typeof plan.generation === 'string' && isEndpointLike(plan.endpoint) &&
+    (plan.targetCwd === null || (typeof plan.targetCwd === 'string' && plan.targetCwd.length > 0)) && Array.isArray(plan.descendantIds) &&
+    Array.isArray(plan.parentEdges) && Array.isArray(plan.subtreeIds) && Array.isArray(plan.memberCwd) &&
     Array.isArray(plan.activeIds) && Array.isArray(plan.archivedIds) && !!plan.guard
 }
 
@@ -927,6 +1015,8 @@ function makeCodexColdPlan(input: {
   threadId: string
   generation: string
   endpoint: CodexGenerationEndpoint
+  targetCwd: string | null
+  memberCwd?: readonly (readonly [string, string])[]
   guard: SharedRuntimeMutationGuard
   descendantIds: readonly string[]
   parentEdges: readonly (readonly [string, string])[]
@@ -937,11 +1027,13 @@ function makeCodexColdPlan(input: {
 }): CodexColdPlan {
   return Object.freeze({
     [CODEX_COLD_PLAN]: true as const,
-    kind: 'codex-cold-subtree-v1' as const,
+    kind: 'codex-cold-subtree-v2' as const,
     ...(input.unmaterialized ? { unmaterialized: true as const } : {}),
     threadId: input.threadId,
     generation: input.generation,
     endpoint: input.endpoint,
+    targetCwd: input.targetCwd,
+    memberCwd: Object.freeze((input.memberCwd ?? []).map((entry) => Object.freeze([...entry]) as readonly [string, string])),
     guard: input.guard,
     descendantIds: Object.freeze([...input.descendantIds]),
     parentEdges: Object.freeze([...input.parentEdges]),
@@ -951,27 +1043,47 @@ function makeCodexColdPlan(input: {
   })
 }
 
-async function codexColdPreflightOnce(threadId: string, dir = runtimeRoot(), expectedGeneration?: string, endpoint = legacyCodexGenerationEndpoint(dir)): Promise<CodexColdPreflight> {
+// @@@ proof scope - which rows a mutation proof reads the TARGET's own collection assignment through. A governed
+// record binds the exact worktree cwd its thread was started in, so the proof costs the target subtree. An
+// unreadable record binds nothing: quarantine alone keeps the whole-host census rather than trusting a cwd it
+// cannot prove. The scope rides inside the receipt, so one scope's receipt never authorizes another's proof.
+type CodexBoundProofScope = { cwd: string }
+type CodexProofScope = CodexBoundProofScope | { wholeHost: true }
+const codexScopeCwd = (scope: CodexProofScope): string | null => 'cwd' in scope ? scope.cwd : null
+const codexRecordScope = (rec: { worktreePath?: string | null }): CodexBoundProofScope | null =>
+  typeof rec.worktreePath === 'string' && rec.worktreePath ? { cwd: rec.worktreePath } : null
+const CODEX_NO_SCOPE = 'the governed record binds no worktree cwd, so the native subtree proof has no scope'
+
+type CodexCollectionPair = { active: Extract<CodexThreadCollectionResult, { ok: true }>; archived: Extract<CodexThreadCollectionResult, { ok: true }> }
+async function codexCollectionPair(read: (archived: boolean) => Promise<CodexThreadCollectionResult>): Promise<{ ok: true; pair: CodexCollectionPair } | { ok: false; error: string }> {
+  const [active, archived] = await Promise.all([read(false), read(true)])
+  if (!active.ok) return active
+  if (!archived.ok) return archived
+  return { ok: true, pair: { active, archived } }
+}
+
+async function codexColdPreflightOnce(threadId: string, scope: CodexProofScope, dir = runtimeRoot(), expectedGeneration?: string, endpoint = legacyCodexGenerationEndpoint(dir)): Promise<CodexColdPreflight> {
   const generation = expectedGeneration ?? codexMutationGeneration(dir, endpoint)
   if (!generation)
     return { ok: false, reason: 'Codex shared app-server generation is temporarily unproven before subtree census' }
   if (codexRuntimeGeneration(dir, endpoint) !== generation)
     return { ok: false, reason: 'Codex shared app-server generation changed before subtree census' }
   const sock = endpoint.socketPath
-  const [loaded, activeDescendants, archivedDescendants, archivedList, activeList] = await Promise.all([
+  const targetCwd = codexScopeCwd(scope)
+  const [loaded, activeDescendants, archivedDescendants, targetRows] = await Promise.all([
     codexLoadedReferenceIds(sock),
     codexThreadCollection(sock, { ancestorThreadId: threadId, archived: false, sourceKinds: [] }),
     codexThreadCollection(sock, { ancestorThreadId: threadId, archived: true, sourceKinds: [] }),
-    codexThreadCollection(sock, { archived: true, sourceKinds: [] }),
-    codexThreadCollection(sock, { archived: false, sourceKinds: [] }),
+    codexCollectionPair((archived) => targetCwd !== null
+      ? codexScopedCollection(sock, { cwd: targetCwd }, archived)
+      : codexThreadCollection(sock, { archived, sourceKinds: [] })),
   ])
   if (codexRuntimeGeneration(dir, endpoint) !== generation)
     return { ok: false, reason: 'shared Codex app-server generation changed during subtree census' }
   if (!loaded.ok) return { ok: false, reason: loaded.error }
   if (!activeDescendants.ok) return { ok: false, reason: activeDescendants.error }
   if (!archivedDescendants.ok) return { ok: false, reason: archivedDescendants.error }
-  if (!archivedList.ok) return { ok: false, reason: archivedList.error }
-  if (!activeList.ok) return { ok: false, reason: activeList.error }
+  if (!targetRows.ok) return { ok: false, reason: targetRows.error }
 
   const activeDescendantSet = new Set(activeDescendants.ids)
   const archivedDescendantSet = new Set(archivedDescendants.ids)
@@ -981,12 +1093,12 @@ async function codexColdPreflightOnce(threadId: string, dir = runtimeRoot(), exp
   const descendantIds = [...activeDescendants.ids, ...archivedDescendants.ids]
   if (descendantIds.includes(threadId)) return { ok: false, reason: `Codex target ${threadId} is duplicated in its own descendant closure` }
 
-  const activeSet = new Set(activeList.ids)
-  const archivedSet = new Set(archivedList.ids)
-  if (!activeSet.has(threadId) && !archivedSet.has(threadId) && descendantIds.length === 0) {
+  const targetInActive = targetRows.pair.active.ids.includes(threadId)
+  const targetInArchived = targetRows.pair.archived.ids.includes(threadId)
+  if (!targetInActive && !targetInArchived && descendantIds.length === 0) {
     // A Codex thread id can be registered before the server materializes its first user message. The exact
     // protocol refusal is the only proof that this absent native target is that startup window, rather than
-    // an unowned/reassigned record that must stay fail-closed.
+    // an unowned/reassigned record — or a record whose cwd binding is wrong — that must stay fail-closed.
     const turn = await codexRunningTurn(sock, threadId)
     if (!turn.ok) return { ok: false, reason: turn.error }
     if (codexRuntimeGeneration(dir, endpoint) !== generation)
@@ -1006,6 +1118,8 @@ async function codexColdPreflightOnce(threadId: string, dir = runtimeRoot(), exp
           threadId,
           generation,
           endpoint,
+          targetCwd,
+          memberCwd: targetCwd === null ? [] : [[threadId, targetCwd] as const],
           guard,
           descendantIds: [],
           parentEdges: [],
@@ -1034,11 +1148,53 @@ async function codexColdPreflightOnce(threadId: string, dir = runtimeRoot(), exp
     }
     depthById.set(id, depth)
   }
-
   const subtreeIds = [...descendantIds, threadId]
+
+  // @@@ second witness - the ancestor closure is one native answer; nothing may be archived on one answer. Each
+  // member's collection assignment is re-read through ITS OWN cwd, and the closure is re-derived from every
+  // member's direct-children read. Both are bounded by the subtree. The whole-host scope already holds every
+  // row, so it derives the same two witnesses from what it read and issues nothing further.
+  const descendantCwd = new Map([...activeDescendants.cwdById, ...archivedDescendants.cwdById])
+  const pairByCwd = new Map<string, CodexCollectionPair>()
+  const childrenByParent = new Map<string, Map<string, string | null>>()
+  if (targetCwd !== null) {
+    pairByCwd.set(targetCwd, targetRows.pair)
+    const otherCwds = new Set<string>()
+    for (const id of descendantIds) {
+      const cwd = descendantCwd.get(id)
+      if (!cwd) return { ok: false, reason: `Codex descendant ${id} reports no cwd, so its collection assignment cannot be scoped` }
+      if (cwd !== targetCwd) otherCwds.add(cwd)
+    }
+    const [cwdPairs, childPairs] = await Promise.all([
+      Promise.all([...otherCwds].map(async (cwd) => [cwd, await codexCollectionPair((archived) => codexScopedCollection(sock, { cwd }, archived))] as const)),
+      Promise.all(subtreeIds.map(async (id) => [id, await codexCollectionPair((archived) => codexScopedCollection(sock, { parentThreadId: id }, archived))] as const)),
+    ])
+    if (codexRuntimeGeneration(dir, endpoint) !== generation)
+      return { ok: false, reason: 'shared Codex app-server generation changed during subtree witness census' }
+    for (const [cwd, result] of cwdPairs) {
+      if (!result.ok) return { ok: false, reason: result.error }
+      pairByCwd.set(cwd, result.pair)
+    }
+    for (const [id, result] of childPairs) {
+      if (!result.ok) return { ok: false, reason: result.error }
+      childrenByParent.set(id, new Map([...result.pair.active.parentById, ...result.pair.archived.parentById]))
+    }
+  } else {
+    const subtreeSet = new Set(subtreeIds)
+    for (const id of subtreeIds) childrenByParent.set(id, new Map())
+    for (const [id, parent] of [...targetRows.pair.active.parentById, ...targetRows.pair.archived.parentById])
+      if (parent && subtreeSet.has(parent)) childrenByParent.get(parent)!.set(id, parent)
+  }
+  const pairFor = (id: string): CodexCollectionPair | null =>
+    targetCwd === null ? targetRows.pair : pairByCwd.get(id === threadId ? targetCwd : descendantCwd.get(id)!) ?? null
+
+  const archivedMembers = new Set<string>()
+  const statusById = new Map<string, CodexThreadStatus>()
   for (const id of subtreeIds) {
-    const inActive = activeSet.has(id)
-    const inArchived = archivedSet.has(id)
+    const pair = pairFor(id)
+    if (!pair) return { ok: false, reason: `Codex subtree member ${id} has no scoped collection witness` }
+    const inActive = pair.active.ids.includes(id)
+    const inArchived = pair.archived.ids.includes(id)
     if (!inActive && !inArchived)
       return { ok: false, reason: `Codex subtree member ${id} is absent from both native collections (unowned or reassigned)` }
     if (inActive && inArchived)
@@ -1048,12 +1204,30 @@ async function codexColdPreflightOnce(threadId: string, dir = runtimeRoot(), exp
       if (inActive !== expectedActive)
         return { ok: false, reason: `Codex subtree member ${id} changed collection assignment during ownership census` }
     }
+    // The cwd binding needs no check of its own here: a scoped read already refused any row outside its cwd, so a
+    // target found through the record's scope IS bound to the record's worktree.
+    if (inArchived) archivedMembers.add(id)
+    statusById.set(id, (inActive ? pair.active : pair.archived).statusById.get(id) ?? 'unknown')
   }
 
-  // Every subtree member was just proven to occur in exactly one whole-collection census, so that census
-  // already carries each one's live turn state. No second round of native reads, and therefore no second
-  // generation fence — nothing was read between the fence above and here.
-  const statusById = new Map([...activeList.statusById, ...archivedList.statusById])
+  // The closure and the direct-children reads must describe the same tree, edge for edge.
+  for (const [parent, children] of childrenByParent) {
+    for (const [child, reportedParent] of children) {
+      if (child === threadId) return { ok: false, reason: `Codex target ${threadId} is reported as a child of its own subtree member ${parent}` }
+      if (!parentById.has(child))
+        return { ok: false, reason: `Codex subtree member ${parent} has child ${child} that the descendant closure omitted` }
+      if (parentById.get(child) !== parent || reportedParent !== parent)
+        return { ok: false, reason: `Codex descendant ${child} has conflicting parents (${parentById.get(child)} and ${parent})` }
+    }
+  }
+  for (const id of descendantIds) {
+    const parent = parentById.get(id)!
+    if (!childrenByParent.get(parent)?.has(id))
+      return { ok: false, reason: `Codex descendant ${id} is in the closure but its parent ${parent} did not return it as a child` }
+  }
+
+  // Every subtree member was just proven to occur in exactly one scoped collection, and that row already
+  // carries its live turn state. No further native reads, and therefore no further generation fence.
   const loadedSet = new Set(loaded.referenceIds)
   const loadedSubtreeIds = subtreeIds.filter((id) => loadedSet.has(id))
   for (const id of loadedSubtreeIds) {
@@ -1068,7 +1242,7 @@ async function codexColdPreflightOnce(threadId: string, dir = runtimeRoot(), exp
         }
       }
     }
-    if (archivedSet.has(id)) return { ok: false, reason: `Codex archived subtree member ${id} remains loaded` }
+    if (archivedMembers.has(id)) return { ok: false, reason: `Codex archived subtree member ${id} remains loaded` }
   }
 
   // Proven, not assumed: a loaded target is one of the members the loop above just cleared.
@@ -1081,10 +1255,11 @@ async function codexColdPreflightOnce(threadId: string, dir = runtimeRoot(), exp
   }
   const activeIds = [...activeDescendants.ids]
     .sort((left, right) => (depthById.get(right) ?? 0) - (depthById.get(left) ?? 0))
-    .concat(activeSet.has(threadId) ? [threadId] : [])
-  const archivedIds = [...archivedDescendants.ids, ...(archivedSet.has(threadId) ? [threadId] : [])]
+    .concat(targetInActive ? [threadId] : [])
+  const archivedIds = [...archivedDescendants.ids, ...(targetInArchived ? [threadId] : [])]
   const parentEdges = descendantIds.map((id) => [id, parentById.get(id)!] as const)
-  const receipt = makeCodexColdPlan({ threadId, generation, endpoint, guard, descendantIds, parentEdges, subtreeIds, activeIds, archivedIds })
+  const memberCwd = targetCwd === null ? [] : subtreeIds.map((id) => [id, id === threadId ? targetCwd : descendantCwd.get(id)!] as const)
+  const receipt = makeCodexColdPlan({ threadId, generation, endpoint, targetCwd, memberCwd, guard, descendantIds, parentEdges, subtreeIds, activeIds, archivedIds })
   return { ok: true, ...(activeIds.length ? {} : { alreadyCold: true }), receipt }
 }
 
@@ -1094,10 +1269,10 @@ async function codexColdPreflightOnce(threadId: string, dir = runtimeRoot(), exp
 const isTransientCodexCensusFailure = (reason: string): boolean =>
   /(?:temporarily unproven|timed out|connection|closed during|refused .*census|census failed|app-server busy)/i.test(reason)
 
-async function codexColdPreflight(threadId: string, dir = runtimeRoot(), expectedGeneration?: string, endpoint = legacyCodexGenerationEndpoint(dir)): Promise<CodexColdPreflight> {
+async function codexColdPreflight(threadId: string, scope: CodexProofScope, dir = runtimeRoot(), expectedGeneration?: string, endpoint = legacyCodexGenerationEndpoint(dir)): Promise<CodexColdPreflight> {
   const deadline = Date.now() + CODEX_COLD_PREFLIGHT_DEADLINE_MS
   for (let attempt = 0; attempt < CODEX_COLD_PREFLIGHT_MAX_ATTEMPTS; attempt++) {
-    const result = await codexColdPreflightOnce(threadId, dir, expectedGeneration, endpoint)
+    const result = await codexColdPreflightOnce(threadId, scope, dir, expectedGeneration, endpoint)
     if (result.ok || !isTransientCodexCensusFailure(result.reason) || attempt === CODEX_COLD_PREFLIGHT_MAX_ATTEMPTS - 1) return result
     const remaining = deadline - Date.now()
     if (remaining <= 0) return result
@@ -1152,7 +1327,8 @@ async function codexQuarantineOrphanThread(threadId: string, opts: { excludingSe
   const location = await codexEndpointForOrphanThread(threadId, dir)
   if (!location.ok) return location
   const { endpoint, generation } = location
-  const before = await codexColdPreflight(threadId, dir, generation, endpoint)
+  // An unreadable record binds no cwd this proof could trust, so the orphan is proven against the whole host.
+  const before = await codexColdPreflight(threadId, { wholeHost: true }, dir, generation, endpoint)
   if (!before.ok) return before
   const plan = before.receipt
   if (plan.descendantIds.length || plan.guard.descendantIds.length)
@@ -1183,7 +1359,7 @@ async function codexQuarantineOrphanThread(threadId: string, opts: { excludingSe
   }
   const archived = await codexThreadMutation(endpoint.socketPath, 'thread/archive', threadId, { dir, endpoint, generation }, undefined, orphanBudgetMs)
   if (!archived.ok) return { ok: false, reason: `${archived.error} while archiving orphan Codex thread ${threadId}${archived.commit === 'unknown' ? '; commit state is unknown' : ''}` }
-  const after = await codexColdPreflight(threadId, dir, generation, endpoint)
+  const after = await codexColdPreflight(threadId, { wholeHost: true }, dir, generation, endpoint)
   const failed = (reason: string): HarnessOrphanThreadQuarantine => ({ ok: false, reason })
   if (!after.ok) {
     const restored = await rollback()
@@ -1205,18 +1381,29 @@ async function codexQuarantineOrphanThread(threadId: string, opts: { excludingSe
 async function codexMutationGuard(
   threadId: string,
   dir = runtimeRoot(),
-  opts: { coldReceipt?: unknown } = {},
+  opts: { coldReceipt?: unknown; targetCwd?: string | null } = {},
   endpoint = legacyCodexGenerationEndpoint(dir),
 ): Promise<SharedRuntimeMutationGuard> {
-  if (opts.coldReceipt === undefined) return codexTargetMutationGuard(threadId, dir, endpoint)
-  if (!isCodexColdPlan(opts.coldReceipt) || opts.coldReceipt.threadId !== threadId)
-    return { healthy: false, referenceIds: [], targetTurnPresence: 'unknown', descendantIds: [], error: 'adapter cold teardown receipt is invalid' }
-  if (opts.coldReceipt.endpoint.id !== endpoint.id) return { healthy: false, referenceIds: [], targetTurnPresence: 'unknown', descendantIds: [], error: 'adapter cold teardown receipt names a different generation' }
-  const current = await codexColdPreflight(threadId, dir, opts.coldReceipt.generation, endpoint)
-  if (!current.ok) {
-    const guard = await codexTargetMutationGuard(threadId, dir, endpoint)
-    return { ...guard, healthy: false, coldTeardownAuthorized: false, error: current.reason }
+  const refused = (error: string): SharedRuntimeMutationGuard => ({ healthy: false, referenceIds: [], targetTurnPresence: 'unknown', descendantIds: [], error })
+  if (opts.coldReceipt === undefined) {
+    const scope = codexRecordScope({ worktreePath: opts.targetCwd })
+    return scope ? codexTargetMutationGuard(threadId, scope, dir, endpoint) : refused(CODEX_NO_SCOPE)
   }
+  // A receipt that fails here has authorized nothing, so it must not look authorized on the descendant seam either.
+  const refusedReceipt = (error: string): SharedRuntimeMutationGuard => ({ ...refused(error), coldTeardownAuthorized: false })
+  if (!isCodexColdPlan(opts.coldReceipt) || opts.coldReceipt.threadId !== threadId) return refusedReceipt('adapter cold teardown receipt is invalid')
+  if (opts.coldReceipt.endpoint.id !== endpoint.id) return refusedReceipt('adapter cold teardown receipt names a different generation')
+  // @@@ scope agreement BEFORE the re-proof - this guard is the last gate in front of the leaf teardown, so a
+  // receipt proven against a different binding than the record now carries has to fail HERE. Re-proving in the
+  // receipt's own scope would agree with itself, pass the guard, let stop take the leaf down, and only then meet
+  // coldRuntime's scope check — a teardown performed for a proof that was already refused. The CURRENT record
+  // binds the authority; a missing binding is refused rather than substituted with the receipt's own.
+  const scope = codexRecordScope({ worktreePath: opts.targetCwd })
+  if (!scope) return refusedReceipt(CODEX_NO_SCOPE)
+  if (opts.coldReceipt.targetCwd !== codexScopeCwd(scope))
+    return refusedReceipt('adapter cold teardown receipt was proven in a different scope than this record binds')
+  const current = await codexColdPreflight(threadId, scope, dir, opts.coldReceipt.generation, endpoint)
+  if (!current.ok) return refusedReceipt(current.reason)
   const authorized = sameIdSet(opts.coldReceipt.descendantIds, current.receipt.descendantIds) &&
     sameParentEdges(opts.coldReceipt.parentEdges, current.receipt.parentEdges) &&
     sameIdSet(opts.coldReceipt.activeIds, current.receipt.activeIds) &&
@@ -1229,20 +1416,35 @@ async function codexMutationGuard(
   }
 }
 
+// Compensation undoes what the plan committed, so it reads the plan's own scopes: the cwds its members were
+// proven at. A whole-host read here would put the cost this proof removed back on the failure path.
+async function codexPlanCollections(plan: CodexColdPlan): Promise<{ ok: true; active: Set<string>; archived: Set<string> } | { ok: false }> {
+  const sock = plan.endpoint.socketPath
+  const cwds = [...new Set(plan.memberCwd.map(([, cwd]) => cwd))]
+  const reads = await Promise.all((cwds.length ? cwds : [null]).flatMap((cwd) => [false, true].map(async (archived) =>
+    [archived, cwd === null
+      ? await codexThreadList(sock, { archived, sourceKinds: [] })
+      : await codexScopedCollection(sock, { cwd }, archived)] as const)))
+  const active = new Set<string>()
+  const archived = new Set<string>()
+  for (const [isArchived, result] of reads) {
+    if (!result.ok) return { ok: false }
+    for (const id of result.ids) (isArchived ? archived : active).add(id)
+  }
+  return { ok: true, active, archived }
+}
+
 async function codexRestoreColdPlan(plan: CodexColdPlan, dir = runtimeRoot()): Promise<{ ok: true } | { ok: false; reason: string }> {
   if (codexRuntimeGeneration(dir, plan.endpoint) !== plan.generation)
     return { ok: false, reason: 'shared Codex app-server generation changed, so no compensation was attempted' }
   const sock = plan.endpoint.socketPath
-  const [activeBefore, archivedBefore] = await Promise.all([
-    codexThreadList(sock, { archived: false, sourceKinds: [] }),
-    codexThreadList(sock, { archived: true, sourceKinds: [] }),
-  ])
-  if (!activeBefore.ok || !archivedBefore.ok)
+  const before = await codexPlanCollections(plan)
+  if (!before.ok)
     return { ok: false, reason: 'archive state is unknown and could not be reconciled' }
   if (codexRuntimeGeneration(dir, plan.endpoint) !== plan.generation)
     return { ok: false, reason: 'shared Codex app-server generation changed, so no compensation was attempted' }
-  const activeSet = new Set(activeBefore.ids)
-  const archivedSet = new Set(archivedBefore.ids)
+  const activeSet = before.active
+  const archivedSet = before.archived
   if (plan.archivedIds.some((id) => !archivedSet.has(id) || activeSet.has(id)))
     return { ok: false, reason: 'an originally-archived Codex subtree member changed collection; compensation was not authorized' }
   if (plan.activeIds.some((id) => activeSet.has(id) === archivedSet.has(id)))
@@ -1253,13 +1455,10 @@ async function codexRestoreColdPlan(plan: CodexColdPlan, dir = runtimeRoot()): P
     const restored = await codexThreadMutation(sock, 'thread/unarchive', id, fence)
     if (!restored.ok) return { ok: false, reason: `compensation failed for ${id}: ${restored.error}` }
   }
-  const [activeAfter, archivedAfter] = await Promise.all([
-    codexThreadList(sock, { archived: false, sourceKinds: [] }),
-    codexThreadList(sock, { archived: true, sourceKinds: [] }),
-  ])
-  const restored = activeAfter.ok && archivedAfter.ok && codexRuntimeGeneration(dir, plan.endpoint) === plan.generation &&
-    plan.activeIds.every((id) => activeAfter.ids.includes(id) && !archivedAfter.ids.includes(id)) &&
-    plan.archivedIds.every((id) => archivedAfter.ids.includes(id) && !activeAfter.ids.includes(id))
+  const after = await codexPlanCollections(plan)
+  const restored = after.ok && codexRuntimeGeneration(dir, plan.endpoint) === plan.generation &&
+    plan.activeIds.every((id) => after.active.has(id) && !after.archived.has(id)) &&
+    plan.archivedIds.every((id) => after.archived.has(id) && !after.active.has(id))
   return restored ? { ok: true } : { ok: false, reason: 'compensation failed or archive state is unknown' }
 }
 
@@ -1846,8 +2045,9 @@ function codexHeadlessLaunchCommandLocal(id: string, codexCmd = 'codex', dir?: s
   return codexLaunchCommand(id, codexCmd, undefined, dir, false)
 }
 function codexRuntimeDescriptor(endpoint: CodexGenerationEndpoint, runtimeDir: string): SharedRuntimeDescriptor {
+  const key = codexDescriptorKey(endpoint)
   return {
-    key: codexDescriptorKey(endpoint),
+    key,
     label: endpoint.id === 'legacy' ? 'Codex app-server' : `Codex app-server ${endpoint.id.slice(0, 18)}`,
     pidFile: endpoint.pidFile,
     receiptFile: endpoint.receiptFile,
@@ -1872,6 +2072,7 @@ function codexRuntimeDescriptor(endpoint: CodexGenerationEndpoint, runtimeDir: s
       const generation = readCodexGenerationLedger(runtimeDir).generations[endpoint.id]
       return codexSharedRuntimeProbe(runtimeDir, endpoint, generation?.state === 'draining' ? [] : referenceIds)
     },
+    observeNativeIdentity: (onIdentityChange) => codexGenerationIdentityObserver(endpoint, key, onIdentityChange),
   }
 }
 
@@ -1962,6 +2163,15 @@ export const codexHarness: Harness = {
     return paneTreeRunsCodex(pane) ? 'online' : 'offline'
   },
   exactNativeTargetId: (rec) => rec.harnessSessionId || null,
+  rebindNativeIdentity: (rec, change) => {
+    if (rec.harnessSessionId !== change.previousThreadId)
+      throw new Error(`refusing Codex thread successor ${change.nextThreadId}: the predecessor binding changed`)
+    const root = runtimeRoot()
+    const endpoint = codexEndpointForRecord(rec, root, true)
+    if (!endpoint || codexDescriptorKey(endpoint) !== change.runtimeKey)
+      throw new Error(`refusing Codex thread successor ${change.nextThreadId}: generation binding is not exact`)
+    rebindCodexGeneration(root, rec.session, change.previousThreadId, change.nextThreadId)
+  },
   deliver: (rec, text) => deliverViaCodexAppServer(rec, text),
   observeTurnFailures: codexTurnFailureObserver,
   interrupt: interruptCodexTurn,
@@ -1976,7 +2186,9 @@ export const codexHarness: Harness = {
     const dir = runtimeRoot()
     const endpoint = codexEndpointForRecord(rec, dir)
     if (!endpoint) return { ok: false, reason: 'no exact Codex generation binding is registered for this target' }
-    const result = await codexColdPreflight(threadId, dir, undefined, endpoint)
+    const scope = codexRecordScope(rec)
+    if (!scope) return { ok: false, reason: CODEX_NO_SCOPE }
+    const result = await codexColdPreflight(threadId, scope, dir, undefined, endpoint)
     if (!result.ok) return result
     const generationBefore = result.receipt.generation
     if (codexRuntimeGeneration(dir, endpoint) !== generationBefore)
@@ -1993,8 +2205,9 @@ export const codexHarness: Harness = {
       return { ok: true, alreadyCold: true }
     }
     const endpoint = binding?.endpoint ?? codexEndpointForRecord(rec, dir)
-    return endpoint ? codexColdPreflight(rec.harnessSessionId, dir, undefined, endpoint)
-      : { ok: false, reason: 'no exact Codex generation binding is registered for this target' }
+    if (!endpoint) return { ok: false, reason: 'no exact Codex generation binding is registered for this target' }
+    const scope = codexRecordScope(rec)
+    return scope ? codexColdPreflight(rec.harnessSessionId, scope, dir, undefined, endpoint) : { ok: false, reason: CODEX_NO_SCOPE }
   },
   coldRuntime: async (rec, suppliedReceipt) => {
     if (!rec.harnessSessionId) return { ok: false, reason: 'no exact Codex thread identity is registered' }
@@ -2013,7 +2226,11 @@ export const codexHarness: Harness = {
     const frozenPlan = isCodexColdPlan(suppliedReceipt) ? suppliedReceipt : null
     if (frozenPlan && (frozenPlan.endpoint.id !== endpoint.id || codexRuntimeGeneration(dir, endpoint) !== frozenPlan.generation))
       return { ok: false, reason: 'shared Codex app-server generation changed after archive preflight' }
-    const preflight = await codexColdPreflight(threadId, dir, frozenPlan?.generation, endpoint)
+    const scope = codexRecordScope(rec)
+    if (!scope) return { ok: false, reason: CODEX_NO_SCOPE }
+    if (frozenPlan && frozenPlan.targetCwd !== codexScopeCwd(scope))
+      return { ok: false, reason: 'Codex cold teardown receipt was proven in a different scope than this record binds' }
+    const preflight = await codexColdPreflight(threadId, scope, dir, frozenPlan?.generation, endpoint)
     if (!preflight.ok) return preflight
     const plan = frozenPlan ?? preflight.receipt
     if (frozenPlan && (!sameIdSet(frozenPlan.descendantIds, preflight.receipt.descendantIds) ||
@@ -2034,7 +2251,7 @@ export const codexHarness: Harness = {
     }
 
     const coldCheck = async (): Promise<{ ok: true } | { ok: false; reason: string }> => {
-      const after = await codexColdPreflight(threadId, dir, plan.generation, endpoint)
+      const after = await codexColdPreflight(threadId, codexPlanScope(plan), dir, plan.generation, endpoint)
       if (!after.ok) return after
       if (codexRuntimeGeneration(dir, endpoint) !== plan.generation) return { ok: false, reason: 'shared Codex app-server generation changed during archive' }
       if (!sameIdSet(plan.descendantIds, after.receipt.descendantIds) || !sameParentEdges(plan.parentEdges, after.receipt.parentEdges))
@@ -2094,10 +2311,13 @@ export const codexHarness: Harness = {
     const endpoint = codexEndpointForRecord(rec)
     if (!endpoint) return { ok: false, reason: 'no exact Codex generation binding is registered for this target' }
     const sock = endpoint.socketPath
+    const scope = codexRecordScope(rec)
+    if (!scope) return { ok: false, reason: CODEX_NO_SCOPE }
+    const cwd = codexScopeCwd(scope)!
     const reconcile = async (): Promise<{ ok: true } | { ok: false; reason: string }> => {
       const [active, archived] = await Promise.all([
-        codexThreadList(sock, { archived: false, sourceKinds: [] }),
-        codexThreadList(sock, { archived: true, sourceKinds: [] }),
+        codexScopedCollection(sock, { cwd }, false),
+        codexScopedCollection(sock, { cwd }, true),
       ])
       if (!active.ok || !archived.ok) return { ok: false, reason: 'Codex restore state could not be reconciled' }
       const inActive = active.ids.includes(rec.harnessSessionId!)

@@ -351,7 +351,7 @@ async function followKit(selectors: string[], verb: string): Promise<{
   const { ownSessionId, toSession } = await import('./sessions.js')
   const { selectSessions } = await import('./session-selectors.js')
   const { fromRaw } = await import('./session-record.js')
-  const { listSessionIds, readPublicRecordEntry } = await import('@spexcode/spec-core')
+  const { listSessionIds, parseSessionLifecycle, parseSessionProposal, readPublicRecordEntry } = await import('@spexcode/spec-core')
   const { configuredSessionApplication } = await import('./session-application.js')
   const real = selectors.filter((sel) => sel && sel !== '@all')
   let picked: string[] = []
@@ -378,8 +378,8 @@ async function followKit(selectors: string[], verb: string): Promise<{
       harness: 'unknown',
       capabilities: { headless: false },
       launcher: null,
-      lifecycle: state.status as import('@spexcode/spec-core').SessionLifecycle,
-      proposal: state.proposal as import('@spexcode/spec-core').SessionProposal,
+      lifecycle: parseSessionLifecycle(state.status),
+      proposal: parseSessionProposal(state.proposal),
       merges: 0,
       status,
       liveness: 'unknown' as const,
@@ -483,6 +483,9 @@ if (cmd === 'serve') {
     const { resolveConfiguredHost } = await import('./listen.js')
     const host = resolveConfiguredHost(flag('host') ?? process.env.SPEXCODE_HOST)
     if (!Number.isInteger(port) || !Number.isInteger(apiPort)) { console.error('spex serve ui: --port and --api-port must be integers'); process.exit(2) }
+    // a gateway serves no project of its own, so it stands on the host-level directory ([[service-cwd]])
+    const { anchorServiceCwd } = await import('./service-cwd.js')
+    anchorServiceCwd((await import('node:os')).homedir())
     serveDashboardLocal({ port, apiPort, host })
   } else if (target === undefined || target === 'api') {
     await assertDaemonRuntime('spex serve')
@@ -525,6 +528,9 @@ if (cmd === 'serve') {
   const { resolveConfiguredHost } = await import('./listen.js')
   const host = resolveConfiguredHost(flag('host') ?? process.env.SPEXCODE_HOST)
   if (!Number.isInteger(port)) { console.error('spex dashboard: --port must be an integer'); process.exit(2) }
+  // the host gateway belongs to the machine, not to whichever project directory it was started in ([[service-cwd]])
+  const { anchorServiceCwd } = await import('./service-cwd.js')
+  anchorServiceCwd((await import('node:os')).homedir())
   startHostDashboard({ port, host })
 } else if (cmd === 'open') {
   rejectFlags('spex open', 3, ['print-only', 'password'])

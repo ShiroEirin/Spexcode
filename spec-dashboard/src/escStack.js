@@ -8,7 +8,7 @@ const stack = typeof window !== 'undefined' ? (window.__escStack || (window.__es
 // service can arbitrate the stack before any routed scope; no module-level window listener can race it.
 export function consumeEscape(event) {
   const s = typeof window !== 'undefined' ? window.__escStack : stack
-  if (event?.key !== 'Escape' || !s || s.length === 0) return false
+  if (event?.key !== 'Escape' || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey || !s || s.length === 0) return false
   event.preventDefault()
   s[s.length - 1].close()
   return true
