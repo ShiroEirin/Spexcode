@@ -1390,10 +1390,19 @@ async function codexMutationGuard(
     const scope = codexRecordScope({ worktreePath: opts.targetCwd })
     return scope ? codexTargetMutationGuard(threadId, scope, dir, endpoint) : refused(CODEX_NO_SCOPE)
   }
-  if (!isCodexColdPlan(opts.coldReceipt) || opts.coldReceipt.threadId !== threadId) return refused('adapter cold teardown receipt is invalid')
-  if (opts.coldReceipt.endpoint.id !== endpoint.id) return refused('adapter cold teardown receipt names a different generation')
-  // The receipt is the authority for its own scope: the re-proof reads exactly what the frozen plan read.
-  const scope = codexPlanScope(opts.coldReceipt)
+  // A receipt that fails here has authorized nothing, so it must not look authorized on the descendant seam either.
+  const refusedReceipt = (error: string): SharedRuntimeMutationGuard => ({ ...refused(error), coldTeardownAuthorized: false })
+  if (!isCodexColdPlan(opts.coldReceipt) || opts.coldReceipt.threadId !== threadId) return refusedReceipt('adapter cold teardown receipt is invalid')
+  if (opts.coldReceipt.endpoint.id !== endpoint.id) return refusedReceipt('adapter cold teardown receipt names a different generation')
+  // @@@ scope agreement BEFORE the re-proof - this guard is the last gate in front of the leaf teardown, so a
+  // receipt proven against a different binding than the record now carries has to fail HERE. Re-proving in the
+  // receipt's own scope would agree with itself, pass the guard, let stop take the leaf down, and only then meet
+  // coldRuntime's scope check — a teardown performed for a proof that was already refused. The CURRENT record
+  // binds the authority; a missing binding is refused rather than substituted with the receipt's own.
+  const scope = codexRecordScope({ worktreePath: opts.targetCwd })
+  if (!scope) return refusedReceipt(CODEX_NO_SCOPE)
+  if (opts.coldReceipt.targetCwd !== codexScopeCwd(scope))
+    return refusedReceipt('adapter cold teardown receipt was proven in a different scope than this record binds')
   const current = await codexColdPreflight(threadId, scope, dir, opts.coldReceipt.generation, endpoint)
   if (!current.ok) {
     const guard = await codexTargetMutationGuard(threadId, scope, dir, endpoint)

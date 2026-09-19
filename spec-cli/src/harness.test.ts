@@ -11,6 +11,8 @@ import { shQuote } from './sh.js'
 import { runtimeRoot, sessionArtifactPath } from '@spexcode/spec-core'
 import { processStartToken, verifyDetachedRuntime, writeDetachedRuntimeReceipt } from '@spexcode/spec-core'
 import { spawnDetachedRuntime } from './runtime-ownership.js'
+import { assertSessionStopSafe } from './host-resources.js'
+import { initializeFreshSessionApplication } from './session-application.js'
 
 const NO_RPC_RESPONSE = Symbol('NO_RPC_RESPONSE')
 
@@ -1058,6 +1060,40 @@ test('Codex cold proof still accepts only an explicitly unmaterialized absent ta
   })
 })
 
+test('Codex stop guard refuses a cold receipt whose scope is not what the record binds now, before any native read', async () => {
+  // This guard is the last gate in front of the leaf teardown. A receipt re-proved in its OWN scope would agree
+  // with itself, pass here, let stop take the leaf down, and only then meet coldRuntime's scope check.
+  await withNativeThreads(subtreeTable(), {}, async ({ root, mutations, lists }) => {
+    const guardOf = codexHarness.sharedRuntimes?.(root)[0]?.mutationGuard
+    if (!guardOf) throw new Error('Codex exposes its target mutation guard')
+    const preflight = await codexHarness.coldPreflight?.(subtreeRec('target'))
+    if (!preflight?.ok) throw new Error('clean preflight refused')
+    const coldReceipt = preflight.receipt
+    const readsBefore = lists.length
+
+    const moved = await guardOf('target', { coldReceipt, targetCwd: OTHER_CWD })
+    assert.equal(moved.healthy, false)
+    assert.equal(moved.coldTeardownAuthorized, false, 'a mismatched scope authorizes no cold teardown')
+    assert.match(moved.error ?? '', /proven in a different scope than this record binds/)
+
+    const unbound = await guardOf('target', { coldReceipt })
+    assert.equal(unbound.healthy, false)
+    assert.equal(unbound.coldTeardownAuthorized, false, "a missing binding never falls back to the receipt's own scope")
+    assert.match(unbound.error ?? '', /binds no worktree cwd/)
+
+    assert.equal(lists.length, readsBefore, 'both refusals are decided before any native read')
+    assert.deepEqual(mutations, [], 'and before any native mutation')
+
+    // the same receipt against the binding it was proven at still authorizes
+    const agreed = await guardOf('target', { coldReceipt, targetCwd: FIXTURE_CWD })
+    assert.equal(agreed.healthy, true)
+    assert.equal(agreed.coldTeardownAuthorized, true)
+    assert.deepEqual([...agreed.descendantIds].sort(), ['child', 'grandchild'])
+    assert.deepEqual(lists.filter((params) => !isScopedList(params)), [])
+    assert.deepEqual(mutations, [])
+  })
+})
+
 test('Codex cold teardown compensates a failed archive through the plan\'s own scopes, never a whole-host read', async () => {
   // the deepest member archives, the ancestor's archive is REFUSED by the server, so compensation must undo
   // the committed member — and must read the collections it reads through the scopes the plan was proven at
@@ -1072,6 +1108,42 @@ test('Codex cold teardown compensates a failed archive through the plan\'s own s
     assert.deepEqual(mutations, ['archive:child', 'unarchive:child'], 'the committed member is put back')
     assert.deepEqual(lists.filter((params) => !isScopedList(params)), [], 'compensation reads the plan scopes, not the host')
     assert.ok(lists.some((params) => params.cwd === OTHER_CWD), "the member's own cwd is one of those scopes")
+  })
+})
+
+test('the product stop seam refuses a scope-mismatched receipt, so no leaf teardown is reached', async () => {
+  // The unit gate above is what `stop` consults through assertSessionStopSafe: this drives THAT seam with the
+  // real Codex descriptor and a real governed record, because the failure the ordering protects against is a
+  // guard that passes, a leaf that dies, and only then a coldRuntime refusal.
+  await withNativeThreads([{ id: 'target', loaded: true }], {}, async ({ root, mutations, lists }) => {
+    const sessionId = 'scope-seam-session'
+    const application = initializeFreshSessionApplication()
+    mkdirSync(join(root, 'sessions', sessionId), { recursive: true })
+    const writeBinding = (worktree: string) => writeFileSync(join(root, 'sessions', sessionId, 'runtime.json'), `${JSON.stringify({
+      session_id: sessionId, governed: true, worktree_path: worktree, branch: 'node/scope-seam',
+      title: null, name: null, parent: null, status: 'awaiting', proposal: 'nothing', merges: 0, note: null,
+      sortkey: null, createdAt: Date.now(), harness: 'codex', harness_session_id: 'target', stopped: false,
+      archived: false, launcher: 'codex', launch_cmd: 'codex --yolo',
+    }, null, 2)}\n`)
+    writeBinding(FIXTURE_CWD)
+    application.createSession({ sessionId, status: 'awaiting', proposal: 'nothing' })
+    const rec = { session: sessionId, harness: 'codex', harnessSessionId: 'target', worktreePath: FIXTURE_CWD }
+
+    const preflight = await codexHarness.coldPreflight?.(rec)
+    if (!preflight?.ok) throw new Error('clean preflight refused')
+    // the record is re-bound to another worktree after the receipt was frozen
+    writeBinding(OTHER_CWD)
+    const readsBefore = lists.length
+    await assert.rejects(() => assertSessionStopSafe(sessionId, rec, { coldReceipt: preflight.receipt }),
+      /proven in a different scope than this record binds/,
+      'the seam stop consults refuses before it can signal anything')
+    assert.equal(lists.length, readsBefore, 'the refusal costs no native read')
+    assert.deepEqual(mutations, [], 'and no native mutation')
+
+    // back at the binding it was proven against, the same receipt passes the same seam
+    writeBinding(FIXTURE_CWD)
+    await assert.doesNotReject(() => assertSessionStopSafe(sessionId, rec, { coldReceipt: preflight.receipt }))
+    assert.deepEqual(mutations, [])
   })
 })
 

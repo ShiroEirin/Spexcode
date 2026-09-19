@@ -290,6 +290,11 @@ member's turn presence comes from those same rows. It then archives the initiall
 with the ancestor last; already-archived members are proof, not mutation. The proof taken before the mutation and
 the one taken after must name the same subtree, the same parent edges, and the same collection assignment, in
 the same scope — a receipt carries its scope, and a receipt of one scope never authorizes a proof in another.
+Scope agreement is settled where the teardown is still preventable: the stop guard compares the receipt's scope
+against what the target's record binds NOW, before it re-proves anything, and refuses a mismatch or an absent
+binding without a native read. Re-proving in the receipt's own scope would agree with itself, pass the guard,
+let the leaf teardown proceed, and only then meet the commit's scope check — a teardown performed for a proof
+that was already refused. A refused receipt authorizes no cold teardown on any seam that reads it.
 Afterwards the whole subtree must be unloaded and uniquely archived while unrelated loaded siblings stay intact.
 Duplicate active/archived membership, a member absent from both collections, a wrong `cwd` binding, changed
 ancestry, or a late replacement fails closed. For Codex cold teardown alone, an otherwise uniquely-owned member
