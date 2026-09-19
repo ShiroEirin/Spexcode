@@ -48,6 +48,11 @@ So resume never itself makes the agent work; the `merge` dispatch, which resumes
 so the dispatch hits a live one, then sends the merge prompt — and THAT prompt is what flips the lifecycle to
 `active` (and clears the now-obsolete proposal) through mark-active.
 
+For Codex, "the same conversation" is the stable SpexCode session address, not an immutable native thread id:
+the TUI may rewind by forking a successor thread while the session is waiting, and the adapter rebinds that
+successor before later resume or delivery reads. Resume never invents a successor from a title, cwd, or rollout
+ordering; it uses only the exact binding the rebind transaction committed.
+
 Launch handoff is not proof that resume restored liveness. The resolved harness adapter supplies a bounded
 readiness fence. Resume persists an internal launch-readiness-pending fence BEFORE its first runtime metadata
 mutation, adapter restore, or launch. That fence is the durable beginning of one restore transaction, not a

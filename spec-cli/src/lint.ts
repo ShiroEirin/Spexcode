@@ -302,7 +302,10 @@ async function specLintInLedger(root: string, regs: ReturnType<typeof extractors
   // on a collision the mint must parent-qualify with `_`, so every surface suddenly speaks a longer id
   // than the dir name — legal to the machinery, illegible to people.
   const ID_RE = /^\.?(?:[a-z0-9-]|(?![\x00-\x7F])[\p{L}\p{N}\p{M}])+$/u
-  const leafOf = (p: string) => { const segs = p.split('/'); return segs[segs.length - 2] }
+  // Split on EITHER separator: a spec path is joined by the host's path module, so on Windows it arrives
+  // back-slashed. Splitting on '/' alone left one segment, the leaf came back undefined, and the id check
+  // threw `Cannot read properties of undefined (reading 'normalize')` before it could judge anything.
+  const leafOf = (p: string) => { const segs = p.split(/[/\\]/); return segs[segs.length - 2] }
   const byLeaf = new Map<string, string[]>()
   for (const s of specs) {
     const leaf = leafOf(s.path)

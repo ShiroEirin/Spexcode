@@ -576,6 +576,7 @@ export default {
       tabPrevious: 'select previous tab',
       tabSplit: 'send active tab to split pane',
       commandBox: 'toggle the session Command Box',
+      focusComposer: 'focus the composer',
     },
     explorer: {
       menu: 'open the row menu for the focused explorer row',

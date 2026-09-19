@@ -45,3 +45,8 @@ It has stable width and responsive constraints so menus, long words, progress, a
 spill it. A host may dock it in document flow, suspend it over a terminal, or float it at a pointer (the shell
 forwards its ref so such a host can measure and clamp it); that placement is outside the primitive, while
 its internal editor/footer geometry stays identical.
+
+Every `ComposerTextarea` carries the shared focus marker consumed by [[keyboard-service]]'s fixed
+`Shift+Escape` action. The service chooses the first currently visible, enabled marked textarea, so a composer
+in a hidden warm document never receives focus. The primitive owns only the marker; each home still owns when
+the textarea is mounted and whether it is disabled.

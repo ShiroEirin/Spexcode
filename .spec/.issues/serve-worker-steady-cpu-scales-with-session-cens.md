@@ -208,3 +208,130 @@ hook lifecycle commit
 “sessions-only”只意味着不重建 spec/Git topology；它并不意味着只重算受影响 session。一个 hook 改 A，实际扫 682 条 roster，所以 CPU 同时受两个因素控制：session-db signal 频率 × roster 规模。
 
 之前做的 wake/coalesce 改动已撤回：`sessionFlight` 已经让底层 splice 单飞，且 before/after CPU 无收益。下一步应该只围绕真正有效的点设计：让 session-db commit 携带 affected session ids/revision，session splice 只重算 affected rows，复用其余 projection；未知/结构变化才 fallback 全 roster。先做一个单变量实验验证“局部 1-row splice”是否把 682 roster 的 burst 从约 52% 拉近 13 条 roster 的量级，再考虑理论抽象和正式实现。
+
+<!-- reply: 7690d008-1893-4d77-a6d3-16f051463169 @ 2026-09-18T09:27:19.116Z -->
+Spec: graph-stream, graph-cache, sessions, serve
+
+统一局部 projection 已落地并完成验收：
+
+提交链：
+- `706b9a554` affected commit subjects + change mask
+- `84fb94dbd` cross-process append-only session-event watermark
+- `ea7d0ee3c` partial session reader + immutable row merge/fallback
+- `bef74ff04` graph cache/stream wiring and partial projection integration
+- probe commits `6f339be2c`, `5e13eaac3`, `b64405330`
+
+实现机制：
+
+- canonical commit observer 携带 `subjectSessionIds` + `changeMask`；delivery-only commit 不触发 session projection。
+- session-db watcher 维护 append-only event rowid watermark，跨进程 hook commit 恢复 state-event subject ids；cursor failure/unknown event fallback full。
+- session store watcher 从 relative path 提取 session id；非 session path fallback full。
+- graph cache accumulates affected ids, and a precise session event uses `spliceSessions(prev, {scope:'partial', affectedSessionIds})`。
+- partial reader 不枚举全 roster、不读取无关 runtime/canonical/resident rows；只读 affected rows，保留一次共享 project-wide live evidence census。
+- immutable merge 保留 untouched row identity；malformed/duplicate/unseen ids fallback authoritative full roster。
+- partial splice 跳过 hook 热路径的全量 pre/post `sessionInputRevision()`；patrol 仍负责 aggregate revision validation。
+
+验收：
+
+- session-application 全套 `45/45` 通过。
+- projection/graphScope `16/16` 通过。
+- graph-stream API `11/11` 通过。
+- source acceptance gate：682 records / 667 archived / 15 active，一次 partial hook projection = `0` roster enumerations、`1` runtime read、`1` list-panes、`0` capture、15 working rows；10-build naive = 10 reads/10 census，local one-build约 7-10ms。
+- `spex spec lint`：0 errors，仓库已有 warnings。
+- eslint 改动文件通过。
+- `npm run typecheck/build` 的剩余错误是仓库已有 `DisplayStatus`/`archived` 类型错误，不在本次新增路径。
+
+真实 worker A/B（同一 682-record temp store、一个 delta stream、15 active、并发 lifecycle burst）：
+
+- 旧 dist：burst `54.03%`，after `26.83%`；session cache commits `513/359/316/305/345ms` 级别。
+- 当前 src：burst `47.13%`，after `27.33%`；session cache commits `32/20/251/129/340ms` 级别。
+
+主要矛盾已从“全 roster session projection”转为 affected-row partial path，未知变化仍安全退回 full。macmini 未做任何写入或控制。
+
+<!-- reply: 7690d008-1893-4d77-a6d3-16f051463169 @ 2026-09-18T09:36:49.664Z -->
+Spec: graph-stream, graph-cache, sessions, serve
+
+最终主要矛盾修正：affected-row partial projection 只削掉了 roster record/canonical 读取，不足以显著降低 worker CPU。真正未削掉的成本是全局 live evidence。
+
+当前 partial `listSessions(ids)` 仍然无条件执行：
+
+```text
+partial listSessions(affected ids)
+  -> liveSnapshot()  // 仍然 project-wide
+     -> tmux list-panes -a
+     -> parse every pane
+     -> rendezvousListening for every census id
+```
+
+同时，只要有一个 delta subscriber，graph-stream 仍独立开启：
+
+- hot poll：100ms，按 live pid/socket 做全局快速检查；
+- warm poll：1s，一次全局 tmux census + rendezvous evidence。
+
+所以当前 A/B 出现了“build-ms 明显下降，但 worker CPU 只有小幅下降”：
+
+- partial probe：682 roster 的 oneHook 从约 93ms/682 record reads 降到约 7-10ms/1 record read；这是 projection 证据；
+- 真实 worker：burst 从 54.03% 降到 47.13%，after 基本不变；说明剩余 CPU 不在 record 枚举，而在 live evidence 和 subscriber-gated pollers；
+- 无 stream vs 一个 delta stream 之前已显示约 16% -> 29.5% 的 steady 增量，正是共享 graph liveness 路径的底座。
+
+因此目前不应把“局部 projection 已解决 CPU”当作结论。更准确的主要矛盾是：
+
+```text
+每个 hook commit
+  -> 局部 row read 已经变轻
+  -> 但每次仍触发全局 liveSnapshot
+  -> 同时 hot/warm poll 继续全局探测
+  -> worker CPU 仍被 liveness evidence 占住
+```
+
+下一步真正该做的单变量实验是：给 session projection 注入/复用最近一份 `LiveEvidenceCache`，使纯 lifecycle state change 不再启动新的 global `liveSnapshot`；只在 warm evidence cadence 更新时做 tmux/rendezvous census。然后比较：
+
+- partial projection + fresh global evidence（当前）；
+- partial projection + reused evidence（候选）；
+- no delta subscriber（底座控制）。
+
+若第二组才接近 no-subscriber baseline，主要矛盾就完成闭环；否则继续拆 rendezvous probes 和 hot pid checks。当前 merge proposal 应先 hold，不能把现有小幅 burst 降幅当成最终 CPU 修复。
+
+<!-- reply: 7690d008-1893-4d77-a6d3-16f051463169 @ 2026-09-18T14:06:33.293Z -->
+Spec: graph-stream, graph-cache, sessions, serve
+
+最终修复闭环（2026-09-18）：主要矛盾不是 daemon-runtime import，也不是 subscriber 数线性复制，而是第一个 delta subscriber 激活的共享 graph/liveness 路径叠加全 roster 监督扫描。
+
+代码已按 spec 分成可回滚提交：
+- `ea7d0ee3c`：partial session projection，只重算 affected session rows，immutable 复用其余 rows。
+- `bef74ff04`：commit subject/change mask、SQLite event watermark、graph cache/stream 的 affected-id wiring；未知/游标失败仍 full fallback。
+- `356191fa8`：warm liveness evidence 单一 seam。warm poll 的全局 `liveSnapshot()` 发布最近快照，partial projection 只复用 1.25s 内快照，过期/缺失仍 fresh probe，`probeFailed`/`unproven` 三态原样保留。
+- `53fa7db7b`：queue drain 只做一次 liveSnapshot；turn-failure supervisor 启动时 full reconcile，之后只处理 event subject ids 和 retry-deadline observers；store/session-db unknown source 才触发 full。
+- `458bedcb1`：probe 显式建模 warm owner，gate 允许 cache hit 的 0 次增量 census。
+
+受控 A/B（同一 682 records / 667 archived / 15 active fixture，先让 warm owner 完成一次 census，再测一个 lifecycle projection）：
+- 旧 dist：oneHook = 682 record reads、1 roster enumeration、1 list-panes、约 133ms；10 次 naive = 6820 reads、10 list-panes、约 1041ms。
+- 当前 source：oneHook = 1 record read、0 roster enumeration、0 增量 list-panes、约 2.6ms；10 次 naive = 10 reads、0 list-panes、约 6.8ms。
+- source acceptance gate PASS：affected row=15、roster=0、record reads<=1、capture-pane=0。
+- 这组 CPU% 短样本受进程调度影响，不作为稳态百分比承诺；稳定的读取/census/build-ms 计数已经证明主要重复工作被删掉。
+
+已有真实 worker A/B 也保持诚实记录：旧 dist burst 54.03%/after 26.83%，partial source 在 cache 前 burst 47.13%/after 27.33%；本次 cache 后不把未重新测到的稳态百分比写成事实，保留上述同 fixture 可复现的调用计数和 wall-ms 作为验收证据。macmini 只读要求未触碰：没有 ssh 写入、没有杀进程、没有改那 17 条 lane。
+
+验证：session-application 45/45；liveness/hot/graphScope/sessionProjection 31/31；graph-stream 定向 24/24；source probe gate PASS；`spex spec lint` 0 errors（54 条仓库既有 warning）；typecheck/build 仍被既有 `DisplayStatus`/`archived` 类型错误阻断，错误不在本次新增路径。
+
+<!-- reply: 7690d008-1893-4d77-a6d3-16f051463169 @ 2026-09-19T01:59:24.472Z -->
+Spec: graph-stream, graph-cache, sessions, serve, liveness
+
+隔离真实 worker A/B 已完成（2026-09-19，本机 /tmp 临时环境，不碰 macmini）：
+
+环境完全独立：682 records = 667 archived + 15 active；临时 SPEXCODE_HOME；临时 SQLite；临时 git project；fake tmux executable/socket；真实 worker `index.js`、真实 `/api/graph/stream?mode=delta`、真实 `spex internal session-state` hook 子进程。每轮先取空载 2.5s，再开一个 delta SSE 稳定 5s，再执行 60 次真实 lifecycle hook，最后采样 5s。旧 dist 和当前 noCheck 编译后的 plain Node dist 各跑两轮，排除 tsx loader。
+
+结果：
+
+| build | empty CPU | delta stream CPU | hook burst CPU | tmux list-panes calls | burst RSS peak |
+|---|---:|---:|---:|---:|---:|
+| old dist run 1 | 58.79% | 36.97% | 54.69% | 114 | 306,816 KiB |
+| old dist run 2 | 59.29% | 37.73% | 56.79% | 114 | 318,476 KiB |
+| current dist run 1 | 56.73% | 33.96% | 29.74% | 44 | 268,072 KiB |
+| current dist run 2 | 56.73% | 34.88% | 29.96% | 44 | 260,328 KiB |
+
+两轮平均：burst CPU `55.74% -> 29.85%`，下降 `25.89` 个百分点，约 `46.5%` 相对降幅；tmux census `114 -> 44`，下降 `61.4%`；burst RSS 峰值均值约 `312.6MB -> 264.2MB`，下降约 `15.5%`。空载均值约 `59.04% -> 56.73%`，说明这次变更主要解决 hook burst/session projection 的可变成本，不会假装消灭所有 steady supervisor 底座；delta stream 稳定段约 `37.35% -> 34.42%`，warm poll 本身仍是固定成本。
+
+日志也直接证实机制变化：旧 dist 的 session broadcasts 多为 `132–164ms`；当前 dist 大多数为 `0–2ms`，只有 warm evidence 过期时回到约 `150–201ms` 的 fresh probe。当前 worker 60 次 hook 仍产生 60 个 session broadcasts，但每次不再全 roster + 重复 census，说明收益来自每次 build 的工作量，而不是丢事件。
+
+结论：这次变更已经在隔离真实 worker 上证明有效。有效点是 affected-row partial projection + warm evidence reuse；之前无效的 wake/coalescing 仍已撤回。macmini 侧只需做一次只读 post-change ps/top 交叉验证，不能再说“没有最终 CPU 降幅”。

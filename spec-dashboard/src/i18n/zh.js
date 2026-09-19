@@ -568,6 +568,7 @@ export default {
       tabPrevious: '选择上一个页签',
       tabSplit: '将当前页签送入分屏',
       commandBox: '开关会话 Command Box',
+      focusComposer: '聚焦输入框',
     },
     explorer: {
       menu: '打开当前资源管理器行的右键菜单',

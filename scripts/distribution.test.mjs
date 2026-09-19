@@ -145,6 +145,19 @@ test('every package names only files that exist, and the ZCode skill points at t
     }
     assert.match(body, /LANGUAGE THE PERSON ASKED IN/, `${name} says which language the tree is written in`)
   }
+
+  // The generator never touches `atlas.dwf.ts` — it is hand-written — so it drifted: while every SKILL.md
+  // moved to the public registry and off the `@next` pin, the workflow script kept `-p spexcode@next` with no
+  // registry, in the very arrays ZCode executes. An assertion that only reads the generated files cannot see
+  // that, which is why this one reads every shipped file that spells the command.
+  const dwf = readFileSync(join(root, 'distribution/zcode/atlas/skills/atlas/atlas.dwf.ts'), 'utf8')
+  for (const line of dwf.split('\n').filter((l) => l.includes('npx -y') || l.includes('"-y"'))) {
+    assert.match(line, /--registry=https:\/\/registry\.npmjs\.org/, `atlas.dwf.ts: ${line.trim().slice(0, 80)}`)
+  }
+  assert.doesNotMatch(dwf, /spexcode@next|spec-dashboard@next/, 'the workflow script pins no prerelease')
+  // ZCode's authoring guide pins that a workflow script names no tool profile: `agent()`'s second argument is
+  // the persona's instructions, so a read-only role is stated in words.
+  assert.doesNotMatch(dwf, /tools:\s*"readonly"|ToolProfile/, 'the workflow script names no tool profile')
   assert.match(zcodeSkill, /\$\{ZCODE_SKILL_DIR\}\/atlas\.dwf\.ts/)
   assert.ok(existsSync(join(root, 'distribution/zcode/atlas/skills/atlas/atlas.dwf.ts')))
   const manifest = JSON.parse(readFileSync(join(root, 'distribution/gugu/spexcode-atlas/manifest.json'), 'utf8'))

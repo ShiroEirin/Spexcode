@@ -55,6 +55,7 @@ export const ACT = [
   // tooltip became one) the hint the console printed for it. A binding the registry does not hold is a
   // binding nothing can render truthfully.
   { id: 'shell.commandBox',   keys: ['Alt+KeyI'],                rebind: false, desc: 'legend.shell.commandBox' },
+  { id: 'shell.focusComposer', keys: ['Shift+Escape'],           rebind: false, desc: 'legend.shell.focusComposer' },
   // explorer rows. The row menu takes the OS-universal context-menu gesture, so the keyboard reaches the
   // same commands the right-click does instead of a second, smaller vocabulary. Holding a row in its own
   // tab existed only as ⌘/ctrl-click and double-click — gestures a registry cannot print and a legend

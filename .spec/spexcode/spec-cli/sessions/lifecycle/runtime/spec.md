@@ -105,6 +105,20 @@ project may be using the same control plane. It is a project resource with expli
 ([[host-resource-budget]]), not a process-tree child owned by whichever session is being stopped; routing is
 by `harness_session_id`, not by socket ownership.
 
+**A project's directory name is a FILENAME, and what a filename may hold is a platform fact.** The store keys
+a project by flattening its absolute path into one directory name, so every character that cannot live in a path
+segment has to be replaced. POSIX contributes `/` and `.`; Windows contributes two more, and leaving them out was
+not cosmetic. An absolute Windows path opens with a drive letter, its COLON survived into the name, and the mkdir
+for `…/projects/C:-Users-…` failed — `spex spec lint` and `spex graph --public --html` died on every Windows
+machine before they could do anything. `:` and `\` never occur in a POSIX absolute path, so widening the class
+moved no existing Linux or macOS store.
+
+That was one of a family. Proving a lock's claimant is alive read `ps -o`, which the `ps` on a Windows PATH does
+not accept at all; a spec path was split on `/` alone, so a back-slashed one had no leaf; and a node's directory
+was derived by stripping `/spec.md`, which left the file path in place and sent every diagram to
+`…\spec.md\diagram.json`. Each is the same mistake: a POSIX path or a POSIX tool assumed at a seam that is
+asked the same question on every platform. Those seams answer for the host they run on.
+
 This is a CLEAN cut from the old per-worktree `.session/` layout — there is no compat shim. `session.json` is
 accepted only as the one-time migration input described by [[json-migration]]; after the marker is published it
 is retired and no current reader or writer may consult it. The old `.gitignore` entries for `.session*` are inert
