@@ -559,7 +559,8 @@ const sessionStopBlocker = async (
       if (!identityBefore.ok)
         return `${descriptor.label} PID ${pid} has no matching live detached process-boundary record: ${identityBefore.reason}`
       let guard
-      try { guard = await descriptor.mutationGuard(targetThread, opts) }
+      // The record's worktree scopes the adapter's own-target read; a cold receipt, when present, carries its scope.
+      try { guard = await descriptor.mutationGuard(targetThread, { ...opts, targetCwd: targetRecord?.worktree_path ?? null }) }
       catch (error) { return `${descriptor.label} target-scoped mutation guard failed: ${(error as Error).message}` }
       const identityAfter = verifyDetachedRuntime(pid, descriptor.receiptFile)
       if (!identityAfter.ok || detachedRuntimeGenerationToken(identityAfter.identity) !== detachedRuntimeGenerationToken(identityBefore.identity))

@@ -169,7 +169,9 @@ visible, counted, and protective. An unhealthy/unknown probe reports an unknown 
 The existing stop transition asks the adapter-owned target-scoped mutation proof before touching tmux or a leaf.
 That proof hard-gates the shared PID/start/detached-receipt/socket generation, uses the lightweight loaded-ID census, and
 reads only the exact target thread when it is loaded; full per-reference report projection is read-only evidence,
-not mutation authority. The mutation scope is exact: a target leaf with a strict session-leaf receipt binding the
+not mutation authority. The guard hands the adapter the governed record's worktree path as an opaque scope binding
+and nothing else: what that binding addresses in the native runtime, and what a record that binds none must do,
+are the adapter's to decide ([[codex-runtime]] scopes its own-target read to it and refuses without one). The mutation scope is exact: a target leaf with a strict session-leaf receipt binding the
 registered PID/start identity may be stopped even when unrelated sibling or unowned loaded references are slow or unresponsive;
 their loaded IDs remain protective against any shared app-server/control-plane teardown, which this path never
 performs. An unhealthy loaded-ID census, unknown exact target read, target active turn or descendant, or unproven

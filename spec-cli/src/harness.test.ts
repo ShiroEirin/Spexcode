@@ -11,6 +11,8 @@ import { shQuote } from './sh.js'
 import { runtimeRoot, sessionArtifactPath } from '@spexcode/spec-core'
 import { processStartToken, verifyDetachedRuntime, writeDetachedRuntimeReceipt } from '@spexcode/spec-core'
 import { spawnDetachedRuntime } from './runtime-ownership.js'
+import { assertSessionStopSafe } from './host-resources.js'
+import { initializeFreshSessionApplication } from './session-application.js'
 
 const NO_RPC_RESPONSE = Symbol('NO_RPC_RESPONSE')
 
@@ -70,9 +72,37 @@ const withRowStatus = (message: any, result: unknown): unknown => {
   return { ...result, data: rows.map((row) =>
     row && typeof row === 'object' && !('status' in row) ? { ...row, status: { type: 'idle' } } : row) }
 }
+// The worktree every fixture record binds, and the cwd a fixture row lives at unless the row says otherwise.
+const FIXTURE_CWD = '/fixture/worktree'
+// The real app-server applies `cwd` and `parentThreadId` as row filters. A handler written around `archived` and
+// `ancestorThreadId` alone is declaring "my rows live at the asked cwd, and my only parent edges are the ones on
+// my rows", so that is filled in here rather than in every handler: a row without a cwd takes the requested
+// one, a row that names another cwd is filtered out exactly as the server would, and a direct-children request
+// is answered from the handler's own descendant rows. A test that attacks the filters themselves passes
+// `nativeFilters: 'raw'` and answers every request shape by hand.
+const withNativeFilters = (message: any, invoke: (message: any) => unknown): unknown => {
+  if (message?.method !== 'thread/list') return invoke(message)
+  const params = message.params ?? {}
+  const shape = (result: unknown, keep: (row: any) => boolean): unknown => {
+    const rows = (result as { data?: unknown } | null)?.data
+    if (!result || typeof result !== 'object' || !Array.isArray(rows)) return result
+    return { ...result, data: rows
+      .map((row) => row && typeof row === 'object' && !('cwd' in row) ? { ...row, cwd: params.cwd ?? FIXTURE_CWD } : row)
+      .filter((row) => !row || typeof row !== 'object' || keep(row)) }
+  }
+  const parent = params.parentThreadId
+  const request = typeof parent === 'string'
+    ? { ...message, params: { ...params, parentThreadId: undefined, ancestorThreadId: parent } }
+    : message
+  const keep = (row: any) => (typeof parent !== 'string' || row.parentThreadId === parent) &&
+    (typeof params.cwd !== 'string' || row.cwd === params.cwd)
+  const result = invoke(request)
+  return result instanceof Promise ? result.then((value) => shape(value, keep)) : shape(result, keep)
+}
 const codexRpcFixture = (handler: (message: any, send: (value: unknown) => void) => unknown, lifecycle: {
   initialize?: (message: any, send: (value: unknown) => void) => unknown
   initialized?: (message: any, send: (value: unknown) => void) => unknown
+  nativeFilters?: 'raw'
 } = {}) => createServer((socket) => {
   let buffer = Buffer.alloc(0)
   let upgraded = false
@@ -90,7 +120,7 @@ const codexRpcFixture = (handler: (message: any, send: (value: unknown) => void)
     }
     if (message.method === 'initialized') return lifecycle.initialized?.(message, send)
     try {
-      const result = handler(message, send)
+      const result = lifecycle.nativeFilters === 'raw' ? handler(message, send) : withNativeFilters(message, (request) => handler(request, send))
       if (result === NO_RPC_RESPONSE) return
       if (result instanceof Promise) {
         result.then((value) => send({ id: message.id, result: withRowStatus(message, value) ?? {} }))
@@ -521,7 +551,7 @@ const runReplacementArchiveCase = async (response: 'success' | 'error') => {
     await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(socket, () => resolve()) })
     mkdirSync(root, { recursive: true })
     owner = startCodexOwner(root)
-    const result = await codexHarness.coldRuntime?.({ session: `replacement-${response}-session`, harnessSessionId: target })
+    const result = await codexHarness.coldRuntime?.({ session: `replacement-${response}-session`, harnessSessionId: target, worktreePath: FIXTURE_CWD })
     return { result, archiveCalls, unarchiveCalls, archived }
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()))
@@ -696,7 +726,7 @@ test('Codex archive ignores a non-returning unrelated read when the exact target
     await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(socket, () => resolve()) })
     mkdirSync(root, { recursive: true })
     owner = startCodexOwner(root)
-    assert.deepEqual(await codexHarness.coldRuntime?.({ session: 'target-scoped-session', harnessSessionId: target }), { ok: true })
+    assert.deepEqual(await codexHarness.coldRuntime?.({ session: 'target-scoped-session', harnessSessionId: target, worktreePath: FIXTURE_CWD }), { ok: true })
     const [activeFinal, archivedFinal] = await Promise.all([
       codexThreadList(socket, { archived: false, sourceKinds: [] }),
       codexThreadList(socket, { archived: true, sourceKinds: [] }),
@@ -745,7 +775,7 @@ test('Codex cold preflight waits through a short app-server census refusal strea
     await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(socket, () => resolve()) })
     mkdirSync(root, { recursive: true })
     owner = startCodexOwner(root)
-    const result = await codexHarness.coldPreflight?.({ session: 'cold-retry-session', harnessSessionId: target })
+    const result = await codexHarness.coldPreflight?.({ session: 'cold-retry-session', harnessSessionId: target, worktreePath: FIXTURE_CWD })
     assert.equal(result?.ok, true)
     assert.ok(loadedCalls >= 4, 'the adapter retries through a short transient census refusal streak')
   } finally {
@@ -757,6 +787,425 @@ test('Codex cold preflight waits through a short app-server census refusal strea
     else process.env.SPEXCODE_CODEX_SOCKET_DIR = previousSocketDir
     rmSync(home, { recursive: true, force: true })
   }
+})
+
+// @@@ subtree-scoped cold proof - adversarial coverage ([[codex-runtime]]).
+// A table-driven native server answered in RAW filter mode: it applies archived / ancestorThreadId /
+// parentThreadId / cwd exactly as the real app-server does, and each test injects ONE fault on top. Every refusal
+// is asserted by its reason AND by an empty mutation log, so a test cannot pass on an unrelated refusal and a
+// refusal can never have archived anything on its way out.
+type NativeRow = { id: string; parent?: string; cwd?: string; archived?: boolean; status?: string; loaded?: boolean; unmaterialized?: boolean }
+type NativeFault = {
+  // replace the faithful answer to one request with what a faulty server says instead
+  answer?: (params: any, rows: any[], table: NativeRow[]) => any[]
+  // change the world immediately before a request is answered
+  before?: (message: any, table: NativeRow[], env: { root: string }) => void
+}
+const nativeDescendants = (table: NativeRow[], ancestor: string): Set<string> => {
+  const found = new Set<string>()
+  for (let grew = true; grew;) {
+    grew = false
+    for (const row of table) if (row.parent && (row.parent === ancestor || found.has(row.parent)) && !found.has(row.id)) { found.add(row.id); grew = true }
+  }
+  return found
+}
+async function withNativeThreads(table: NativeRow[], fault: NativeFault, body: (env: { root: string; table: NativeRow[]; mutations: string[]; lists: any[] }) => Promise<void>) {
+  const previousHome = process.env.SPEXCODE_HOME
+  const previousSocketDir = process.env.SPEXCODE_CODEX_SOCKET_DIR
+  const home = mkdtempSync(join(tmpdir(), 'spex-codex-subtree-proof-'))
+  process.env.SPEXCODE_HOME = home
+  process.env.SPEXCODE_CODEX_SOCKET_DIR = join(home, 'sockets')
+  const root = runtimeRoot()
+  const mutations: string[] = []
+  const lists: any[] = []
+  const find = (id: string) => table.find((row) => row.id === id)
+  const server = codexRpcFixture((message) => {
+    fault.before?.(message, table, { root })
+    if (message.method === 'thread/loaded/list') return { data: table.filter((row) => row.loaded).map((row) => ({ id: row.id })), nextCursor: null }
+    if (message.method === 'thread/archive') { mutations.push(`archive:${message.params.threadId}`); const row = find(message.params.threadId); if (row) { row.archived = true; row.loaded = false } return {} }
+    if (message.method === 'thread/unarchive') { mutations.push(`unarchive:${message.params.threadId}`); const row = find(message.params.threadId); if (row) row.archived = false; return {} }
+    if (message.method === 'thread/turns/list') {
+      const id = message.params.threadId
+      if (find(id)?.unmaterialized) throw new Error(`thread ${id} is not materialized yet; thread/turns/list is unavailable before first user message`)
+      return { data: [], nextCursor: null }
+    }
+    if (message.method === 'thread/list') {
+      const params = message.params
+      lists.push(params)
+      const closure = typeof params.ancestorThreadId === 'string' ? nativeDescendants(table, params.ancestorThreadId) : null
+      const rows = table
+        .filter((row) => !row.unmaterialized && !!row.archived === !!params.archived)
+        .filter((row) => !closure || closure.has(row.id))
+        .filter((row) => typeof params.parentThreadId !== 'string' || row.parent === params.parentThreadId)
+        .filter((row) => typeof params.cwd !== 'string' || (row.cwd ?? FIXTURE_CWD) === params.cwd)
+        .map((row) => ({ id: row.id, parentThreadId: row.parent ?? null, cwd: row.cwd ?? FIXTURE_CWD, status: { type: row.status ?? (row.loaded ? 'idle' : 'notLoaded') } }))
+      return { data: fault.answer ? fault.answer(params, rows, table) : rows, nextCursor: null }
+    }
+    throw new Error(`unexpected RPC ${message.method}`)
+  }, { nativeFilters: 'raw' })
+  let owner: ReturnType<typeof startCodexOwner> | null = null
+  try {
+    await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(codexAppServerSock(root), () => resolve()) })
+    mkdirSync(root, { recursive: true })
+    owner = startCodexOwner(root)
+    await body({ root, table, mutations, lists })
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+    await stopCodexOwner(owner)
+    if (previousHome === undefined) delete process.env.SPEXCODE_HOME
+    else process.env.SPEXCODE_HOME = previousHome
+    if (previousSocketDir === undefined) delete process.env.SPEXCODE_CODEX_SOCKET_DIR
+    else process.env.SPEXCODE_CODEX_SOCKET_DIR = previousSocketDir
+    rmSync(home, { recursive: true, force: true })
+  }
+}
+const isScopedList = (params: any) => typeof params.cwd === 'string' || typeof params.ancestorThreadId === 'string' || typeof params.parentThreadId === 'string'
+const OTHER_CWD = '/fixture/elsewhere'
+const subtreeRec = (target: string, worktreePath: string | null = FIXTURE_CWD) => ({ session: `${target}-session`, harnessSessionId: target, worktreePath })
+const subtreeTable = (): NativeRow[] => [
+  { id: 'target', loaded: true },
+  { id: 'child', parent: 'target', loaded: true },
+  { id: 'grandchild', parent: 'child', cwd: OTHER_CWD, archived: true },
+  // the rest of the host: threads this proof must never need to read
+  { id: 'bystander-active', cwd: '/fixture/bystander', loaded: true },
+  { id: 'bystander-archived', cwd: '/fixture/bystander', archived: true },
+]
+const refusesCold = async (table: NativeRow[], fault: NativeFault, reason: RegExp, rec = subtreeRec('target')) => {
+  await withNativeThreads(table, fault, async ({ mutations }) => {
+    const preflight = await codexHarness.coldPreflight?.(rec)
+    assert.equal(preflight?.ok, false, 'the cold preflight refuses')
+    if (preflight && !preflight.ok) assert.match(preflight.reason, reason)
+    const runtime = await codexHarness.coldRuntime?.(rec)
+    assert.equal(runtime?.ok, false, 'the receipt-free cold teardown refuses too')
+    if (runtime && !runtime.ok) assert.match(runtime.reason, reason)
+    assert.deepEqual(mutations, [], 'a refusal archives nothing')
+  })
+}
+
+// A one-shot fault (the world changes once, mid-proof) is only the subject of the call it happens in: a second,
+// later proof meets a world that is stable again and is right to accept it.
+const refusesColdPreflightOnce = async (table: NativeRow[], fault: NativeFault, reason: RegExp) => {
+  await withNativeThreads(table, fault, async ({ mutations }) => {
+    const preflight = await codexHarness.coldPreflight?.(subtreeRec('target'))
+    assert.equal(preflight?.ok, false, 'the cold preflight refuses')
+    if (preflight && !preflight.ok) assert.match(preflight.reason, reason)
+    assert.deepEqual(mutations, [], 'a refusal archives nothing')
+  })
+}
+
+test('Codex cold proof costs the target subtree: every native list is scoped, and the rest of the host is never read', async () => {
+  await withNativeThreads(subtreeTable(), {}, async ({ mutations, lists, table }) => {
+    const rec = subtreeRec('target')
+    const preflight = await codexHarness.coldPreflight?.(rec)
+    if (!preflight?.ok) throw new Error(`clean subtree preflight refused: ${preflight && !preflight.ok ? preflight.reason : 'no adapter'}`)
+    assert.deepEqual(await codexHarness.coldRuntime?.(rec, preflight.receipt), { ok: true })
+    assert.deepEqual(mutations, ['archive:child', 'archive:target'], 'the initially-active closure is archived deepest-first, the archived grandchild is proof not mutation')
+    assert.ok(lists.length > 0)
+    assert.deepEqual(lists.filter((params) => !isScopedList(params)), [], 'no whole-collection census is issued for a record-backed proof')
+    assert.ok(lists.some((params) => params.cwd === OTHER_CWD), "a descendant at another cwd is witnessed through its own cwd")
+    assert.ok(['target', 'child', 'grandchild'].every((id) => lists.some((params) => params.parentThreadId === id)), 'every subtree member gets a direct-children read')
+    assert.equal(table.find((row) => row.id === 'bystander-active')?.loaded, true, 'an unrelated loaded sibling is untouched')
+  })
+})
+
+test('Codex cold proof refuses a record that binds no worktree cwd rather than widening its own scope', async () => {
+  await refusesCold(subtreeTable(), {}, /binds no worktree cwd/, subtreeRec('target', null))
+})
+
+test('Codex cold proof refuses a target with descendants that neither scoped collection returns', async () => {
+  // the target lives at another cwd than its record binds; its closure is non-empty, so no unmaterialized probe applies
+  await refusesCold([{ id: 'target', loaded: true, cwd: OTHER_CWD }, { id: 'child', parent: 'target', loaded: true }], {},
+    /subtree member target is absent from both native collections/)
+})
+
+test('Codex cold proof refuses a descendant-free target whose native cwd is not the worktree its record binds', async () => {
+  // absent and descendant-free reaches the unmaterialized probe, which answers with turns rather than the exact
+  // protocol refusal, so a wrong cwd binding is never mistaken for the startup window
+  await refusesCold([{ id: 'target', loaded: true, cwd: OTHER_CWD }], {}, /subtree member target is absent from both native collections/)
+})
+
+test('Codex cold proof refuses a target split across the active and archived collections', async () => {
+  await refusesCold([{ id: 'target', loaded: true }], {
+    answer: (params, rows) => params.cwd === FIXTURE_CWD && params.archived === true
+      ? [...rows, { id: 'target', parentThreadId: null, cwd: FIXTURE_CWD, status: { type: 'idle' } }] : rows,
+  }, /subtree member target occurs in both active and archived native collections/)
+})
+
+test('Codex cold proof refuses a cwd filter the native server did not honor', async () => {
+  // an older runtime ignores a filter key it does not know and answers with the whole collection
+  await refusesCold(subtreeTable(), {
+    answer: (params, rows, table) => typeof params.cwd !== 'string' ? rows : table
+      .filter((row) => !!row.archived === !!params.archived)
+      .map((row) => ({ id: row.id, parentThreadId: row.parent ?? null, cwd: row.cwd ?? FIXTURE_CWD, status: { type: 'idle' } })),
+  }, /outside its requested cwd .* scope; the native filter was not honored/)
+})
+
+test('Codex cold proof refuses a direct-children filter the native server did not honor', async () => {
+  await refusesCold(subtreeTable(), {
+    answer: (params, rows, table) => typeof params.parentThreadId !== 'string' ? rows : table
+      .filter((row) => !!row.archived === !!params.archived)
+      .map((row) => ({ id: row.id, parentThreadId: row.parent ?? null, cwd: row.cwd ?? FIXTURE_CWD, status: { type: 'idle' } })),
+  }, /outside its requested parentThreadId .* scope; the native filter was not honored/)
+})
+
+test('Codex cold proof refuses a leaf descendant the ancestor closure omitted, caught by the direct-children witness', async () => {
+  // the omitted leaf lives at another cwd than its parent, so ONLY the direct-children read can see it
+  await refusesCold(subtreeTable(), {
+    answer: (params, rows) => typeof params.ancestorThreadId === 'string' ? rows.filter((row) => row.id !== 'grandchild') : rows,
+  }, /has child grandchild that the descendant closure omitted/)
+})
+
+test('Codex cold proof refuses a closure whose middle member was omitted', async () => {
+  await refusesCold(subtreeTable(), {
+    answer: (params, rows) => typeof params.ancestorThreadId === 'string' ? rows.filter((row) => row.id !== 'child') : rows,
+  }, /grandchild has no complete parent chain to target/)
+})
+
+test('Codex cold proof refuses a closure member that no parent returns as its child', async () => {
+  await refusesCold(subtreeTable(), {
+    answer: (params, rows) => params.parentThreadId === 'child' ? [] : rows,
+  }, /grandchild is in the closure but its parent child did not return it as a child/)
+})
+
+test('Codex cold proof refuses one descendant reported under two parents', async () => {
+  await refusesCold(subtreeTable(), {
+    answer: (params, rows) => params.parentThreadId === 'target' && params.archived === true
+      ? [...rows, { id: 'grandchild', parentThreadId: 'target', cwd: OTHER_CWD, status: { type: 'notLoaded' } }] : rows,
+  }, /grandchild has conflicting parents/)
+})
+
+test('Codex cold proof refuses a descendant whose scoped collection disagrees with the closure that returned it', async () => {
+  // the closure says `child` is active; the read scoped to child's own cwd says it is archived
+  await refusesCold(subtreeTable(), {
+    answer: (params, rows) => {
+      if (params.cwd !== FIXTURE_CWD) return rows
+      return params.archived === true
+        ? [...rows, { id: 'child', parentThreadId: 'target', cwd: FIXTURE_CWD, status: { type: 'idle' } }]
+        : rows.filter((row) => row.id !== 'child')
+    },
+  }, /child changed collection assignment during ownership census/)
+})
+
+test('Codex cold proof refuses a descendant that reports no cwd to scope its witness', async () => {
+  await refusesCold(subtreeTable(), {
+    answer: (params, rows) => typeof params.ancestorThreadId === 'string' ? rows.map((row) => row.id === 'child' ? { ...row, cwd: null } : row) : rows,
+  }, /child reports no cwd/)
+})
+
+test('Codex cold proof refuses a child spawned between the closure read and the witness read', async () => {
+  let spawned = false
+  await refusesColdPreflightOnce([{ id: 'target', loaded: true }], {
+    before: (message, table) => {
+      if (message.method === 'thread/list' && typeof message.params.parentThreadId === 'string' && !spawned) {
+        spawned = true
+        table.push({ id: 'late-child', parent: 'target', loaded: true })
+      }
+    },
+  }, /subtree member target has child late-child that the descendant closure omitted/)
+})
+
+test('Codex cold teardown refuses a subtree that changed after its frozen receipt, and archives nothing', async () => {
+  await withNativeThreads([{ id: 'target', loaded: true }], {}, async ({ table, mutations }) => {
+    const rec = subtreeRec('target')
+    const preflight = await codexHarness.coldPreflight?.(rec)
+    if (!preflight?.ok) throw new Error('clean preflight refused')
+    table.push({ id: 'late-child', parent: 'target', loaded: true })
+    const result = await codexHarness.coldRuntime?.(rec, preflight.receipt)
+    assert.equal(result?.ok, false)
+    if (result && !result.ok) assert.match(result.reason, /subtree ownership or collection assignment changed after archive preflight/)
+    assert.deepEqual(mutations, [])
+  })
+})
+
+test('Codex cold teardown refuses a receipt proven in a different scope than the record binds', async () => {
+  await withNativeThreads([{ id: 'target', loaded: true }], {}, async ({ mutations }) => {
+    const preflight = await codexHarness.coldPreflight?.(subtreeRec('target'))
+    if (!preflight?.ok) throw new Error('clean preflight refused')
+    const result = await codexHarness.coldRuntime?.(subtreeRec('target', OTHER_CWD), preflight.receipt)
+    assert.equal(result?.ok, false)
+    if (result && !result.ok) assert.match(result.reason, /proven in a different scope/)
+    assert.deepEqual(mutations, [])
+  })
+})
+
+test('Codex cold proof refuses a generation swap during the subtree witness round', async () => {
+  let swapped = false
+  await refusesColdPreflightOnce(subtreeTable(), {
+    before: (message, _table, { root }) => {
+      if (message.method === 'thread/list' && typeof message.params.parentThreadId === 'string' && !swapped) {
+        swapped = true
+        writeFileSync(codexAppServerReceipt(root), `swapped fixture ${process.pid}\n`)
+      }
+    },
+  }, /generation changed during subtree witness census/)
+})
+
+test('Codex cold proof refuses a loaded member whose turn state the server did not determine', async () => {
+  await refusesCold([{ id: 'target', loaded: true, status: 'someFutureVariant' }], {}, /target turn state is unknown/)
+})
+
+test('Codex cold proof refuses a loaded member with an active turn', async () => {
+  await refusesCold([{ id: 'target', loaded: true }, { id: 'child', parent: 'target', loaded: true, status: 'active' }], {}, /child has an active turn/)
+})
+
+test('Codex cold proof refuses an archived member that is still loaded', async () => {
+  await refusesCold([{ id: 'target', loaded: true }, { id: 'child', parent: 'target', archived: true, loaded: true }], {}, /archived subtree member child remains loaded/)
+})
+
+test('Codex cold proof still accepts only an explicitly unmaterialized absent target under a scoped read', async () => {
+  await withNativeThreads([{ id: 'target', loaded: true, unmaterialized: true }], {}, async ({ lists }) => {
+    const preflight = await codexHarness.coldPreflight?.(subtreeRec('target'))
+    assert.equal(preflight?.ok, true)
+    assert.deepEqual(lists.filter((params) => !isScopedList(params)), [])
+  })
+})
+
+test('Codex stop guard refuses a cold receipt whose scope is not what the record binds now, before any native read', async () => {
+  // This guard is the last gate in front of the leaf teardown. A receipt re-proved in its OWN scope would agree
+  // with itself, pass here, let stop take the leaf down, and only then meet coldRuntime's scope check.
+  await withNativeThreads(subtreeTable(), {}, async ({ root, mutations, lists }) => {
+    const guardOf = codexHarness.sharedRuntimes?.(root)[0]?.mutationGuard
+    if (!guardOf) throw new Error('Codex exposes its target mutation guard')
+    const preflight = await codexHarness.coldPreflight?.(subtreeRec('target'))
+    if (!preflight?.ok) throw new Error('clean preflight refused')
+    const coldReceipt = preflight.receipt
+    const readsBefore = lists.length
+
+    const moved = await guardOf('target', { coldReceipt, targetCwd: OTHER_CWD })
+    assert.equal(moved.healthy, false)
+    assert.equal(moved.coldTeardownAuthorized, false, 'a mismatched scope authorizes no cold teardown')
+    assert.match(moved.error ?? '', /proven in a different scope than this record binds/)
+
+    const unbound = await guardOf('target', { coldReceipt })
+    assert.equal(unbound.healthy, false)
+    assert.equal(unbound.coldTeardownAuthorized, false, "a missing binding never falls back to the receipt's own scope")
+    assert.match(unbound.error ?? '', /binds no worktree cwd/)
+
+    assert.equal(lists.length, readsBefore, 'both refusals are decided before any native read')
+    assert.deepEqual(mutations, [], 'and before any native mutation')
+
+    // the same receipt against the binding it was proven at still authorizes
+    const agreed = await guardOf('target', { coldReceipt, targetCwd: FIXTURE_CWD })
+    assert.equal(agreed.healthy, true)
+    assert.equal(agreed.coldTeardownAuthorized, true)
+    assert.deepEqual([...agreed.descendantIds].sort(), ['child', 'grandchild'])
+    assert.deepEqual(lists.filter((params) => !isScopedList(params)), [])
+    assert.deepEqual(mutations, [])
+  })
+})
+
+test('Codex stop guard does not retry a failed receipt proof through a second guard census', async () => {
+  let failScopedRead = false
+  await withNativeThreads(subtreeTable(), {
+    answer: (params, rows, table) => {
+      if (!failScopedRead || typeof params.cwd !== 'string') return rows
+      return table.map((row) => ({ id: row.id, parentThreadId: row.parent ?? null, cwd: row.cwd ?? FIXTURE_CWD, status: { type: 'idle' } }))
+    },
+  }, async ({ root, lists }) => {
+    const guardOf = codexHarness.sharedRuntimes?.(root)[0]?.mutationGuard
+    if (!guardOf) throw new Error('Codex exposes its target mutation guard')
+    const preflight = await codexHarness.coldPreflight?.(subtreeRec('target'))
+    if (!preflight?.ok) throw new Error('clean preflight refused')
+
+    failScopedRead = true
+    const before = lists.length
+    const result = await guardOf('target', { coldReceipt: preflight.receipt, targetCwd: FIXTURE_CWD })
+    assert.equal(result.healthy, false)
+    assert.equal(result.coldTeardownAuthorized, false)
+    assert.match(result.error ?? '', /outside its requested cwd .* scope/)
+    // The failed receipt proof itself has two ancestor reads and two target-cwd reads. A second target guard
+    // would add five more native reads without changing the refusal or making teardown safer.
+    assert.deepEqual(lists.slice(before).map(({ ancestorThreadId, cwd, archived }) => ({ ancestorThreadId, cwd, archived })), [
+      { ancestorThreadId: 'target', cwd: undefined, archived: false },
+      { ancestorThreadId: 'target', cwd: undefined, archived: true },
+      { ancestorThreadId: undefined, cwd: FIXTURE_CWD, archived: false },
+      { ancestorThreadId: undefined, cwd: FIXTURE_CWD, archived: true },
+    ], 'a failed receipt proof has no fallback census')
+  })
+})
+
+test('Codex cold teardown compensates a failed archive through the plan\'s own scopes, never a whole-host read', async () => {
+  // the deepest member archives, the ancestor's archive is REFUSED by the server, so compensation must undo
+  // the committed member — and must read the collections it reads through the scopes the plan was proven at
+  await withNativeThreads([{ id: 'target', loaded: true }, { id: 'child', parent: 'target', cwd: OTHER_CWD, loaded: true }], {
+    before: (message) => { if (message.method === 'thread/archive' && message.params.threadId === 'target') throw new Error('fixture refuses to archive the ancestor') },
+  }, async ({ mutations, lists }) => {
+    const rec = subtreeRec('target')
+    const preflight = await codexHarness.coldPreflight?.(rec)
+    if (!preflight?.ok) throw new Error('clean preflight refused')
+    const result = await codexHarness.coldRuntime?.(rec, preflight.receipt)
+    assert.equal(result?.ok, false)
+    assert.deepEqual(mutations, ['archive:child', 'unarchive:child'], 'the committed member is put back')
+    assert.deepEqual(lists.filter((params) => !isScopedList(params)), [], 'compensation reads the plan scopes, not the host')
+    assert.ok(lists.some((params) => params.cwd === OTHER_CWD), "the member's own cwd is one of those scopes")
+  })
+})
+
+test('the product stop seam refuses a scope-mismatched receipt, so no leaf teardown is reached', async () => {
+  // The unit gate above is what `stop` consults through assertSessionStopSafe: this drives THAT seam with the
+  // real Codex descriptor and a real governed record, because the failure the ordering protects against is a
+  // guard that passes, a leaf that dies, and only then a coldRuntime refusal.
+  await withNativeThreads([{ id: 'target', loaded: true }], {}, async ({ root, mutations, lists }) => {
+    const sessionId = 'scope-seam-session'
+    const application = initializeFreshSessionApplication()
+    mkdirSync(join(root, 'sessions', sessionId), { recursive: true })
+    const writeBinding = (worktree: string) => writeFileSync(join(root, 'sessions', sessionId, 'runtime.json'), `${JSON.stringify({
+      session_id: sessionId, governed: true, worktree_path: worktree, branch: 'node/scope-seam',
+      title: null, name: null, parent: null, status: 'awaiting', proposal: 'nothing', merges: 0, note: null,
+      sortkey: null, createdAt: Date.now(), harness: 'codex', harness_session_id: 'target', stopped: false,
+      archived: false, launcher: 'codex', launch_cmd: 'codex --yolo',
+    }, null, 2)}\n`)
+    writeBinding(FIXTURE_CWD)
+    application.createSession({ sessionId, status: 'awaiting', proposal: 'nothing' })
+    const rec = { session: sessionId, harness: 'codex', harnessSessionId: 'target', worktreePath: FIXTURE_CWD }
+
+    const preflight = await codexHarness.coldPreflight?.(rec)
+    if (!preflight?.ok) throw new Error('clean preflight refused')
+    // the record is re-bound to another worktree after the receipt was frozen
+    writeBinding(OTHER_CWD)
+    const readsBefore = lists.length
+    await assert.rejects(() => assertSessionStopSafe(sessionId, rec, { coldReceipt: preflight.receipt }),
+      /proven in a different scope than this record binds/,
+      'the seam stop consults refuses before it can signal anything')
+    assert.equal(lists.length, readsBefore, 'the refusal costs no native read')
+    assert.deepEqual(mutations, [], 'and no native mutation')
+
+    // back at the binding it was proven against, the same receipt passes the same seam
+    writeBinding(FIXTURE_CWD)
+    await assert.doesNotReject(() => assertSessionStopSafe(sessionId, rec, { coldReceipt: preflight.receipt }))
+    assert.deepEqual(mutations, [])
+  })
+})
+
+test('Codex receipt-free restore reads the target through its record cwd and refuses without one', async () => {
+  await withNativeThreads([{ id: 'target', archived: true }], {}, async ({ lists, mutations }) => {
+    const unscoped = await codexHarness.restoreRuntime?.(subtreeRec('target', null))
+    assert.equal(unscoped?.ok, false)
+    if (unscoped && !unscoped.ok) assert.match(unscoped.reason, /binds no worktree cwd/)
+    assert.deepEqual(mutations, [], 'a refusal mutates nothing')
+    const restored = await codexHarness.restoreRuntime?.(subtreeRec('target'))
+    assert.deepEqual(restored, { ok: true })
+    assert.deepEqual(mutations, ['unarchive:target'])
+    assert.deepEqual(lists.filter((params) => !isScopedList(params)), [])
+  })
+})
+
+test('Codex stop guard reads the target through its record cwd and refuses without one', async () => {
+  await withNativeThreads(subtreeTable(), {}, async ({ root, lists }) => {
+    const guardOf = codexHarness.sharedRuntimes?.(root)[0]?.mutationGuard
+    if (!guardOf) throw new Error('Codex exposes its target mutation guard')
+    const scoped = await guardOf('target', { targetCwd: FIXTURE_CWD })
+    assert.equal(scoped.healthy, true)
+    assert.equal(scoped.targetTurnPresence, 'idle')
+    assert.deepEqual([...scoped.descendantIds].sort(), ['child', 'grandchild'])
+    assert.deepEqual(lists.filter((params) => !isScopedList(params)), [], 'the ordinary stop guard issues no whole-collection census either')
+    const unscoped = await guardOf('target')
+    assert.equal(unscoped.healthy, false)
+    assert.match(unscoped.error ?? '', /binds no worktree cwd/)
+    // a loaded target the scope does not return has no reported turn state: unknown, never idle
+    const wrongCwd = await guardOf('target', { targetCwd: OTHER_CWD })
+    assert.equal(wrongCwd.targetTurnPresence, 'unknown')
+  })
 })
 
 test('Codex archive refuses a shared generation swap during exact target guard before mutation', async () => {
@@ -792,7 +1241,7 @@ test('Codex archive refuses a shared generation swap during exact target guard b
     await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(socket, () => resolve()) })
     mkdirSync(root, { recursive: true })
     owner = startCodexOwner(root)
-    const result = await codexHarness.coldRuntime?.({ session: 'generation-fence-session', harnessSessionId: target })
+    const result = await codexHarness.coldRuntime?.({ session: 'generation-fence-session', harnessSessionId: target, worktreePath: FIXTURE_CWD })
     assert.equal(result?.ok, false)
     if (result && !result.ok) assert.match(result.reason, /generation changed during subtree census/)
     assert.equal(archiveCalls, 0, 'a generation swap never reaches thread/archive')
@@ -853,11 +1302,11 @@ test('Codex archive refuses an unknown exact loaded target and an unowned archiv
     await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(socket, () => resolve()) })
     mkdirSync(root, { recursive: true })
     owner = startCodexOwner(root)
-    const unknown = await codexHarness.coldPreflight?.({ session: 'guarded-session', harnessSessionId: target })
+    const unknown = await codexHarness.coldPreflight?.({ session: 'guarded-session', harnessSessionId: target, worktreePath: FIXTURE_CWD })
     assert.equal(unknown?.ok, false)
     if (unknown && !unknown.ok) assert.match(unknown.reason, /turn state is unknown/)
     targetUnknown = false
-    const descendant = await codexHarness.coldPreflight?.({ session: 'guarded-session', harnessSessionId: target })
+    const descendant = await codexHarness.coldPreflight?.({ session: 'guarded-session', harnessSessionId: target, worktreePath: FIXTURE_CWD })
     assert.equal(descendant?.ok, false)
     if (descendant && !descendant.ok) assert.match(descendant.reason, /archived-native-child.*absent from both.*unowned/)
   } finally {
@@ -938,7 +1387,7 @@ test('Codex archive cold-tears down the exact active and archived transitive des
     mkdirSync(root, { recursive: true })
     owner = startCodexOwner(root)
 
-    const rec = { session: 'owned-subtree-session', harnessSessionId: target }
+    const rec = { session: 'owned-subtree-session', harnessSessionId: target, worktreePath: FIXTURE_CWD }
     const preflight = await codexHarness.coldPreflight?.(rec)
     assert.equal(preflight?.ok, true)
     if (!preflight?.ok) throw new Error('owned subtree fixture did not obtain its adapter receipt')
@@ -958,7 +1407,7 @@ test('Codex archive cold-tears down the exact active and archived transitive des
       [grandchild, `history:${grandchild}`],
       [archivedChild, `history:${archivedChild}`],
     ], 'cold archive preserves every native conversation history')
-    assert.deepEqual(await codexHarness.coldRetirementPreflight?.({ session: 'owned-subtree-session', harnessSessionId: target }),
+    assert.deepEqual(await codexHarness.coldRetirementPreflight?.({ session: 'owned-subtree-session', harnessSessionId: target, worktreePath: FIXTURE_CWD }),
       { ok: true, alreadyCold: true })
     assert.deepEqual(await codexHarness.restoreRuntime?.(rec, preflight.receipt), { ok: true },
       'post-cold publication compensation accepts only the original adapter receipt')
@@ -1044,15 +1493,15 @@ test('Codex archive rejects duplicate, unowned, reassigned, and late subtree mem
       owner = startCodexOwner(root)
       let result
       if (mode === 'late-before') {
-        const preflight = await codexHarness.coldPreflight?.({ session: `${mode}-session`, harnessSessionId: target })
+        const preflight = await codexHarness.coldPreflight?.({ session: `${mode}-session`, harnessSessionId: target, worktreePath: FIXTURE_CWD })
         assert.equal(preflight?.ok, true)
         if (!preflight?.ok) throw new Error('late-before fixture did not obtain its adapter receipt')
         collection.set(late, 'active')
         loaded.add(late)
         reassigned = true
-        result = await codexHarness.coldRuntime?.({ session: `${mode}-session`, harnessSessionId: target }, preflight.receipt)
+        result = await codexHarness.coldRuntime?.({ session: `${mode}-session`, harnessSessionId: target, worktreePath: FIXTURE_CWD }, preflight.receipt)
       } else {
-        result = await codexHarness.coldRuntime?.({ session: `${mode}-session`, harnessSessionId: target })
+        result = await codexHarness.coldRuntime?.({ session: `${mode}-session`, harnessSessionId: target, worktreePath: FIXTURE_CWD })
       }
       assert.equal(result?.ok, false)
       if (result && !result.ok) assert.match(result.reason, mode === 'duplicate'
@@ -1234,7 +1683,7 @@ test('Codex close proof waits through a busy app-server collection response', { 
     await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(socket, () => resolve()) })
     mkdirSync(root, { recursive: true })
     owner = startCodexOwner(root)
-    assert.deepEqual(await codexHarness.coldRetirementPreflight?.({ session: 'delayed-close-session', harnessSessionId: target }), { ok: true, alreadyCold: true })
+    assert.deepEqual(await codexHarness.coldRetirementPreflight?.({ session: 'delayed-close-session', harnessSessionId: target, worktreePath: FIXTURE_CWD }), { ok: true, alreadyCold: true })
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()))
     await stopCodexOwner(owner)
@@ -1270,7 +1719,7 @@ test('Codex cold retirement proves only target collections and never thread/read
     await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(socket, () => resolve()) })
     mkdirSync(root, { recursive: true })
     owner = startCodexOwner(root)
-    assert.deepEqual(await codexHarness.coldRetirementPreflight?.({ session: 'cold-session', harnessSessionId: target }), { ok: true, alreadyCold: true })
+    assert.deepEqual(await codexHarness.coldRetirementPreflight?.({ session: 'cold-session', harnessSessionId: target, worktreePath: FIXTURE_CWD }), { ok: true, alreadyCold: true })
     assert.equal(threadReads, 0, 'cold retirement does not wait on or read the unrelated loaded sibling')
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()))
@@ -1304,7 +1753,7 @@ test('Codex cold retirement rejects missing or non-detached shared owner identit
     await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(socket, () => resolve()) })
     mkdirSync(root, { recursive: true })
     writeFileSync(codexAppServerPid(root), `${process.pid}\n`)
-    const missing = await codexHarness.coldRetirementPreflight?.({ session: 'cold-identity-session', harnessSessionId: target })
+    const missing = await codexHarness.coldRetirementPreflight?.({ session: 'cold-identity-session', harnessSessionId: target, worktreePath: FIXTURE_CWD })
     assert.equal(missing?.ok, false)
     if (missing && !missing.ok) assert.match(missing.reason, /generation is (?:temporarily )?unproven/)
 
@@ -1317,7 +1766,7 @@ test('Codex cold retirement rejects missing or non-detached shared owner identit
       processGroupId: process.pid,
       ...(platform() === 'linux' ? { linuxSessionId: process.pid } : {}),
     })}\n`)
-    const nonDetached = await codexHarness.coldRetirementPreflight?.({ session: 'cold-identity-session', harnessSessionId: target })
+    const nonDetached = await codexHarness.coldRetirementPreflight?.({ session: 'cold-identity-session', harnessSessionId: target, worktreePath: FIXTURE_CWD })
     assert.equal(nonDetached?.ok, false)
     if (nonDetached && !nonDetached.ok) assert.match(nonDetached.reason, /detached.*identity|generation is (?:temporarily )?unproven/)
   } finally {
@@ -1360,7 +1809,7 @@ test('Codex cold retirement rejects a generation swap after target guard while c
     await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(socket, () => resolve()) })
     mkdirSync(root, { recursive: true })
     owner = startCodexOwner(root)
-    const retirement = codexHarness.coldRetirementPreflight?.({ session: 'cold-generation-session', harnessSessionId: target })
+    const retirement = codexHarness.coldRetirementPreflight?.({ session: 'cold-generation-session', harnessSessionId: target, worktreePath: FIXTURE_CWD })
     for (let i = 0; i < 100 && (targetProofResponses < 3 || pendingLists.length < 2); i++) await new Promise((resolve) => setTimeout(resolve, 5))
     assert.equal(targetProofResponses, 3, 'loaded-ID and both target descendant responses completed first')
     assert.equal(pendingLists.length, 2, 'active and archived collection responses remain pending')
@@ -1411,13 +1860,13 @@ test('Codex cold proof reads turn presence from the collection census it already
     mkdirSync(root, { recursive: true })
     owner = startCodexOwner(root)
 
-    const active = await codexHarness.coldRuntime?.({ session: 'archive-turn-race-session', harnessSessionId: target })
+    const active = await codexHarness.coldRuntime?.({ session: 'archive-turn-race-session', harnessSessionId: target, worktreePath: FIXTURE_CWD })
     assert.equal(active?.ok, false)
     if (active && !active.ok) assert.match(active.reason, /has an active turn/)
     assert.deepEqual(mutations, [], 'an active target turn refuses before the archive mutation')
 
     targetStatus = 'idle'
-    assert.deepEqual(await codexHarness.coldRuntime?.({ session: 'archive-turn-race-session', harnessSessionId: target }), { ok: true })
+    assert.deepEqual(await codexHarness.coldRuntime?.({ session: 'archive-turn-race-session', harnessSessionId: target, worktreePath: FIXTURE_CWD }), { ok: true })
     assert.deepEqual(mutations, ['archive'], 'an idle target archives')
     assert.deepEqual(turnReads, [],
       'the cold proof never reads a thread transcript: that cost scales with history, against a fixed census budget')
@@ -1527,7 +1976,7 @@ test('Codex cold archive accepts only an explicitly unmaterialized absent native
     await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(socket, () => resolve()) })
     mkdirSync(root, { recursive: true })
     owner = startCodexOwner(root)
-    const rec = { session: 'unmaterialized-cold-session', harnessSessionId: target }
+    const rec = { session: 'unmaterialized-cold-session', harnessSessionId: target, worktreePath: FIXTURE_CWD }
     const preflight = await codexHarness.coldPreflight?.(rec)
     assert.equal(preflight?.ok, true)
     if (!preflight?.ok) throw new Error('unmaterialized thread did not obtain a cold receipt')
@@ -1615,7 +2064,7 @@ test('Codex archive re-censuses native descendants after mutation and compensate
     await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(socket, () => resolve()) })
     mkdirSync(root, { recursive: true })
     owner = startCodexOwner(root)
-    const result = await codexHarness.coldRuntime?.({ session: 'archive-race-session', harnessSessionId: target })
+    const result = await codexHarness.coldRuntime?.({ session: 'archive-race-session', harnessSessionId: target, worktreePath: FIXTURE_CWD })
     assert.equal(result?.ok, false)
     if (result && !result.ok) assert.match(result.reason, /descendant closure changed.*late-native-descendant/)
     assert.deepEqual(mutations, ['archive', 'unarchive'], 'late descendant causes fail-loud compensation before cold success')
@@ -1828,7 +2277,7 @@ test('Codex mutation guard promotes an exact v3 scope before target close proof'
     if (!sharedRuntimes) throw new Error('Codex exposes its shared runtime descriptor')
     const mutationGuard = sharedRuntimes(dir)[0]?.mutationGuard
     if (!mutationGuard) throw new Error('Codex exposes its target mutation guard')
-    const guard = await mutationGuard('retired-target-thread')
+    const guard = await mutationGuard('retired-target-thread', { targetCwd: FIXTURE_CWD })
     assert.deepEqual(guard, { healthy: true, referenceIds: [], targetTurnPresence: 'none', descendantIds: [] })
     if (!owner) throw new Error('Codex test owner started')
     assert.equal(verifyDetachedRuntime(owner.pid, codexAppServerReceipt(dir)).ok, true)

@@ -7,6 +7,7 @@ code:
 related:
   - spec-cli/src/reaper.ts
   - spec-cli/src/reaper.test.ts
+  - spec-cli/src/service-cwd.ts
 ---
 # serve
 
@@ -65,6 +66,13 @@ naming the busy port and the repair, never a portless process kept "alive" on a 
 rule is **shared** with [[public-mode]]'s gateway behind `spex dashboard`, so a busy port fails identically
 on both surfaces — not a silent zombie under `serve` and a crash under `dashboard`. One shared bind helper
 both call (not a branch inside the keep-alive guard) reaps the booted child first, so no zombie survives.
+
+**The serve stands on its served root** ([[service-cwd]]). Before anything else the supervisor moves onto the
+git toplevel it serves and starts every child there, so the directory `spex serve` happened to be launched
+from — a subdirectory, a scratch directory, an agent's session worktree — is never what a days-old backend or
+a fresh terminal helper inherits. Keeping-serving presumes something to serve: when that root is removed,
+renamed away, or replaced, the supervisor names it, releases the port and its endpoint record, and exits
+non-zero instead of holding a port over stale caches.
 
 **Last-resort resilience:** both supervisor and child install [[worktree-resilience]]'s process guards at startup — an unforeseen
 async throw (a worktree vanishing mid-read during a worker self-merge, say) is logged and the process
