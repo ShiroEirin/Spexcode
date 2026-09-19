@@ -74,7 +74,9 @@ export type SharedRuntimeDescriptor = {
   residency?: () => Promise<{ healthy: boolean; referenceIds: string[]; error?: string; rootAbsent?: boolean }>
   // Lifecycle mutation guard is deliberately narrower than the full resource projection: census every loaded
   // ID, but read only the exact governed target when it is loaded, plus both target descendant collections.
-  mutationGuard?: (targetReferenceId: string, opts?: { coldReceipt?: unknown }) => Promise<SharedRuntimeMutationGuard>
+  // `targetCwd` is the governed record's worktree: an adapter whose native rows carry a cwd scopes the target's
+  // own read to it, so the guard costs the target rather than the host's whole history.
+  mutationGuard?: (targetReferenceId: string, opts?: { coldReceipt?: unknown; targetCwd?: string | null }) => Promise<SharedRuntimeMutationGuard>
   // Resource reporting supplies the exact governed references for this generation. The probe still lists
   // every loaded id, but only reads native status for those references; unowned history stays visible as
   // unknown without replaying it on every report.
@@ -356,13 +358,13 @@ export interface Harness {
   // unknown target turn, but it must not mutate the shared runtime; coldRuntime is the sole commit primitive.
   // Its optional receipt is opaque adapter authority: product code may only pass the same object back to the
   // stop guard and coldRuntime, never inspect it or synthesize a recursive/archive mode.
-  coldPreflight?(rec: HarnessLivenessRecord & { harnessSessionId?: string | null }): Promise<HarnessColdPreflight>
+  coldPreflight?(rec: HarnessLivenessRecord & { harnessSessionId?: string | null; worktreePath?: string | null }): Promise<HarnessColdPreflight>
   // A record that is already archived needs a target-only continuing-cold proof. Unlike mutation preflight,
   // this must not thread/read unrelated loaded siblings merely to retire a target whose runtime is absent.
-  coldRetirementPreflight?(rec: HarnessLivenessRecord & { harnessSessionId?: string | null }): Promise<{ ok: true; alreadyCold: true } | { ok: false; reason: string }>
+  coldRetirementPreflight?(rec: HarnessLivenessRecord & { harnessSessionId?: string | null; worktreePath?: string | null }): Promise<{ ok: true; alreadyCold: true } | { ok: false; reason: string }>
   // Optional cold-storage proof/cleanup. A harness with a per-session loaded reference must remove exactly that
   // reference or return a loud reason; adapters without such a resident reference return {ok:true}.
-  coldRuntime?(rec: HarnessLivenessRecord & { harnessSessionId?: string | null }, receipt?: unknown): Promise<{ ok: true } | { ok: false; reason: string }>
+  coldRuntime?(rec: HarnessLivenessRecord & { harnessSessionId?: string | null; worktreePath?: string | null }, receipt?: unknown): Promise<{ ok: true } | { ok: false; reason: string }>
   restoreRuntime?(rec: HarnessLivenessRecord & { harnessSessionId?: string | null }, receipt?: unknown): Promise<{ ok: true } | { ok: false; reason: string }>
   // Recovery for an unreadable governed record. This accepts no record-shaped ownership claim: the adapter must
   // prove the native target has zero other governed owners, is idle and descendant-free, then archive only it.
