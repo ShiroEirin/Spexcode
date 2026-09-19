@@ -483,6 +483,9 @@ if (cmd === 'serve') {
     const { resolveConfiguredHost } = await import('./listen.js')
     const host = resolveConfiguredHost(flag('host') ?? process.env.SPEXCODE_HOST)
     if (!Number.isInteger(port) || !Number.isInteger(apiPort)) { console.error('spex serve ui: --port and --api-port must be integers'); process.exit(2) }
+    // a gateway serves no project of its own, so it stands on the host-level directory ([[service-cwd]])
+    const { anchorServiceCwd } = await import('./service-cwd.js')
+    anchorServiceCwd((await import('node:os')).homedir())
     serveDashboardLocal({ port, apiPort, host })
   } else if (target === undefined || target === 'api') {
     await assertDaemonRuntime('spex serve')
@@ -525,6 +528,9 @@ if (cmd === 'serve') {
   const { resolveConfiguredHost } = await import('./listen.js')
   const host = resolveConfiguredHost(flag('host') ?? process.env.SPEXCODE_HOST)
   if (!Number.isInteger(port)) { console.error('spex dashboard: --port must be an integer'); process.exit(2) }
+  // the host gateway belongs to the machine, not to whichever project directory it was started in ([[service-cwd]])
+  const { anchorServiceCwd } = await import('./service-cwd.js')
+  anchorServiceCwd((await import('node:os')).homedir())
   startHostDashboard({ port, host })
 } else if (cmd === 'open') {
   rejectFlags('spex open', 3, ['print-only', 'password'])

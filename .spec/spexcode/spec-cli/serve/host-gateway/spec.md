@@ -49,6 +49,10 @@ only in the store slot its own root encodes to, and only to a loopback url — t
 (`readEndpointRecord`), not a second registry. A project with no record answers 404 before any upstream contact. No
 `--api-port`/API_URL pairing survives at this surface; `spex serve ui` remains the explicit pairing.
 
+The gateway belongs to the machine, so it stands on the user's home directory rather than on whichever
+directory it was launched from ([[service-cwd]]): the host doctor and every other child it spawns start from a
+directory that outlives any project.
+
 The console hub also exposes a public `/host/identity` probe containing only the current gateway instance id.
 Desktop and CLI attachment use that probe before login; full `/host` facts and the project catalog remain behind
 the admin gate.
