@@ -313,3 +313,25 @@ Spec: graph-stream, graph-cache, sessions, serve
 已有真实 worker A/B 也保持诚实记录：旧 dist burst 54.03%/after 26.83%，partial source 在 cache 前 burst 47.13%/after 27.33%；本次 cache 后不把未重新测到的稳态百分比写成事实，保留上述同 fixture 可复现的调用计数和 wall-ms 作为验收证据。macmini 只读要求未触碰：没有 ssh 写入、没有杀进程、没有改那 17 条 lane。
 
 验证：session-application 45/45；liveness/hot/graphScope/sessionProjection 31/31；graph-stream 定向 24/24；source probe gate PASS；`spex spec lint` 0 errors（54 条仓库既有 warning）；typecheck/build 仍被既有 `DisplayStatus`/`archived` 类型错误阻断，错误不在本次新增路径。
+
+<!-- reply: 7690d008-1893-4d77-a6d3-16f051463169 @ 2026-09-19T01:59:24.472Z -->
+Spec: graph-stream, graph-cache, sessions, serve, liveness
+
+隔离真实 worker A/B 已完成（2026-09-19，本机 /tmp 临时环境，不碰 macmini）：
+
+环境完全独立：682 records = 667 archived + 15 active；临时 SPEXCODE_HOME；临时 SQLite；临时 git project；fake tmux executable/socket；真实 worker `index.js`、真实 `/api/graph/stream?mode=delta`、真实 `spex internal session-state` hook 子进程。每轮先取空载 2.5s，再开一个 delta SSE 稳定 5s，再执行 60 次真实 lifecycle hook，最后采样 5s。旧 dist 和当前 noCheck 编译后的 plain Node dist 各跑两轮，排除 tsx loader。
+
+结果：
+
+| build | empty CPU | delta stream CPU | hook burst CPU | tmux list-panes calls | burst RSS peak |
+|---|---:|---:|---:|---:|---:|
+| old dist run 1 | 58.79% | 36.97% | 54.69% | 114 | 306,816 KiB |
+| old dist run 2 | 59.29% | 37.73% | 56.79% | 114 | 318,476 KiB |
+| current dist run 1 | 56.73% | 33.96% | 29.74% | 44 | 268,072 KiB |
+| current dist run 2 | 56.73% | 34.88% | 29.96% | 44 | 260,328 KiB |
+
+两轮平均：burst CPU `55.74% -> 29.85%`，下降 `25.89` 个百分点，约 `46.5%` 相对降幅；tmux census `114 -> 44`，下降 `61.4%`；burst RSS 峰值均值约 `312.6MB -> 264.2MB`，下降约 `15.5%`。空载均值约 `59.04% -> 56.73%`，说明这次变更主要解决 hook burst/session projection 的可变成本，不会假装消灭所有 steady supervisor 底座；delta stream 稳定段约 `37.35% -> 34.42%`，warm poll 本身仍是固定成本。
+
+日志也直接证实机制变化：旧 dist 的 session broadcasts 多为 `132–164ms`；当前 dist 大多数为 `0–2ms`，只有 warm evidence 过期时回到约 `150–201ms` 的 fresh probe。当前 worker 60 次 hook 仍产生 60 个 session broadcasts，但每次不再全 roster + 重复 census，说明收益来自每次 build 的工作量，而不是丢事件。
+
+结论：这次变更已经在隔离真实 worker 上证明有效。有效点是 affected-row partial projection + warm evidence reuse；之前无效的 wake/coalescing 仍已撤回。macmini 侧只需做一次只读 post-change ps/top 交叉验证，不能再说“没有最终 CPU 降幅”。
