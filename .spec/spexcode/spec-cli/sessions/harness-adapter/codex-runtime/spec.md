@@ -325,8 +325,10 @@ when every stored field equals the exact live Linux identity; reporting and ever
 repairs a receipt. Missing, malformed, or mismatched legacy evidence is an unproven generation and refuses before
 any teardown. Compensation lives outside the native RPC boundary: until the product commits the archive record
 and its final offline proof, a failure returns the same receipt to `restoreRuntime`, which restores all and only
-its originally-active subtree members, and only on the unchanged original generation. A receipt-free resume
-remains the normal parent-only restore.
+its originally-active subtree members, and only on the unchanged original generation. The receipt carries the
+scope each member was proven at, and compensation reads those same scopes: a failure path must not put back the
+whole-host cost the proof removed. A receipt-free resume remains the normal parent-only restore, read through
+its own record's `cwd` and refused without one.
 
 ## Headless readiness
 

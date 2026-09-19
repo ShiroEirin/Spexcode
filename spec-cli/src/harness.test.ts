@@ -1058,6 +1058,36 @@ test('Codex cold proof still accepts only an explicitly unmaterialized absent ta
   })
 })
 
+test('Codex cold teardown compensates a failed archive through the plan\'s own scopes, never a whole-host read', async () => {
+  // the deepest member archives, the ancestor's archive is REFUSED by the server, so compensation must undo
+  // the committed member — and must read the collections it reads through the scopes the plan was proven at
+  await withNativeThreads([{ id: 'target', loaded: true }, { id: 'child', parent: 'target', cwd: OTHER_CWD, loaded: true }], {
+    before: (message) => { if (message.method === 'thread/archive' && message.params.threadId === 'target') throw new Error('fixture refuses to archive the ancestor') },
+  }, async ({ mutations, lists }) => {
+    const rec = subtreeRec('target')
+    const preflight = await codexHarness.coldPreflight?.(rec)
+    if (!preflight?.ok) throw new Error('clean preflight refused')
+    const result = await codexHarness.coldRuntime?.(rec, preflight.receipt)
+    assert.equal(result?.ok, false)
+    assert.deepEqual(mutations, ['archive:child', 'unarchive:child'], 'the committed member is put back')
+    assert.deepEqual(lists.filter((params) => !isScopedList(params)), [], 'compensation reads the plan scopes, not the host')
+    assert.ok(lists.some((params) => params.cwd === OTHER_CWD), "the member's own cwd is one of those scopes")
+  })
+})
+
+test('Codex receipt-free restore reads the target through its record cwd and refuses without one', async () => {
+  await withNativeThreads([{ id: 'target', archived: true }], {}, async ({ lists, mutations }) => {
+    const unscoped = await codexHarness.restoreRuntime?.(subtreeRec('target', null))
+    assert.equal(unscoped?.ok, false)
+    if (unscoped && !unscoped.ok) assert.match(unscoped.reason, /binds no worktree cwd/)
+    assert.deepEqual(mutations, [], 'a refusal mutates nothing')
+    const restored = await codexHarness.restoreRuntime?.(subtreeRec('target'))
+    assert.deepEqual(restored, { ok: true })
+    assert.deepEqual(mutations, ['unarchive:target'])
+    assert.deepEqual(lists.filter((params) => !isScopedList(params)), [])
+  })
+})
+
 test('Codex stop guard reads the target through its record cwd and refuses without one', async () => {
   await withNativeThreads(subtreeTable(), {}, async ({ root, lists }) => {
     const guardOf = codexHarness.sharedRuntimes?.(root)[0]?.mutationGuard

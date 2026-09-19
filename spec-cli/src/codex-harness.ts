@@ -977,6 +977,9 @@ type CodexColdPlan = Readonly<{
   endpoint: CodexGenerationEndpoint
   // The worktree cwd the proof was scoped to; null is the whole-host scope only quarantine may use.
   targetCwd: string | null
+  // Where each subtree member's rows live, so compensation reads the same scope the proof did. Empty under
+  // the whole-host scope, which has no binding to carry.
+  memberCwd: readonly (readonly [string, string])[]
   guard: SharedRuntimeMutationGuard
   descendantIds: readonly string[]
   parentEdges: readonly (readonly [string, string])[]
@@ -1000,7 +1003,7 @@ const isCodexColdPlan = (value: unknown): value is CodexColdPlan => {
   return plan[CODEX_COLD_PLAN] === true && plan.kind === 'codex-cold-subtree-v2' && typeof plan.threadId === 'string' &&
     typeof plan.generation === 'string' && isEndpointLike(plan.endpoint) &&
     (plan.targetCwd === null || (typeof plan.targetCwd === 'string' && plan.targetCwd.length > 0)) && Array.isArray(plan.descendantIds) &&
-    Array.isArray(plan.parentEdges) && Array.isArray(plan.subtreeIds) &&
+    Array.isArray(plan.parentEdges) && Array.isArray(plan.subtreeIds) && Array.isArray(plan.memberCwd) &&
     Array.isArray(plan.activeIds) && Array.isArray(plan.archivedIds) && !!plan.guard
 }
 
@@ -1015,6 +1018,7 @@ function makeCodexColdPlan(input: {
   generation: string
   endpoint: CodexGenerationEndpoint
   targetCwd: string | null
+  memberCwd?: readonly (readonly [string, string])[]
   guard: SharedRuntimeMutationGuard
   descendantIds: readonly string[]
   parentEdges: readonly (readonly [string, string])[]
@@ -1031,6 +1035,7 @@ function makeCodexColdPlan(input: {
     generation: input.generation,
     endpoint: input.endpoint,
     targetCwd: input.targetCwd,
+    memberCwd: Object.freeze((input.memberCwd ?? []).map((entry) => Object.freeze([...entry]) as readonly [string, string])),
     guard: input.guard,
     descendantIds: Object.freeze([...input.descendantIds]),
     parentEdges: Object.freeze([...input.parentEdges]),
@@ -1115,6 +1120,7 @@ async function codexColdPreflightOnce(threadId: string, scope: CodexProofScope, 
           generation,
           endpoint,
           targetCwd,
+          memberCwd: targetCwd === null ? [] : [[threadId, targetCwd] as const],
           guard,
           descendantIds: [],
           parentEdges: [],
@@ -1253,7 +1259,8 @@ async function codexColdPreflightOnce(threadId: string, scope: CodexProofScope, 
     .concat(targetInActive ? [threadId] : [])
   const archivedIds = [...archivedDescendants.ids, ...(targetInArchived ? [threadId] : [])]
   const parentEdges = descendantIds.map((id) => [id, parentById.get(id)!] as const)
-  const receipt = makeCodexColdPlan({ threadId, generation, endpoint, targetCwd, guard, descendantIds, parentEdges, subtreeIds, activeIds, archivedIds })
+  const memberCwd = targetCwd === null ? [] : subtreeIds.map((id) => [id, id === threadId ? targetCwd : descendantCwd.get(id)!] as const)
+  const receipt = makeCodexColdPlan({ threadId, generation, endpoint, targetCwd, memberCwd, guard, descendantIds, parentEdges, subtreeIds, activeIds, archivedIds })
   return { ok: true, ...(activeIds.length ? {} : { alreadyCold: true }), receipt }
 }
 
@@ -1404,20 +1411,35 @@ async function codexMutationGuard(
   }
 }
 
+// Compensation undoes what the plan committed, so it reads the plan's own scopes: the cwds its members were
+// proven at. A whole-host read here would put the cost this proof removed back on the failure path.
+async function codexPlanCollections(plan: CodexColdPlan): Promise<{ ok: true; active: Set<string>; archived: Set<string> } | { ok: false }> {
+  const sock = plan.endpoint.socketPath
+  const cwds = [...new Set(plan.memberCwd.map(([, cwd]) => cwd))]
+  const reads = await Promise.all((cwds.length ? cwds : [null]).flatMap((cwd) => [false, true].map(async (archived) =>
+    [archived, cwd === null
+      ? await codexThreadList(sock, { archived, sourceKinds: [] })
+      : await codexScopedCollection(sock, { cwd }, archived)] as const)))
+  const active = new Set<string>()
+  const archived = new Set<string>()
+  for (const [isArchived, result] of reads) {
+    if (!result.ok) return { ok: false }
+    for (const id of result.ids) (isArchived ? archived : active).add(id)
+  }
+  return { ok: true, active, archived }
+}
+
 async function codexRestoreColdPlan(plan: CodexColdPlan, dir = runtimeRoot()): Promise<{ ok: true } | { ok: false; reason: string }> {
   if (codexRuntimeGeneration(dir, plan.endpoint) !== plan.generation)
     return { ok: false, reason: 'shared Codex app-server generation changed, so no compensation was attempted' }
   const sock = plan.endpoint.socketPath
-  const [activeBefore, archivedBefore] = await Promise.all([
-    codexThreadList(sock, { archived: false, sourceKinds: [] }),
-    codexThreadList(sock, { archived: true, sourceKinds: [] }),
-  ])
-  if (!activeBefore.ok || !archivedBefore.ok)
+  const before = await codexPlanCollections(plan)
+  if (!before.ok)
     return { ok: false, reason: 'archive state is unknown and could not be reconciled' }
   if (codexRuntimeGeneration(dir, plan.endpoint) !== plan.generation)
     return { ok: false, reason: 'shared Codex app-server generation changed, so no compensation was attempted' }
-  const activeSet = new Set(activeBefore.ids)
-  const archivedSet = new Set(archivedBefore.ids)
+  const activeSet = before.active
+  const archivedSet = before.archived
   if (plan.archivedIds.some((id) => !archivedSet.has(id) || activeSet.has(id)))
     return { ok: false, reason: 'an originally-archived Codex subtree member changed collection; compensation was not authorized' }
   if (plan.activeIds.some((id) => activeSet.has(id) === archivedSet.has(id)))
@@ -1428,13 +1450,10 @@ async function codexRestoreColdPlan(plan: CodexColdPlan, dir = runtimeRoot()): P
     const restored = await codexThreadMutation(sock, 'thread/unarchive', id, fence)
     if (!restored.ok) return { ok: false, reason: `compensation failed for ${id}: ${restored.error}` }
   }
-  const [activeAfter, archivedAfter] = await Promise.all([
-    codexThreadList(sock, { archived: false, sourceKinds: [] }),
-    codexThreadList(sock, { archived: true, sourceKinds: [] }),
-  ])
-  const restored = activeAfter.ok && archivedAfter.ok && codexRuntimeGeneration(dir, plan.endpoint) === plan.generation &&
-    plan.activeIds.every((id) => activeAfter.ids.includes(id) && !archivedAfter.ids.includes(id)) &&
-    plan.archivedIds.every((id) => archivedAfter.ids.includes(id) && !activeAfter.ids.includes(id))
+  const after = await codexPlanCollections(plan)
+  const restored = after.ok && codexRuntimeGeneration(dir, plan.endpoint) === plan.generation &&
+    plan.activeIds.every((id) => after.active.has(id) && !after.archived.has(id)) &&
+    plan.archivedIds.every((id) => after.archived.has(id) && !after.active.has(id))
   return restored ? { ok: true } : { ok: false, reason: 'compensation failed or archive state is unknown' }
 }
 
@@ -2287,10 +2306,13 @@ export const codexHarness: Harness = {
     const endpoint = codexEndpointForRecord(rec)
     if (!endpoint) return { ok: false, reason: 'no exact Codex generation binding is registered for this target' }
     const sock = endpoint.socketPath
+    const scope = codexRecordScope(rec)
+    if (!scope) return { ok: false, reason: CODEX_NO_SCOPE }
+    const cwd = codexScopeCwd(scope)!
     const reconcile = async (): Promise<{ ok: true } | { ok: false; reason: string }> => {
       const [active, archived] = await Promise.all([
-        codexThreadList(sock, { archived: false, sourceKinds: [] }),
-        codexThreadList(sock, { archived: true, sourceKinds: [] }),
+        codexScopedCollection(sock, { cwd }, false),
+        codexScopedCollection(sock, { cwd }, true),
       ])
       if (!active.ok || !archived.ok) return { ok: false, reason: 'Codex restore state could not be reconciled' }
       const inActive = active.ids.includes(rec.harnessSessionId!)

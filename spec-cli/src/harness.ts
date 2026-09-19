@@ -365,7 +365,7 @@ export interface Harness {
   // Optional cold-storage proof/cleanup. A harness with a per-session loaded reference must remove exactly that
   // reference or return a loud reason; adapters without such a resident reference return {ok:true}.
   coldRuntime?(rec: HarnessLivenessRecord & { harnessSessionId?: string | null; worktreePath?: string | null }, receipt?: unknown): Promise<{ ok: true } | { ok: false; reason: string }>
-  restoreRuntime?(rec: HarnessLivenessRecord & { harnessSessionId?: string | null }, receipt?: unknown): Promise<{ ok: true } | { ok: false; reason: string }>
+  restoreRuntime?(rec: HarnessLivenessRecord & { harnessSessionId?: string | null; worktreePath?: string | null }, receipt?: unknown): Promise<{ ok: true } | { ok: false; reason: string }>
   // Recovery for an unreadable governed record. This accepts no record-shaped ownership claim: the adapter must
   // prove the native target has zero other governed owners, is idle and descendant-free, then archive only it.
   quarantineOrphanThread?(threadId: string, opts: { excludingSessionId: string }): Promise<HarnessOrphanThreadQuarantine>
