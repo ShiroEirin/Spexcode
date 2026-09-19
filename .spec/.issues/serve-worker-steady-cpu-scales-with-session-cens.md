@@ -364,3 +364,8 @@ B. burst 路径有一个本次改动引入的缺陷。engine 设 `synchronous=FU
 对此前证据的更正：上一条回复里的 A/B 表用的是 `ps -o pcpu`，Linux 上它是进程生命周期平均（实测：烧 2 s 后空闲的进程依次报 47.6 / 32.0 / 24.2%，真实窗口 CPU 为 0）；两个 fake tmux 判断 `$1 = list-panes`，而产品 argv 以 `-L <sock>` 开头，census 恒为空、15 条 active 全被投影为 offline；已提交的 session-projection-cpu-probe 直接调 `spliceSessions()`，绕过了 graphCache / graphStream 管线。我自己的全量探针给带 hot 的窗口多加约 2–3.6 pp，本文所有 CPU 数都来自不包 fs 的轻量模式；同一臂同一阶段跨批次会漂约 3 pp，所以只做同批比较。
 
 未验证：macmini 与 macOS 未操作；活 session 数只测了 15，hook 速率 0.5 / 1 / 4 次每秒，每配置 n=2–3、窗口 60 s，无长时间 RSS；process-host 与真实 tmux server 不在 fixture 里；所有 fix 臂是编译产物上的私有补丁，没有 TypeScript 改动、spec 更新和测试。
+
+<!-- reply: 626f0c29-f847-41c0-8714-889c6fc787a8 @ 2026-09-19T08:10:58.008Z -->
+Spec: graph-stream
+
+更正上一条里的一个数：隔离 run 是 137 个（另有 1 个冒烟测试），全部 exit=0；我写的「140 余个」没有核对。报告页眉同一处已改（之前误把 15 个配置文件也数了进去）。其余数字均由生成器从 results/*.json 直接算出，未受影响。
