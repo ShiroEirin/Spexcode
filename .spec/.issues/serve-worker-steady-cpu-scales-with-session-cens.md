@@ -461,3 +461,56 @@ Spec: liveness, graph-stream
 1. 证据范围。落地的不是我测过的 fixH2，而是另一种机制：事件维护的 ownership registry，资格为 `governed && !stopped && !archived && status === 'active' && ownedRuntime`，没有每秒的全 roster 分类。报告里 fixH2 的 13.50% 稳态和四场景检测延迟属于 fixH2 的形状，不能当作 066ce77b8 的证据。差异里有两项是 [[liveness]] 已明文写下的取舍，不是缺陷：归档但物理存活的 pid 不再由 hot tier 检测（fixH2 里实测 ≤100 ms，现在走 warm / close-repair 路径）；非 active 的 session（idle、awaiting、asking、parked，agent 还坐在 REPL 里）的死亡检测从 100 ms 变为 warm tier 的约 1 s。CPU 上它应当比 fixH2 更省（没有那趟 1 s 的 roster 扫描），我没测。
 
 2. 一处 spec 与代码不一致，值得看一眼。`session-liveness.ts:247` 在每个 100 ms tick 里把 `pidRegistry` 中不属于 `hotCandidateIds` 的键全部删除；而 `:124` 的 `liveSnapshot()` 会为每个有窗口的 session 调 `agentAlive()`、从而建锁存项。结果是：所有「有 pane 但不是 hot 候选」的 session——idle、awaiting、parked，以及 agent 已死而 pane 还在的——其 ESRCH 死亡锁存最多存活 100 ms，下一次 warm census 会重新 `kill(pid, 0)`。[[liveness]] 仍写着锁存「只有 relaunch 的新写入才重置」，这对它们不再成立；一旦该 OS pid 被回收，死掉的 session 会在 census 里读成 `pidAlive = true`。改动前修剪按的是全 roster，锁存与 session 同寿。macOS 的 pid 空间约 10 万，繁忙机器上几小时内回收是现实的。这是从代码读出来的，没有复现。修法很小：修剪只按全 roster 做、且放在低频路径上（fixH2 是放在 1 s 刷新块里），或者让 warm census 用不写锁存表的只读探测。
+
+<!-- reply: 7690d008-1893-4d77-a6d3-16f051463169 @ 2026-09-19T10:40:52.457Z -->
+Spec: liveness, serve
+
+Follow-up regression fix landed and deployed:
+- `539cb3c0f` fixes the hot/warm pid latch regression flagged by the independent review.
+- The hot tick no longer prunes `pidRegistry` against `hotCandidateIds`; warm census may create a latch for a pane-visible non-hot session, and that latch now survives until pid artifact disappearance or explicit leaf cleanup/mtime rewrite.
+- Added fail/pass test: a dead pid latch for a non-hot session survives `hotSignature()` and cannot revive on PID reuse.
+- Landed/pushed as `d09388e0c`, then npm-global `0.7.0` was reinstalled on macmini-tail and gugu-backend/gugu-web restarted.
+- macmini backend/dashboard health `ok`; macOS top samples after restart: worker pid 71290 at `0.0%`, `28.4%`, `27.4%`; corrected delta-window 20s average CPU `39.70%`, RSS avg `268,638 KiB` (range `250,336–289,216 KiB`), health `ok`.
+
+This preserves the spec invariant: only relaunch/mtime rewrite resets a death latch; hot eligibility no longer destroys warm evidence.
+
+<!-- reply: 7690d008-1893-4d77-a6d3-16f051463169 @ 2026-09-19T12:03:04.569Z -->
+Spec: liveness, graph-stream, serve
+
+macmini-tail post-deploy read-only attribution (0.7.0, worker pid 71290):
+
+- durable runtime records: `550`
+- archived records: `532`
+- archived records with historical `agent.pid`: `82`
+- active/other records: `18`
+- active records with `agent.pid`: `18`
+- tmux panes: `21` total = `18` active, `1` archived, `2` unknown
+
+The archived pid artifacts are therefore no longer the 100ms hot pressure source: active-owned candidate registry only admits canonical active/owned runtime, and the 82 archived pid files are excluded. One archived pane remains visible to warm evidence, but that is one pane, not 82 pid polls.
+
+macOS native `sample` of the live worker did not show a hot pid/stat stack; the visible native work was dominated by SQLite `DatabaseSync::Prepare`/`StatementSync::All`, `fs ReadFileUtf8`/`ExistsSync`, event-loop callbacks, and GC. This points to remaining DB/file-read and memory pressure, not archived-agent liveness patrol. RSS was about `888–897MB` during the top window; that is a separate memory/retained-read investigation, not evidence that archived pid files are still in hot 100ms pressure.
+
+Read-only windows after restart: nostream CPU avg `44.13%`, correctly quoted delta stream CPU avg `30.07%` in one earlier window; after the latch-fix restart, delta stream CPU avg `39.70%`, RSS avg `268,638 KiB` in a short window. These are live workload observations, not matched A/B. Health stayed `ok`; no lane/session data or unrelated process was changed.
+
+<!-- reply: 7690d008-1893-4d77-a6d3-16f051463169 @ 2026-09-19T12:26:48.013Z -->
+Spec: sessions-core, delivery-queue, liveness, serve
+
+最新 macmini sample + 私有 dist 消融把剩余 steady 根因进一步拆开：
+
+- macmini 550 records 中 532 archived / 82 archived pid / 18 active pid；tmux panes 21，其中 archived 仅 1、active 18、unknown 2。active-owned hot registry 已排除 archived pid，archived 不是 100ms hot stat 压力。
+- macOS sample 的可见 native work 主要是 SQLite `DatabaseSync::Prepare`/`StatementSync::All`/sqlite stepping，以及 `fs ReadFileUtf8`/`ExistsSync`、event loop/GC；没有明确 archived pid hot stack。
+- 私有当前 dist 单变量消融（682 fixture、15 active、667 archived、真实 worker/SSE/hook）显示 stream CPU baseline `28.25%`：禁 delivery `23.11%`（约 -5.1pp），禁 queue `24.24%`（约 -4.0pp），禁 turn-failure `27.41%`（当前事件驱动已很小）。
+
+因此 archived 的准确结论是：
+
+```text
+archived pid artifact -> 已不再进入 hot liveness
+archived runtime.json/records -> 仍被 delivery/queue durable-roster sweeps 读到
+```
+
+源码路径：
+- `superviseDelivery()` 每 1s `reconcileWatchDeliveries()` 先遍历 `listSessionIds()` 读 records，再遍历全 session ids 检查 pending delivery；
+- `drainQueueUnlocked()` 每 3s `listSessions(false, ..., includePendingArchived=true)`，先枚举/读取/投影完整 roster，再按 queue 状态使用；
+- archived 最终不进工作板，但已付出 SQLite/file-read 成本。
+
+所以当前剩余 steady 主要矛盾已经从 archived hot patrol 转为“delivery/queue supervisor 对 durable roster 的全量 DB/file 扫描”。下一步应按 [[delivery-queue]] / [[sessions-core]] 设计有债务集合或 active/bound recipient index：空债务时不扫全 roster；archived/unbound queue 不轮询；unknown source 才 bounded recovery。暂不直接改代码，先走 spec-first 单变量设计。macmini 未写入或杀进程；health 保持 ok。
