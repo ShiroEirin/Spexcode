@@ -36,6 +36,7 @@ import { TMUX_PROBE_TIMEOUT_MS, TARGET_TMUX_CLOSE_SETTLE_MS, sessionHost } from 
 import {
   agentAlive, clearLaunched, forgetAgentPid, liveness, liveSnapshot, markLaunched, paneActivity,
   readAgentPid,
+  registerHotLivenessCandidate, unregisterHotLivenessCandidate,
   type Liveness, type LiveSnap,
 } from './session-liveness.js'
 
@@ -577,11 +578,27 @@ const lastKnownSession = new Map<string, Session>()
 // full text: it is a receipt for one ask the caller just made, not a row in a list of many.
 const boardRow = (s: Session): Session => { s.prompt = null; return s }
 
-export async function listSessions(includeArchived = false, includePendingArchived = false): Promise<Session[]> {
+// A partial read is for a session-scoped board refresh: the caller already knows which durable records moved,
+// so do not enumerate or project the rest of the roster. The liveness snapshot remains project-wide (one tmux
+// census is shared by every requested row), preserving the evidence semantics without paying per-session reads
+// for unrelated history. Omit `restrictToIds` for the authoritative full roster.
+export async function listSessions(
+  includeArchived = false,
+  restrictToIdsOrPending?: readonly string[] | boolean,
+  providedSnap?: LiveSnap,
+  includePendingArchived = false,
+): Promise<Session[]> {
+  const legacyPendingArchived = typeof restrictToIdsOrPending === 'boolean' ? restrictToIdsOrPending : includePendingArchived
+  const restricted = Array.isArray(restrictToIdsOrPending)
+  const requestedIds = restricted
+    ? [...new Set(restrictToIdsOrPending.filter((id): id is string => typeof id === 'string' && id.length > 0))]
+    : null
+  if (requestedIds && requestedIds.length === 0) return []
   // ONE store enumeration + ONE tmux snapshot (windows + pane pids + titles, merged) for the whole list, then
   // every session reconciles by a pure set lookup + one existsSync — no per-session tmux spawn.
   const [ids, snap] = await Promise.all([
-    Promise.resolve(listSessionIds()), liveSnapshot(),
+    Promise.resolve(requestedIds ?? listSessionIds()),
+    providedSnap ? Promise.resolve(providedSnap) : liveSnapshot(),
   ])
   // Freeze one record snapshot for both the census join and row projection. A second full read after an awaited
   // probe could pair record A with thread identity B and accidentally treat a missing census entry as clean.
@@ -696,9 +713,11 @@ export async function listSessions(includeArchived = false, includePendingArchiv
     return lastKnownSession.get(id) ?? null
   }))
   // prune last-known entries for ids that no longer appear at all (genuinely removed), keeping it bounded.
-  const liveIds = new Set(ids)
-  for (const k of [...lastKnownSession.keys()]) if (!liveIds.has(k)) lastKnownSession.delete(k)
-  return rows.filter((s): s is Session => s != null && (includeArchived || !s.archived || (includePendingArchived && pendingArchivedIds.has(s.id))))
+  if (!restricted) {
+    const liveIds = new Set(ids)
+    for (const k of [...lastKnownSession.keys()]) if (!liveIds.has(k)) lastKnownSession.delete(k)
+  }
+  return rows.filter((s): s is Session => s != null && (includeArchived || !s.archived || (legacyPendingArchived && pendingArchivedIds.has(s.id))))
     .sort((a, b) => (a.sortKey ?? a.created) - (b.sortKey ?? b.created) || a.id.localeCompare(b.id))
 }
 
@@ -1209,7 +1228,8 @@ async function drainQueueUnlocked(): Promise<void> {
   try {
     const cap = maxActive()   // read once per drain pass (.spec/spexcode.json → env → default); won't shift mid-burst
     for (;;) {
-      const [sessions, snap] = await Promise.all([listSessions(false, true), liveSnapshot()])
+      const snap = await liveSnapshot()
+      const sessions = await listSessions(false, undefined, snap, true)
       const records = new Map(sessions.map((session) => [session.id, readQueueRecord(session.id)]))
       const reservations = new Set(sessions.filter((session) => session.status === 'corrupt' || session.liveness === 'unknown'
         || !records.get(session.id) || records.get(session.id)?.launchReadinessPending).map((session) => session.id))
@@ -1441,7 +1461,19 @@ type TurnFailureObserverState = {
 const turnFailureObservers = new Map<string, TurnFailureObserverState>()
 let supervisingTurnFailures = false
 let startingTurnFailureObserver = false
+let turnFailureNeedsFullReconcile = true
+const turnFailureDirtyIds = new Set<string>()
 const TURN_FAILURE_OBSERVER_STABLE_MS = 5000
+
+// Lifecycle/event sources hand exact subjects here. The supervisor keeps a full scan only for startup or an
+// unknown source; ordinary ticks revisit changed ids and observer retry ids instead of enumerating the roster.
+export function notifyTurnFailureObservers(ids?: readonly string[]): void {
+  if (!ids?.length) {
+    turnFailureNeedsFullReconcile = true
+    return
+  }
+  for (const id of ids) if (typeof id === 'string' && id.length) turnFailureDirtyIds.add(id)
+}
 
 type NativeIdentityObserverState = {
   fingerprint: string
@@ -1477,9 +1509,10 @@ function deferTurnFailureObserver(id: string, harness: string, state: TurnFailur
 
 // Reconcile one adapter-owned native failure subscription per live governed session. Product code knows only
 // the optional interface capability; Codex owns WebSocket/thread semantics and Claude keeps using StopFailure.
-export function reconcileTurnFailureObservers(): void {
+export function reconcileTurnFailureObservers(ids?: readonly string[]): void {
+  const full = ids === undefined
   const wanted = new Map<string, { rec: SessRec; harness: Harness; fingerprint: string }>()
-  for (const id of listSessionIds()) {
+  for (const id of ids ?? listSessionIds()) {
     let rec: SessRec | null = null
     try { rec = readRecord(id) } catch { continue }
     // Native turn failure observation is for an executing turn, not a durable roster census. Asking, awaiting,
@@ -1490,10 +1523,20 @@ export function reconcileTurnFailureObservers(): void {
     if (!harness.observeTurnFailures) continue
     wanted.set(id, { rec, harness, fingerprint: `${harness.id}:${rec.harnessSessionId}:${runtimeRoot()}` })
   }
-  for (const [id, state] of turnFailureObservers) {
-    if (wanted.get(id)?.fingerprint === state.fingerprint) continue
-    turnFailureObservers.delete(id)
-    state.subscription?.close()
+  if (full) {
+    for (const [id, state] of turnFailureObservers) {
+      if (wanted.get(id)?.fingerprint === state.fingerprint) continue
+      turnFailureObservers.delete(id)
+      state.subscription?.close()
+    }
+  } else {
+    for (const id of ids ?? []) {
+      const state = turnFailureObservers.get(id)
+      if (state && wanted.get(id)?.fingerprint !== state.fingerprint) {
+        turnFailureObservers.delete(id)
+        state.subscription?.close()
+      }
+    }
   }
   for (const [id, target] of wanted) {
     const now = Date.now()
@@ -1644,7 +1687,19 @@ export function superviseTurnFailures(intervalMs = 1000): void {
   const tick = () => {
     try {
       reconcileNativeIdentityObservers()
-      reconcileTurnFailureObservers()
+      if (turnFailureNeedsFullReconcile) {
+        turnFailureNeedsFullReconcile = false
+        turnFailureDirtyIds.clear()
+        reconcileTurnFailureObservers()
+      } else {
+        const dirty = [...turnFailureDirtyIds]
+        turnFailureDirtyIds.clear()
+        const retry = [...turnFailureObservers.entries()]
+          .filter(([, state]) => !state.subscription && Date.now() >= state.retryAt)
+          .map(([id]) => id)
+        const ids = [...new Set([...dirty, ...retry])]
+        if (ids.length) reconcileTurnFailureObservers(ids)
+      }
     }
     catch (error) { console.error(`spex: turn failure reconciliation failed: ${error instanceof Error ? error.message : String(error)}`) }
     const timer = setTimeout(tick, intervalMs)
@@ -2861,6 +2916,7 @@ function bindNativeRuntimeUnlocked(rec: SessRec): void {
 // record it wrote here; nothing to release is a no-op.
 function releaseDetachedRuntimeUnlocked(rec: SessRec): void {
   if (!rec.stopped && !rec.archived) return
+  unregisterHotLivenessCandidate(rec.session)
   const application = configuredSessionApplication()
   const current = application.resolveRuntime(rec.session, 'spex-governed')
   if (current?.status !== 'bound') return
@@ -2926,6 +2982,7 @@ function bindHarnessSessionIdUnlocked(rec: SessRec, harnessSessionId: string, ge
     throw error
   }
   if (codex && generationId) commitCodexGenerationRegistration(root, id, harnessSessionId, generationId)
+  registerHotLivenessCandidate(id)
 }
 
 // Codex's TUI rewind can switch from one native thread to an exact fork successor while the SpexCode session
@@ -3242,12 +3299,14 @@ function writeSessionLeafReceipt(id: string, receipt: SessionLeafReceipt): void 
     writeFileSync(temp, `${JSON.stringify(receipt)}\n`, { mode: 0o600 })
     renameSync(temp, path)
   } finally { rmSync(temp, { force: true }) }
+  registerHotLivenessCandidate(id)
 }
 
 function clearSessionLeafArtifacts(id: string): void {
   rmSync(sessionArtifactPath(id, 'agent.pid'), { force: true })
   forgetAgentPid(id)
   rmSync(sessionLeafReceiptPath(id), { force: true })
+  unregisterHotLivenessCandidate(id)
 }
 
 type LeafIdentity = { pid: number; startToken: string; receipt: SessionLeafReceipt }

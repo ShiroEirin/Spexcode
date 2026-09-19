@@ -120,7 +120,12 @@ projection. Thus full+sessions in one window starts/retains the one full builder
 last-good sessions splice first; a later sessions input wakes that same projection lane even if an earlier
 route-owned full rebuild is still held. The delta serializer sends that projection before awaiting full, then
 re-enters its normal full convergence. No max-scope reduction may silently turn a persisted lifecycle write into
-time behind unrelated graph assembly.
+time behind unrelated graph assembly. When a canonical lifecycle commit names its subject session ids, the
+sessions signal carries that affected set through the debounce into [[graph-cache]]'s partial splice. The
+session-db watcher recovers the same ids through its append-only event watermark across processes; an unknown
+event, cursor failure, or structural change falls back to the authoritative working roster. This narrows the
+projection input, not the freshness authority: the same single-flight publication and unknown/fail-loud
+liveness rules remain in force.
 
 **One registry owns filesystem observation, and its cardinality follows the canonical roots.** Every source
 is one reusable `(root, scope)` registry which is the sole owner of every handle taken for it. What this

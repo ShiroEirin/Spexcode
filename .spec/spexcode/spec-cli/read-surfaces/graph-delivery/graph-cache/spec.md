@@ -89,10 +89,12 @@ The graph is built **once per change, not once per poll — and only as much of 
   verification above then settles against the inputs. A full signal still subsumes
   nothing except another structural full: when a sessions signal arrives in the same debounce window or while a
   route-owned/full producer is running, the cache owes **both** a full convergence and a sessions splice. A
-  'sessions' read with a cached graph takes the SPLICE path — `spliceSessions(prev)`: one fresh
-  `listSessions()` bracketed only by the record/prompt/resident-projection carrier (never a root/worktree
-  `.spec` walk, issue read, identity read, or topology revision sample), with prev's per-path ops reused. Ordinary
-  lifecycle fields leave every node and issue unit byte-identical. Archive and close are the one subtractive
+  A 'sessions' read with a cached graph takes the SPLICE path — `spliceSessions(prev, request)`. A precise
+  commit carries affected session ids, so the adapter reads and projects only those rows while reusing the
+  previous rows for every other session; an unknown/structural change falls back to one authoritative full
+  working roster. The partial path is still bracketed only by the record/prompt/resident-projection carrier
+  (never a root/worktree `.spec` walk, issue read, identity read, or topology revision sample), with prev's
+  per-path ops reused. Ordinary lifecycle fields leave every node and issue unit byte-identical. Archive and close are the one subtractive
   topology transition already proven by that carrier: the splice removes overlays sourced by roots that left the
   active session set, drops empty ghost nodes, re-derives affected status/parent facts, and carries the old full
   revision minus those exact root entries. The active set is the row projection the splice actually publishes,

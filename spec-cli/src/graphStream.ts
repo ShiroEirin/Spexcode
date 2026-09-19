@@ -4,8 +4,9 @@ import { watch, mkdirSync, readdirSync, readFileSync, existsSync, type Dirent, t
 import { join, dirname, relative, resolve, basename } from 'node:path'
 import { sessionsRoot, gitCommonDir, repoRoot, isTrashWorktreePath } from '@spexcode/spec-core'
 import { resolveDatabasePath } from '@spexcode/session-application'
-import { listSessions, pendingSessionCreateWorktreePaths } from './sessions.js'
-import { hotSignature, warmSignature } from './session-liveness.js'
+import { configuredSessionApplication } from './session-application.js'
+import { listSessions, pendingSessionCreateWorktreePaths, notifyTurnFailureObservers } from './sessions.js'
+import { hotSignature, refreshHotLivenessCandidate, seedHotLivenessCandidates, warmSignature } from './session-liveness.js'
 import { getBoard, getBoardForSessionRefresh, invalidateBoard, patrolBoard, boardIdentity, readBoard, type Board } from './graphCache.js'
 import { diffFromPosition, positionOf, type Position } from '@spexcode/spec-core'
 const { streamSSE } = await daemonRuntime()
@@ -374,7 +375,7 @@ async function rebuildAndBroadcast(patrol = false, sessions = false, full = fals
 // carries its own change SCOPE: full and sessions are independent obligations, not a max-scope replacement.
 // With delta subscribers the debounced fire rebuilds and broadcasts (plain subs then ride the same
 // tag-moved gate — no spurious refetches); without them it stays the zero-build legacy notify.
-function fireChanged(scope: Scope = 'full'): void {
+function fireChanged(scope: Scope = 'full', affectedSessionIds?: readonly string[]): void {
   if (scope === 'sessions') traceLatency('sessions-signal')
   const pending = addPendingGraphChange({ full: pendingFull, sessions: pendingSessions }, scope)
   pendingFull = pending.full
@@ -382,7 +383,7 @@ function fireChanged(scope: Scope = 'full'): void {
   // invalidate the route's board cache ([[graph-cache]]) on EVERY change signal at its OWN scope,
   // before the debounce guard — a plain-mode client that polls /api/graph (no delta rebuild here) must
   // still see fresh data on its next poll, and a delta rebuild below re-reads the same now-stale cache.
-  invalidateBoard(scope)
+  invalidateBoard(scope, affectedSessionIds)
   triggerTags.add(scope)
   // DEBOUNCE = 25ms. Real fs-event bursts (a merge touching many records) were MEASURED to span 0–5ms, so a
   // 25ms window collapses them with room to spare while shaving ~125ms off the old 150ms lag; anything
@@ -405,8 +406,8 @@ function fireChanged(scope: Scope = 'full'): void {
 // source 1 normally sees the write too. The explicit route call stays because that fs watch is best-effort
 // (it can fail to attach), and the nudge makes the sub-second rename guarantee deterministic. Same
 // debounced funnel as every other source; defaults to 'full' but the rename route passes 'sessions'.
-export const notifyBoardChanged = (scope: Scope = 'full'): void =>
-  fireChanged(scope)
+export const notifyBoardChanged = (scope: Scope = 'full', affectedSessionIds?: readonly string[]): void =>
+  fireChanged(scope, affectedSessionIds)
 
 // ---- ONE repair scheduler for every filesystem source ----
 // A source the platform refuses keeps its observer hold and is retried by THIS timer alone — never by a
@@ -474,10 +475,16 @@ function ensureWatcher(root: string): void {
     root,
     source: 'store',
     scope: 'sessions',
-    onInput: () => fireChanged('sessions'),
+    onInput: (_event, relativePath) => {
+      const id = relativePath.split(/[\\/]/)[0]
+      if (id && !id.includes('.')) notifyTurnFailureObservers([id])
+      if (id && !id.includes('.')) refreshHotLivenessCandidate(id)
+      fireChanged('sessions', id && !id.includes('.') ? [id] : undefined)
+    },
     onFailure: (error) => {
       if (storeWatcher === registry) storeWatcher = null
       noteSourceFailure('store', error)
+      seedHotLivenessCandidates(true)
       fireChanged('sessions')
     },
   })
@@ -502,6 +509,9 @@ function ensureWatcher(root: string): void {
 // [[graph-cache]] folds the same file into its session revision so the patrol covers a held or disabled leaf.
 let sessionDatabaseWatcher: TreeWatcherRegistry | null = null
 let activeDatabasePath: string | null = null
+let sessionDatabaseWatermark: number | null = null
+let sessionDatabaseVersion: number | null = null
+let sessionDatabaseMoved = true
 const SESSION_DB_SOURCE = 'session-db'
 export const sessionDatabaseWatchIgnore = (databasePath: string): ((relativePath: string) => boolean) => {
   const name = basename(databasePath)
@@ -528,6 +538,31 @@ function closeSessionDatabaseWatcher(): void {
   sessionDatabaseWatcher?.close()
   sessionDatabaseWatcher = null
   activeDatabasePath = null
+  sessionDatabaseWatermark = null
+  sessionDatabaseVersion = null
+  sessionDatabaseMoved = true
+}
+function sessionDatabaseChangedIds(notify = true): readonly string[] | null {
+  try {
+    const application = configuredSessionApplication()
+    const changed = application.readChangedSessionIdsSince(sessionDatabaseWatermark ?? 0)
+    sessionDatabaseWatermark = changed.watermark
+    sessionDatabaseMoved = !Number.isSafeInteger(changed.dataVersion) || changed.dataVersion !== sessionDatabaseVersion
+    sessionDatabaseVersion = changed.dataVersion
+    if (notify && changed.subjectSessionIds.length) {
+      notifyTurnFailureObservers(changed.subjectSessionIds)
+      for (const id of changed.subjectSessionIds) refreshHotLivenessCandidate(id)
+    }
+    return changed.subjectSessionIds
+  } catch (error) {
+    console.error(`spec-cli: session-db change cursor failed — ${(error as Error).message}`)
+    sessionDatabaseWatermark = null
+    sessionDatabaseVersion = null
+    sessionDatabaseMoved = true
+    notifyTurnFailureObservers()
+    seedHotLivenessCandidates(true)
+    return null
+  }
 }
 function ensureSessionDatabaseWatcher(): void {
   if (isDisabled(SESSION_DB_SOURCE)) { closeSessionDatabaseWatcher(); return }
@@ -542,9 +577,25 @@ function ensureSessionDatabaseWatcher(): void {
   catch (error) {
     console.error(`spec-cli: graph watcher '${SESSION_DB_SOURCE}' could not create ${dirname(databasePath)}: ${error instanceof Error ? error.message : String(error)}`)
   }
-  const registry = watchSessionDatabase(databasePath, () => fireChanged('sessions'), (error) => {
+  // Seed the append-only event cursor once. Historical state events are already represented by the first board
+  // build and must not replay as a fresh hook burst when this watcher attaches.
+  const initialChanges = sessionDatabaseChangedIds(false)
+  if (initialChanges === null) sessionDatabaseWatermark = null
+  const registry = watchSessionDatabase(databasePath, () => {
+    const ids = sessionDatabaseChangedIds()
+    // SQLite can publish the WAL fs event before a FULL-synchronous writer's commit becomes visible. An empty
+    // cursor with an unchanged data_version is a duplicate/early notification, not an unknown board mutation.
+    // A moved version with no state subject remains unknown and takes the existing full fallback.
+    if (ids && ids.length === 0 && !sessionDatabaseMoved) return
+    fireChanged('sessions', ids && ids.length ? ids : undefined)
+  }, (error) => {
     if (sessionDatabaseWatcher === registry) sessionDatabaseWatcher = null
     noteSourceFailure(SESSION_DB_SOURCE, error)
+    sessionDatabaseWatermark = null
+    sessionDatabaseVersion = null
+    sessionDatabaseMoved = true
+    notifyTurnFailureObservers()
+    seedHotLivenessCandidates(true)
     fireChanged('sessions')
   })
   sessionDatabaseWatcher = registry

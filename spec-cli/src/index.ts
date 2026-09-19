@@ -19,7 +19,8 @@ import { gitA, gitTry, repoRoot } from '@spexcode/spec-core'
 import { pluginDetail, pluginsView } from './plugins-view.js'
 import { readLedger } from './hook-ledger.js'
 import { cockpitReview } from './cockpit.js'
-import { EMPTY_PROMPT_ERROR, listSessions, listArchivedSessionIndex, sendText, drainSession, markHumanPromptActive, interruptSession, rawKey, stopSession, closeSession, resumeSession, captureSessionResult, sessionPrompt, renameSession, setSessionSort, linkZCodeChildSession, projectCreatedSession, sessionCreateRequest, superviseQueue, superviseTurnFailures, superviseDelivery, reconcileLaunchedRuntimes, startWorktreeTrashReaper } from './sessions.js'
+import { EMPTY_PROMPT_ERROR, listSessions, listArchivedSessionIndex, sendText, drainSession, markHumanPromptActive, interruptSession, rawKey, stopSession, closeSession, resumeSession, captureSessionResult, sessionPrompt, renameSession, setSessionSort, linkZCodeChildSession, projectCreatedSession, sessionCreateRequest, superviseQueue, superviseTurnFailures, superviseDelivery, reconcileLaunchedRuntimes, startWorktreeTrashReaper, notifyTurnFailureObservers } from './sessions.js'
+import { refreshHotLivenessCandidate, seedHotLivenessCandidates } from './session-liveness.js'
 import { mergeSession, retractDiffComment, saveDiffComment, sendDiffComments, sessionDiff } from './session-review.js'
 import { sessionHost } from './session-host.js'
 import { quarantineCorruptRecord, readRecord, restoreQuarantinedRecord, SessionRecordUnusable, withRecordLock, withSessionRecordLockSync } from './session-record.js'
@@ -46,6 +47,7 @@ import { collectResourceReport, ResourceConflict } from './host-resources.js'
 import { reparentRequest, SessionReparentRequestError } from './session-reparent.js'
 import { buildGuidanceCatalog } from './guidance-catalog.js'
 import { configuredSessionApplication, setSessionApplicationCommitObserver } from './session-application.js'
+import { SESSION_CHANGE } from '@spexcode/session-application'
 import { editSpecBody, readSpecBodyEdit, SpecBodyEditError } from './spec-body-edit.js'
 const { serve, Hono, cors, etag, createNodeWebSocket } = await daemonRuntime()
 
@@ -57,7 +59,12 @@ startWorktreeTrashReaper()
 const app = new Hono()
 // Canonical lifecycle commits do not touch a watched JSON file. Bridge those commits into the existing board
 // stream so status/proposal/parent changes arrive without waiting for a later human send or delivery tick.
-setSessionApplicationCommitObserver(() => notifyBoardChanged('sessions'))
+setSessionApplicationCommitObserver((change) => {
+  if (!(change.changeMask & (SESSION_CHANGE.state | SESSION_CHANGE.topology))) return
+  notifyTurnFailureObservers(change.subjectSessionIds)
+  for (const id of change.subjectSessionIds) refreshHotLivenessCandidate(id)
+  notifyBoardChanged('sessions', change.subjectSessionIds)
+})
 startUploadReaper()
 app.use('/api/*', cors())
 app.onError((error, c) => {
@@ -1150,6 +1157,7 @@ superviseBridges()   // restore visible helpers after failure; their viewer subs
 superviseQueue()     // launch queued sessions as slots free (catches agent-authored proposals/crashes the server never sees directly)
 superviseTurnFailures() // reconcile adapter-owned native failure subscriptions across backend replacement
 await reconcileLaunchedRuntimes()   // launched sessions get the binding their run state implies before the sweep below polls them
+seedHotLivenessCandidates()
 superviseDelivery()  // hand over messages an earlier pass could not ([[delivery-queue]]): the retry half of dispatch
 
 let graphWatchersClosed = false

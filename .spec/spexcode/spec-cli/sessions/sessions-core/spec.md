@@ -202,11 +202,21 @@ The shared layer also reconciles each executing governed record (`status: active
 native turn-failure subscription. Waiting states (`asking`, `awaiting`, and `parked`) have no native turn and do
 not hold an observer. It owns subscription lifetime across backend replacement and record stop/archive/retirement,
 admits native subscriptions one at a time during reconciliation so a backend restart cannot fan out expensive
-resume handshakes, with bounded backoff after a transport disconnect, but no
-product protocol: subscription and failure mapping remain adapter work ([[harness-adapter]]). Every reported
+resume handshakes, with bounded backoff after a transport disconnect. The supervisor performs one full roster
+reconciliation at startup and again only when a source cannot name its affected sessions; lifecycle, topology,
+store, and session-database events enqueue their exact subject ids, and ordinary ticks reconcile only those dirty
+ids plus observers whose retry deadline has arrived. Duplicate wakes coalesce by id, and a full reconciliation
+clears the dirty set before it returns. This keeps the observer contract event-driven without changing which
+records are eligible or how failures are recorded. There is no product protocol: subscription and failure mapping
+remain adapter work ([[harness-adapter]]). Every reported
 failure reaches one record-locked compare-and-set that changes only a live, undeclared `active` record to `error`.
 A declaration that landed first is authoritative, so a late process close, delayed native completion, or
 restart reconciliation cannot overwrite it.
+
+The same active/runtime boundary governs hot liveness: a retained archive row is history, not a runtime candidate.
+Only a canonical active/starting record with an owned leaf receipt or adapter runtime binding enters the fast
+probe set; stop, queue, archive, unbound, and hazard rows are handled by their lifecycle/repair paths. Close's
+cold proof is the authority that permits archive publication, so liveness never becomes a second cleanup protocol.
 
 The record's existing `name` is the one human display override: CLI creation may set it once with `--name`, and
 rename later replaces or clears that same field. It affects only the shared label/title projection;
