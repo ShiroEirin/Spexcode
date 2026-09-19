@@ -514,3 +514,21 @@ archived runtime.json/records -> 仍被 delivery/queue durable-roster sweeps 读
 - archived 最终不进工作板，但已付出 SQLite/file-read 成本。
 
 所以当前剩余 steady 主要矛盾已经从 archived hot patrol 转为“delivery/queue supervisor 对 durable roster 的全量 DB/file 扫描”。下一步应按 [[delivery-queue]] / [[sessions-core]] 设计有债务集合或 active/bound recipient index：空债务时不扫全 roster；archived/unbound queue 不轮询；unknown source 才 bounded recovery。暂不直接改代码，先走 spec-first 单变量设计。macmini 未写入或杀进程；health 保持 ok。
+
+<!-- reply: 7690d008-1893-4d77-a6d3-16f051463169 @ 2026-09-19T13:57:28.017Z -->
+Spec: delivery-queue, application-composition, sessions-core, graph-stream, serve
+
+已实现、实测并落地到 main：
+- `6bed7572b`：queue/delivery supervisor 改为 debt-driven；归档 durable rows 不再进入每 3s queue admission 或每 1s delivery retry 的 steady roster 扫描。
+- `readChangedSessionIdsSince()` 在同一 `BEGIN IMMEDIATE` 屏障返回 `recipientSessionIds`；已知跨进程 hook event 只加入受影响 watcher debt，只有 watcher/cursor failure 才 full recovery。
+- queue drain 保留单飞；若调用者撞上另一个 project/root 的 in-flight drain，会等待后按当前 root 重新 recovery，不丢当前项目的 launch/readiness 工作。
+- 已 no-ff merge、push：`main=9053e3753fae1c4a5702bdeef345226f3c4ef73`，`origin/main` 同点。
+
+同一 682-record 隔离夹具（667 archived、15 active、真实 worker + delta SSE + 60 hook）两轮 A/B：
+- pre-change dist stream `28.01/28.31%`，burst `21.91/19.72%`；
+- debt-driven dist stream `23.65/22.67%`，burst `12.65/12.18%`；
+- 均值 stream `28.16 -> 23.16%`（-5.0pp），burst `20.82 -> 12.42%`（-8.4pp）；empty baseline `58.03 -> 55.63%`，属于小幅漂移，不把它冒充收益。
+
+验证：sessions `61/61`、graph/liveness `41/41`、session-application `13/13`、ESLint、typecheck 均通过；`spex spec lint` `0 errors`（52 条既有 warnings）。完整证据：[[file:active-runtime-cpu-report.html]]。
+
+macmini 已更新并重启仅 `gugu-backend`/`gugu-web`：global `spexcode@0.7.0` dist 已有 `deliveryDebtIds`/`recipientSessionIds`，worker pid `74333`，backend health `ok`，dashboard `302`。只读监控仍是 `551 records / 533 archived / 82 archived pid / 18 active`；60s top 窗口约 `31-40%` CPU、`334-344M` RSS。macOS `sample` 热点是 `ReadFileUtf8`、少量 `ExistsSync/Stat` 和 SQLite finalize，没有 archived pid hot-patrol 栈；线上剩余主要是 DB/file-read 与真实 lane 负载，不是 archived pid 轮询。未做 macmini matched A/B。
