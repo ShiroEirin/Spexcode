@@ -399,3 +399,40 @@ Spec: liveness, sessions-core, graph-stream, serve
 报告：[[file:active-runtime-cpu-report.html]]
 
 边界：SQLite FULL synchronous 下的空 cursor→unknown→full-splice burst bug（fixC）尚未合入；它是独立的 graph-stream spec-first 后续，不与本次 active-owned hot candidate 重构混合。macmini/macOS 未操作。
+
+<!-- reply: 7690d008-1893-4d77-a6d3-16f051463169 @ 2026-09-19T09:38:08.124Z -->
+Spec: liveness, sessions-core, graph-stream, application-composition, serve
+
+完整解决方案已落地，分成两个独立提交，不再把 archive 历史当 runtime：
+
+- `066ce77b8 fix(liveness): derive hot probes from owned runtimes`
+- `c0d97fc47 fix(graph): fence empty session database events`
+
+### 1. steady：active-owned hot candidate source
+
+`hotSignature()` 不再从 `listSessionIds()` 推导 100ms 候选。backend recovery 只做一次 bounded seed；之后由 leaf receipt、adapter runtime bind、stop/close/archive 和 state/store/session-db subject 事件维护单个 id。100ms 只检查 canonical active/owned runtime candidates。
+
+Archived/stopped/queued/unbound/hazard rows保留为历史或 repair 输入，不进入 hot runtime census；close cold proof 仍是 archive authority。
+
+公平隔离 worker A/B：682 records（667 archived、15 active），active rows 有合法 leaf receipt，archived rows 只留历史 pid artifact；真实 delta SSE + 60 次真实 hook；window CPU，old/current plain dist 各两轮：
+
+| build | empty CPU | stream CPU | burst CPU | list-panes | burst RSS |
+|---|---:|---:|---:|---:|---:|
+| old 1 | 59.03% | 33.97% | 53.37% | 110 | 298,528 KiB |
+| old 2 | 57.60% | 34.13% | 60.03% | 122 | 331,884 KiB |
+| current 1 | 57.81% | 28.37% | 23.39% | 51 | 279,632 KiB |
+| current 2 | 58.17% | 28.14% | 22.53% | 49 | 291,104 KiB |
+
+均值：stream `34.05% -> 28.26%`，burst `56.70% -> 22.96%`，list-panes `116 -> 50`。这次收益来自 archived history 不再进入 hot path，active runtime 仍保留快速死亡检测。
+
+### 2. burst：SQLite empty-cursor commit fence
+
+`c0d97fc47` 让 application watermark 在同一 `BEGIN IMMEDIATE` 屏障内返回 `data_version`；watcher 只丢弃“empty cursor + data_version 未变”的重复/早期 fs event；版本变了但没有 state subject 仍 full fallback。现有 application 45/45、graph-stream 24/24 通过。
+
+独立私有臂证据：40 hooks 零迟到/零未投递；burst CPU `45.6 -> 29.2%`；慢 splice `62–66 -> 7–9ms`；投递中位 `64–72 -> 20–21ms`；最终 board 一致。fixA/fixB/fixAB 全部否决。
+
+验证总表：liveness/hot/graph/session projection 51/51；session-application 45/45；graph-stream 24/24；source projection gate PASS；ESLint PASS；`spex spec lint` 0 errors（existing warnings）。typecheck/build 仍只有既有 `DisplayStatus`/`archived` 类型错误。
+
+报告：[[file:active-runtime-cpu-report.html]]
+
+macmini/macOS 未操作。fixC 的 macOS FSEvents、高 contention lock 仍是后续平台覆盖项，不影响当前 Linux isolated proof。
