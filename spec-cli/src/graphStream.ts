@@ -510,6 +510,8 @@ function ensureWatcher(root: string): void {
 let sessionDatabaseWatcher: TreeWatcherRegistry | null = null
 let activeDatabasePath: string | null = null
 let sessionDatabaseWatermark: number | null = null
+let sessionDatabaseVersion: number | null = null
+let sessionDatabaseMoved = true
 const SESSION_DB_SOURCE = 'session-db'
 export const sessionDatabaseWatchIgnore = (databasePath: string): ((relativePath: string) => boolean) => {
   const name = basename(databasePath)
@@ -537,12 +539,16 @@ function closeSessionDatabaseWatcher(): void {
   sessionDatabaseWatcher = null
   activeDatabasePath = null
   sessionDatabaseWatermark = null
+  sessionDatabaseVersion = null
+  sessionDatabaseMoved = true
 }
 function sessionDatabaseChangedIds(notify = true): readonly string[] | null {
   try {
     const application = configuredSessionApplication()
     const changed = application.readChangedSessionIdsSince(sessionDatabaseWatermark ?? 0)
     sessionDatabaseWatermark = changed.watermark
+    sessionDatabaseMoved = !Number.isSafeInteger(changed.dataVersion) || changed.dataVersion !== sessionDatabaseVersion
+    sessionDatabaseVersion = changed.dataVersion
     if (notify && changed.subjectSessionIds.length) {
       notifyTurnFailureObservers(changed.subjectSessionIds)
       for (const id of changed.subjectSessionIds) refreshHotLivenessCandidate(id)
@@ -551,6 +557,8 @@ function sessionDatabaseChangedIds(notify = true): readonly string[] | null {
   } catch (error) {
     console.error(`spec-cli: session-db change cursor failed — ${(error as Error).message}`)
     sessionDatabaseWatermark = null
+    sessionDatabaseVersion = null
+    sessionDatabaseMoved = true
     notifyTurnFailureObservers()
     seedHotLivenessCandidates(true)
     return null
@@ -575,11 +583,17 @@ function ensureSessionDatabaseWatcher(): void {
   if (initialChanges === null) sessionDatabaseWatermark = null
   const registry = watchSessionDatabase(databasePath, () => {
     const ids = sessionDatabaseChangedIds()
+    // SQLite can publish the WAL fs event before a FULL-synchronous writer's commit becomes visible. An empty
+    // cursor with an unchanged data_version is a duplicate/early notification, not an unknown board mutation.
+    // A moved version with no state subject remains unknown and takes the existing full fallback.
+    if (ids && ids.length === 0 && !sessionDatabaseMoved) return
     fireChanged('sessions', ids && ids.length ? ids : undefined)
   }, (error) => {
     if (sessionDatabaseWatcher === registry) sessionDatabaseWatcher = null
     noteSourceFailure(SESSION_DB_SOURCE, error)
     sessionDatabaseWatermark = null
+    sessionDatabaseVersion = null
+    sessionDatabaseMoved = true
     notifyTurnFailureObservers()
     seedHotLivenessCandidates(true)
     fireChanged('sessions')

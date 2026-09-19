@@ -73,6 +73,8 @@ export interface SessionStateChange {
 export interface ChangedSessionIds {
   /** The append-only session-event rowid to use as the next watermark. */
   watermark: number
+  /** SQLite's connection-local data version observed under the same write transaction barrier. */
+  dataVersion: number
   /** Distinct event subjects appended after the requested watermark. */
   subjectSessionIds: string[]
 }
@@ -677,6 +679,7 @@ export function openProjectSessionApplication(options: ProjectSessionApplication
         }
         return {
           watermark: nextWatermark,
+          dataVersion: Number(tx.query('PRAGMA data_version')[0]?.data_version),
           subjectSessionIds: [...new Set(rows.map(row => String(row.subject_session_id)))],
         }
       })
