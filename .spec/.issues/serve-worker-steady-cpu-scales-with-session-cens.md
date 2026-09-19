@@ -461,3 +461,15 @@ Spec: liveness, graph-stream
 1. 证据范围。落地的不是我测过的 fixH2，而是另一种机制：事件维护的 ownership registry，资格为 `governed && !stopped && !archived && status === 'active' && ownedRuntime`，没有每秒的全 roster 分类。报告里 fixH2 的 13.50% 稳态和四场景检测延迟属于 fixH2 的形状，不能当作 066ce77b8 的证据。差异里有两项是 [[liveness]] 已明文写下的取舍，不是缺陷：归档但物理存活的 pid 不再由 hot tier 检测（fixH2 里实测 ≤100 ms，现在走 warm / close-repair 路径）；非 active 的 session（idle、awaiting、asking、parked，agent 还坐在 REPL 里）的死亡检测从 100 ms 变为 warm tier 的约 1 s。CPU 上它应当比 fixH2 更省（没有那趟 1 s 的 roster 扫描），我没测。
 
 2. 一处 spec 与代码不一致，值得看一眼。`session-liveness.ts:247` 在每个 100 ms tick 里把 `pidRegistry` 中不属于 `hotCandidateIds` 的键全部删除；而 `:124` 的 `liveSnapshot()` 会为每个有窗口的 session 调 `agentAlive()`、从而建锁存项。结果是：所有「有 pane 但不是 hot 候选」的 session——idle、awaiting、parked，以及 agent 已死而 pane 还在的——其 ESRCH 死亡锁存最多存活 100 ms，下一次 warm census 会重新 `kill(pid, 0)`。[[liveness]] 仍写着锁存「只有 relaunch 的新写入才重置」，这对它们不再成立；一旦该 OS pid 被回收，死掉的 session 会在 census 里读成 `pidAlive = true`。改动前修剪按的是全 roster，锁存与 session 同寿。macOS 的 pid 空间约 10 万，繁忙机器上几小时内回收是现实的。这是从代码读出来的，没有复现。修法很小：修剪只按全 roster 做、且放在低频路径上（fixH2 是放在 1 s 刷新块里），或者让 warm census 用不写锁存表的只读探测。
+
+<!-- reply: 7690d008-1893-4d77-a6d3-16f051463169 @ 2026-09-19T10:40:52.457Z -->
+Spec: liveness, serve
+
+Follow-up regression fix landed and deployed:
+- `539cb3c0f` fixes the hot/warm pid latch regression flagged by the independent review.
+- The hot tick no longer prunes `pidRegistry` against `hotCandidateIds`; warm census may create a latch for a pane-visible non-hot session, and that latch now survives until pid artifact disappearance or explicit leaf cleanup/mtime rewrite.
+- Added fail/pass test: a dead pid latch for a non-hot session survives `hotSignature()` and cannot revive on PID reuse.
+- Landed/pushed as `d09388e0c`, then npm-global `0.7.0` was reinstalled on macmini-tail and gugu-backend/gugu-web restarted.
+- macmini backend/dashboard health `ok`; macOS top samples after restart: worker pid 71290 at `0.0%`, `28.4%`, `27.4%`; corrected delta-window 20s average CPU `39.70%`, RSS avg `268,638 KiB` (range `250,336–289,216 KiB`), health `ok`.
+
+This preserves the spec invariant: only relaunch/mtime rewrite resets a death latch; hot eligibility no longer destroys warm evidence.
