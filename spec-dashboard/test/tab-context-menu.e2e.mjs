@@ -214,6 +214,27 @@ try {
   scene('the shell strip offers the identical menu on the same session tab', isTabMenu(shellItems), { items: shellItems, hash: await hash() })
   await dismiss()
 
+  const bandGeometry = () => page.evaluate(() => {
+    const painted = (el) => el.getBoundingClientRect().width > 0 && el.getBoundingClientRect().height > 0
+    const strip = [...document.querySelectorAll('.tabstrip')].find(painted)
+    const actions = strip?.querySelector('.tabstrip-actions')
+    const reservation = strip?.querySelector('.context-toggle-reservation')
+    const toggle = document.querySelector('.context-toggle-slot .context-toggle')
+    const rect = (el) => (el ? el.getBoundingClientRect().toJSON() : null)
+    return { actions: rect(actions), reservation: rect(reservation), toggle: rect(toggle), toggleVisibility: toggle ? getComputedStyle(toggle).visibility : null }
+  })
+  const specBand = await bandGeometry()
+  await page.locator(`[role="tab"][data-tab-key="${sessionKey}"]:visible .tab-face`).click()
+  const sessionSwitch = await waitFor(async () => await hash() === sessionKey, 'session tab route', 5_000).catch(() => false)
+  const sessionBand = await bandGeometry()
+  await page.locator('[role="tab"][data-tab-key="#/spec/fixture"]:visible .tab-face').click()
+  await waitFor(async () => await hash() === '#/spec/fixture', 'spec tab route', 5_000).catch(() => false)
+  scene('right-side action geometry stays fixed while switching document kinds', sessionSwitch
+    && Math.abs((specBand.actions?.right || 0) - (sessionBand.actions?.right || 0)) <= 1
+    && (sessionBand.reservation?.width || 0) === (specBand.reservation?.width || 0)
+    && Math.abs((specBand.toggle?.right || 0) - (sessionBand.toggle?.right || 0)) <= 1
+    && sessionBand.toggleVisibility === 'hidden', { specBand, sessionBand })
+
   // 4 — split: the session tab MOVES into a second region, and a drag brings it home again
   await page.locator(`[role="tab"][data-tab-key="${sessionKey}"]:visible`).first().click({ button: 'right' })
   const split = page.locator('.sess-menu:visible [role="menuitem"]', { hasText: 'Split right' })

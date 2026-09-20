@@ -411,6 +411,7 @@ body {
 }
 .context-toggle:hover { color: var(--ink2); background: var(--wash-hover); }
 .context-toggle.on { color: var(--blue); background: color-mix(in srgb, var(--blue) 10%, transparent); }
+.context-toggle-unavailable { visibility: hidden; pointer-events: none; }
 
 .context-dock { flex: 0 0 auto; position: relative; display: flex; flex-direction: column; min-height: 0; max-width: 640px; overflow: hidden; background: var(--ground); border-left: 1px solid var(--edge); }
 .ctx-body { flex: 1; min-height: 0; overflow: auto; }
