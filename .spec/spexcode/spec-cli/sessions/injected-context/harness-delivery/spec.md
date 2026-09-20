@@ -30,8 +30,8 @@ loads its CLAUDE.md + memory normally ([[sessions-core]] launch).
 
 `spex materialize` is a pure function of the spec tree's [[surface]] nodes into the flat
 artifacts each consumer reads cheaply. It is the **base operation of harness adaptation** — the
-[[harness-adapter]] seam's render step: "adapting SpexCode to a harness" means exactly *materializing
-into that harness's auto-discovery points*, so supporting a new harness is an adapter row this one
+[[harness-adapter]] seam's render step: "adapting SpexCode to a harness" means exactly _materializing
+into that harness's auto-discovery points_, so supporting a new harness is an adapter row this one
 pass loops over, never a new delivery mechanism. That framing is how the verb should be explained
 wherever it is defined (help, guides, onboarding docs): not a one-time setup — a re-runnable render
 whose outputs are derived, untracked, and edited only via their sources. Its anchors are GIT-NATIVE only ([[commit-surgery]]): the explicit
@@ -57,9 +57,9 @@ scoped per project, for each SELECTED harness:
   (Codex) + `<repo>/CLAUDE.md` (Claude). Those contract files are **generated artifacts** — exactly like the
   shims + skills below: regenerated per clone/launch, never tracked, resident per [[residence]]'s live
   kind detection (exclude when wholly ours; the content filter when host prose shares the file). Plugin bodies are the ONLY contract source: there is no per-project prose file folded in, so a
-project's repo-local notes cannot silently become part of every agent's contract — they live in the harness
-file's own block-outside region (untracked, per-clone), while anything that must reach EVERY agent is a
-plugin node. This replaces the launch-time
+  project's repo-local notes cannot silently become part of every agent's contract — they live in the harness
+  file's own block-outside region (untracked, per-clone), while anything that must reach EVERY agent is a
+  plugin node. This replaces the launch-time
   `--append-system-prompt` for self-launch (at user-message level — the ceiling for a discovered file, not
   system-prompt level);
 - **the shims** — each adapter's shim landed at its `shimFile()`, whatever ARTIFACT that harness
@@ -69,8 +69,12 @@ plugin node. This replaces the launch-time
   (`.pi/extensions/spexcode.ts` — [[pi-harness]]). The shape is the adapter's fact, not this pipeline's, and so
   is WHO OWNS the file: a spexcode-named file of ours is written verbatim, while a config file the host agent
   SHARES with the user takes only our identity-stamped hook entries, merged in beside whatever they already
-  had ([[harness-adapter]]'s `shimOwnership`). This pipeline never learns which harness that is — it reads the
-  ownership off the adapter and picks the writer. The post-erase empty-dir sweep covers each artifact dir AND its parent
+  had ([[harness-adapter]]'s `shimOwnership`). A THIRD kind lands a DIRECTORY of files — one per hook type —
+  for a harness whose discovery key is the file NAME rather than a config key ([[snow-harness]]'s
+  `.snow/hooks/<hookType>.json`). The pass still never learns which harness that is: it reads the ownership
+  off the adapter and picks the writer, including the directory one, whose identity stamp is per file and is
+  the adapter's own command (`dispatch.sh` for a Claude-family shim, the bridge for Snow), never a hardcoded
+  grep. The post-erase empty-dir sweep covers each artifact dir AND its parent
   (never a checkout root), since a harness may nest its shim a level below its home. For a linked Codex
   worktree, the root checkout owns the executable `.codex/hooks.json` dispatcher. The worktree's
   `.codex/hooks.json` is an ANCHOR only: Codex needs the project layer anchored, but parsing a second
