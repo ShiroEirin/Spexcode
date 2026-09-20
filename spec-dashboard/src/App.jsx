@@ -1,6 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
 import { loadGraph, loadPublicGraph, subscribeBoardLive, projectIdentity } from './data.js'
 import { PROJECT_ID } from './project.js'
+import { SessionCloseProvider } from './SessionCloseProvider.jsx'
 import { CATALOG_POLL_MS, applyCatalogResult, loadProjects, selectGatewayIdentity, selectProjectIdentity, tabTitle } from './projects.js'
 import CredentialGate from './CredentialGate.jsx'
 import { useIsMobile } from './useIsMobile.js'
@@ -226,7 +227,7 @@ export default function App({ surface = 'workspace' }) {
     <Suspense fallback={<div className="loading">{t('hud.loading')}</div>}>
       {PUBLIC_GRAPH_ONLY
       ? <BoardProvider reload={reload} value={{ specs: board.nodes, sessions: [], issuesStamp: null, identity, catalog: null, graphOnly: true }}><KeyboardServiceProvider><WorkspaceProvider><WorkspaceSurface route={route} /></WorkspaceProvider></KeyboardServiceProvider></BoardProvider>
-        : <BoardProvider reload={reload} value={{ specs: board.nodes, sessions: board.sessions, issuesStamp: board.issuesStamp, identity, catalog: projAccess, graphOnly: false }}><KeyboardServiceProvider><WorkspaceProvider>{routed}</WorkspaceProvider></KeyboardServiceProvider></BoardProvider>}
+        : <BoardProvider reload={reload} value={{ specs: board.nodes, sessions: board.sessions, issuesStamp: board.issuesStamp, identity, catalog: projAccess, graphOnly: false }}><SessionCloseProvider><KeyboardServiceProvider><WorkspaceProvider>{routed}</WorkspaceProvider></KeyboardServiceProvider></SessionCloseProvider></BoardProvider>}
     </Suspense>
   )
 }

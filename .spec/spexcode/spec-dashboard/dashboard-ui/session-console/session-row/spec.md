@@ -47,6 +47,10 @@ glyph so the lifecycle marker has one stable rightmost position even when a `~`/
 Colour is never invented here — it is read from the shared vocabulary so a status means the same thing on
 every surface.
 
+[[session-close-feedback]] adds a request indicator beside this canonical status: a spinner and closing label
+while this page's close request is pending, or an error mark with the reason when it fails. It does not rewrite
+the lifecycle glyph, bucket, or row navigation. Retry belongs to the non-modal notification, not a nested button.
+
 The governing human ruling is: “我们的显示模式一直都只看 parent session 是不是 running。就算你这个是 needs you 状态,
 它也应该放在那个 running 的 parent session 底下,而不是自己跳到上面去、再加一个回到 parent 的链接。我们本来完全没有这套机制的…给我狠狠的删!”
 It replaces cross-zone root splitting and the `○`-out-of-zone partition rule. The stored parent relationship is
