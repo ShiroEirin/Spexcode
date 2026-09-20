@@ -85,8 +85,10 @@ group it came from reorders live under the pointer, as it always has; a drop int
 on release, so a drag across the window never tears the document out mid-motion.
 
 The
-strip context menu provides close, close-others, and the two split moves — right and down ([[workspace-shell]])
-— through the workspace APIs, and it is the ONE menu a tab's right-click opens — for every kind of tab, session tabs included, in whichever strip draws it (the
-shell's, or the Sessions document's own column). A menu that depended on what the tab held or which strip drew
-it would make the same tab answer two ways. Session-specific lifecycle verbs belong to the session menu on the
-session's row, not to the strip.
+strip context menu provides pin/unpin, close, close-others, and the two split moves — right and down
+([[workspace-shell]]) — through the workspace APIs, and it is the ONE menu a tab's right-click opens — for
+every kind of tab, session tabs included, in whichever strip draws it (the shell's, or the Sessions document's
+own column). Pin/unpin is a tab-layout action, so its menu row is the same for every document and its state is
+visible on the tab face. A menu that depended on what the tab held or which strip drew it would make the same
+tab answer two ways. Session-specific lifecycle verbs belong to the session menu on the session's row, not to
+the strip.

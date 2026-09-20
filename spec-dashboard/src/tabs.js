@@ -19,6 +19,24 @@ export const setTabTitle = (tabOrKey, title) => {
   put({ root: updateGroup(held.root, owner.id, (group) => ({ ...group, tabs: group.tabs.map((tab) => (tabKey(tab) === key ? { ...tab, title: value } : tab)) })), focus: held.focus })
 }
 
+// Pinning is a layout preference on the tab's owning group. Removing the property on unpin keeps the
+// persisted shape compact and lets ordinary tabs remain plain addresses.
+export const setTabPinned = (tabOrKey, pinned = true) => {
+  const key = typeof tabOrKey === 'string' ? tabOrKey : tabKey(tabOrKey)
+  const held = getLayout()
+  const owner = groupHolding(held.root, key)
+  if (!owner) return
+  const current = owner.tabs.find((tab) => tabKey(tab) === key)
+  if (!current || Boolean(current.pinned) === Boolean(pinned)) return
+  const tabs = owner.tabs.map((tab) => {
+    if (tabKey(tab) !== key) return tab
+    if (pinned) return { ...tab, pinned: true }
+    const { pinned: _pinned, ...ordinary } = tab
+    return ordinary
+  })
+  put({ root: updateGroup(held.root, owner.id, (group) => ({ ...group, tabs })), focus: held.focus })
+}
+
 // [[tab-strip]]: a tab IS a route, so opening several is the address grammar in the plural — not a second
 // navigation model laid beside it.
 //
@@ -26,8 +44,8 @@ export const setTabTitle = (tabOrKey, title) => {
 // address is of the same kind; a tab of another kind, or an inactive tab of the same kind, is preserved and
 // the new address is appended. A second tab of a kind is asked for explicitly — ctrl/⌘-click, a document's
 // own "open in a new tab" action, or creating a session — and the tab that arrives is an ordinary tab: the
-// next plain same-kind navigation replaces it like any other. There is no pinned or held tab. A tab that
-// could not be replaced was a tab the reader had to remember the history of, and nobody does.
+// next plain same-kind navigation replaces it like any other. A tab may opt into pinning from its context
+// menu; that preference only prevents ordinary same-kind navigation from replacing its slot.
 //
 // The split of truth is deliberate and follows what every workspace editor settled on: the OPEN LIST is a
 // local layout preference (it survives reloads, it is not worth putting in a link, and two people opening
@@ -356,7 +374,7 @@ export function useTabs(groupId = null, { onCloseStart } = {}) {
 
   return useMemo(() => ({
     layout: layoutNow, group, tabs, activeKey, focused, groupId: targetId,
-    open, close, closeOthers, move, split, focusGroup,
+    open, close, closeOthers, move, split, setPinned: setTabPinned, focusGroup,
   }), [layoutNow, group, tabs, activeKey, focused, targetId, open, close, closeOthers, move, split])
 }
 

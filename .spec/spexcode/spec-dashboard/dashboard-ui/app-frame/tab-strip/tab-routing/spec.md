@@ -33,13 +33,14 @@ it is in rather than opening a second copy of the document ([[tab-strip]]'s tree
 in the FOCUSED group; the rules below describe what happens inside it. Ordinary navigation replaces only the currently focused tab,
 and only when the new address is of the same kind. When another kind is focused, when the focused route is not a
 document (the graph, the launch page, a cold deep link), or when a same-kind tab exists only inactive elsewhere,
-the inactive documents are preserved and the new address is appended. This protects a document the reader is
+the inactive documents are preserved and the new address is appended. A pinned focused tab also appends instead of
+being replaced. This protects a document the reader is
 not looking at without making any tab permanent.
 
-No tab is pinned or held. The tab a gesture appends is an ordinary tab: once it is focused, the next plain
-same-kind navigation replaces it exactly as it would replace a tab that arrived by a plain click. Nothing about a
-tab records how it arrived, and no persisted mark from an older release may revive such a distinction — the read
-boundary drops `pinned`, `held`, and `preview`.
+The tab a gesture appends is an ordinary tab: once it is focused, the next plain same-kind navigation replaces
+it exactly as it would replace a tab that arrived by a plain click. Pinning is a separate explicit context-menu
+action, persisted as a boolean layout preference; it is not inferred from how the tab arrived. The read boundary
+drops legacy `held` and `preview` marks while retaining an explicit `pinned: true` on valid document tabs.
 
 Creating a session — from the New Session composer or a [[prose-dispatch]] send to a new target — is an explicit
 new-document action. The creating surface marks the returned id for a new tab before the route is written, so

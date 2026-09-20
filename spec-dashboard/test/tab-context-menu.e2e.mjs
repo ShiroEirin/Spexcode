@@ -1,13 +1,14 @@
 // YATU proof for [[tab-layout]]'s strip context menu: every workspace tab answers a right-click with the SAME
-// tab menu — close, close others, send to split pane — whichever strip it sits in and whatever it holds.
+// tab menu — pin/unpin, close, close others, send to split pane — whichever strip it sits in and whatever it holds.
 // One isolated backend over a fixture repository and one real session created through the create route the
 // dashboard uses (launcher `true`, so it costs nothing). The browser then does what a person does:
 //   1. On the Sessions document, right-click the session tab: the tab menu, not the session's lifecycle menu.
 //   2. Right-click the spec tab in that same strip: the identical menu.
 //   3. The shell strip (a spec route) offers the identical menu on the session tab.
 //   4. "Split right" moves the document into a second region, and a drag brings it back.
-//   5. "Close others" on the session tab leaves only that tab.
-//   6. The session row in the forest still opens the session's own lifecycle menu (rename lives there).
+//   5. Pinning a spec tab keeps it in place when the explorer opens another spec.
+//   6. "Close others" on the session tab leaves only that tab.
+//   7. The session row in the forest still opens the session's own lifecycle menu (rename lives there).
 // Every scene screenshots before it judges, so the A side of a repair pair still leaves its picture.
 // `SPEXCODE_DASHBOARD_ROOT` points Vite at another checkout of `spec-dashboard` (the A side is the old
 // committed source); the backend stays current.
@@ -66,7 +67,7 @@ const stop = async (child) => {
 
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
 const node = (title, desc, body) => ['---', `title: ${title}`, 'status: active', 'hue: 180', `desc: ${desc}`, '---', `# ${title}`, '', ...body, ''].join('\n')
-const TAB_MENU = ['Close', 'Close others', 'Split right', 'Split down']
+const TAB_MENU = ['Pin', 'Close', 'Close others', 'Split right', 'Split down']
 
 if (!existsSync(playwrightPath)) throw new Error(`Playwright is missing: ${playwrightPath}`)
 if (!existsSync(chromiumPath)) throw new Error(`Chromium is missing: ${chromiumPath}`)
@@ -84,8 +85,10 @@ let browser
 
 try {
   mkdirSync(join(project, '.spec', 'fixture', 'alpha'), { recursive: true })
+  mkdirSync(join(project, '.spec', 'fixture', 'beta'), { recursive: true })
   writeFileSync(join(project, '.spec', 'fixture', 'spec.md'), node('fixture', 'tab menu fixture', ['Fixture root.']))
   writeFileSync(join(project, '.spec', 'fixture', 'alpha', 'spec.md'), node('alpha', 'a node to hold beside the session', ['Alpha is a document tab.']))
+  writeFileSync(join(project, '.spec', 'fixture', 'beta', 'spec.md'), node('beta', 'a second node for pinned navigation', ['Beta is opened from the explorer.']))
   writeFileSync(join(project, 'README.md'), 'fixture\n')
   writeFileSync(join(project, '.spec/spexcode.json'), JSON.stringify({
     harnesses: ['claude'],
@@ -181,11 +184,30 @@ try {
   await page.screenshot({ path: join(out, '2-spec-tab-menu.png') })
   scene('a spec tab in the same strip answers with the identical menu', isTabMenu(specTabItems)
     && JSON.stringify(specTabItems) === JSON.stringify(sessionTabItems), { items: specTabItems, sessionTabItems })
+  const pin = page.locator('.sess-menu:visible [role="menuitem"]', { hasText: /^Pin$/ })
+  const pinOffered = await pin.count() > 0
+  if (pinOffered) await pin.click()
+  const tabMarkup = await page.locator('[data-tab-key="#/spec/alpha"]').evaluate((el) => el.innerHTML)
+  const pinned = pinOffered && tabMarkup.includes('tab-pin')
+  scene('pinning a tab adds a persistent pin mark', pinned, { pinOffered, pinned })
+
+  const unpinItems = await rightClickTab('#/spec/alpha')
+  const unpinOffered = JSON.stringify(unpinItems) === JSON.stringify(['Unpin', ...TAB_MENU.slice(1)])
   await dismiss()
+  scene('the same tab menu offers unpin after pinning', unpinOffered, { items: unpinItems })
 
   // 3 — the shell strip on a spec route, same session tab
   await page.locator('[role="tab"][data-tab-key="#/spec/alpha"]:visible .tab-face').click()
   await waitFor(async () => await hash() === '#/spec/alpha' && await present('.region > .tabstrip'), 'spec route with the shell strip', 5_000)
+  const otherSpecId = await page.locator('.ft-row[data-menu-kind="node"]').evaluateAll((rows) => rows.map((row) => row.dataset.menuId).find((id) => id !== 'alpha') || null)
+  const betaRow = otherSpecId ? page.locator(`.ft-row[data-menu-kind="node"][data-menu-id="${otherSpecId}"] .ft-label`) : null
+  const betaOffered = Boolean(betaRow) && await betaRow.count() > 0
+  if (betaOffered) await betaRow.click()
+  const pinnedNavigation = betaOffered && await waitFor(async () => await hash() === `#/spec/${otherSpecId}`, 'another spec route from explorer', 5_000).catch(() => false)
+  const heldAfterPinnedNavigation = await tabs()
+  scene('an explorer click beside a pinned tab appends instead of replacing it', pinnedNavigation
+    && heldAfterPinnedNavigation.includes('#/spec/alpha') && heldAfterPinnedNavigation.includes(`#/spec/${otherSpecId}`),
+    { otherSpecId, betaOffered, pinnedNavigation, tabs: heldAfterPinnedNavigation })
   await page.waitForTimeout(400)
   const shellItems = await rightClickTab(sessionKey)
   await page.screenshot({ path: join(out, '3-shell-strip-session-tab.png') })
@@ -222,7 +244,7 @@ try {
   scene('dragging it back collapses the region it emptied', regionsAfterDrag === 1 && (await tabs()).includes(sessionKey),
     { regions: regionsAfterDrag, tabs: await tabs() })
 
-  // 5 — close others, from the session tab on the Sessions document
+  // 6 — close others, from the session tab on the Sessions document
   await page.locator(`[role="tab"][data-tab-key="${sessionKey}"]:visible .tab-face`).click()
   await settle(`.region [role="tab"][data-tab-key="${sessionKey}"]`)
   await page.waitForTimeout(400)
@@ -237,7 +259,7 @@ try {
   scene('close others on the session tab leaves only that tab', closeOffered && JSON.stringify(leftTabs) === JSON.stringify([sessionKey]),
     { tabs: await tabs(), hash: await hash() })
 
-  // 6 — the session's lifecycle verbs still live on its forest row
+  // 7 — the session's lifecycle verbs still live on its forest row
   await page.locator(`.si-item[data-sid="${sessionId}"]`).first().click({ button: 'right' })
   const rowItems = await menuItems()
   await page.screenshot({ path: join(out, '6-forest-row-menu.png') })

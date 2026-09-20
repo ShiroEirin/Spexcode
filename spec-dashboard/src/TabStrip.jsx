@@ -147,7 +147,7 @@ export default function TabStrip({ specs, sessions, route, group, leading = null
     window.setTimeout(() => setClosing((current) => current.filter((entry) => entry.key !== key)), duration)
   }, [])
   const tabsRef = useRef([])
-  const { tabs, activeKey, focused, open, close, closeOthers, move, split } = useTabs(group, { onCloseStart: startTabClose })
+  const { tabs, activeKey, focused, open, close, closeOthers, move, split, setPinned } = useTabs(group, { onCloseStart: startTabClose })
   tabsRef.current = tabs
   useEffect(() => {
     const host = tabsHostRef.current
@@ -313,6 +313,7 @@ export default function TabStrip({ specs, sessions, route, group, leading = null
             <div className="tab-inner">
               <button type="button" className="tab-face" data-tip={tabLabel} aria-label={tabLabel}
                 onClick={(e) => { if (!isClosing) (e.altKey ? split(tab, heldSide === 'bottom' ? 'col' : 'row') : open(tab)) }}>
+                {tab.pinned && <Icon name="pin" size={12} className="tab-pin" />}
                 <TabKindIcon tab={tab} />
                 <TabDot tab={tab} specs={specs} sessions={sessions} />
                 <span className="tab-label">{tabLabel}</span>
@@ -364,6 +365,14 @@ export default function TabStrip({ specs, sessions, route, group, leading = null
       )}
       {menu && (
         <ContextMenu x={menu.x} y={menu.y} anchorKey={menu.key} label={t('tabs.menuLabel')}>
+          <ContextMenuGroup>
+            <ContextMenuItem icon="pin" onClick={(e) => {
+              e.stopPropagation(); setMenu(null); setPinned(menu.tab, !menu.tab.pinned)
+            }}>
+              {t(menu.tab.pinned ? 'tabs.menuUnpin' : 'tabs.menuPin')}
+            </ContextMenuItem>
+          </ContextMenuGroup>
+          <ContextMenuSeparator />
           <ContextMenuGroup>
             <ContextMenuItem icon="x" danger onClick={(e) => { e.stopPropagation(); setMenu(null); close(menu.tab) }}>
               {t('tabs.menuClose')}

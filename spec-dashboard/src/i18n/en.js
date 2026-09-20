@@ -139,6 +139,8 @@ export default {
     openInNewTab: 'Open in a new tab',
     list: 'Open tabs',
     menuLabel: 'tab actions',
+    menuPin: 'Pin',
+    menuUnpin: 'Unpin',
     menuClose: 'Close',
     menuCloseOthers: 'Close others',
     menuSplitRight: 'Split right',
