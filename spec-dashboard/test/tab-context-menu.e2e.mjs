@@ -116,6 +116,12 @@ try {
   })
   assert.equal(created.ok, true, 'create the probe session')
   const sessionId = (await created.json()).id
+  const second = await fetch(`${api}/api/sessions`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': `tab-menu-second-${process.pid}` },
+    body: JSON.stringify({ prompt: 'hold another tab for switching', name: 'second-menu-probe' }),
+  })
+  assert.equal(second.ok, true)
+  const secondId = (await second.json()).id
   await waitFor(async () => (await fetch(`${api}/api/graph`).then((response) => response.json())).sessions?.some((row) => row.id === sessionId), 'the session row')
 
   const { createServer } = await import(pathToFileURL(join(modules, 'vite', 'dist', 'node', 'index.js')).href)
@@ -159,18 +165,51 @@ try {
   const scenes = []
   const scene = (name, pass, facts) => scenes.push({ scene: name, pass: !!pass, ...facts })
 
-  await page.addInitScript(({ sessionKey: held }) => {
+  await page.addInitScript(({ sessionKey: held, secondId }) => {
     if (sessionStorage.getItem('tab-menu-seeded')) return
     sessionStorage.setItem('tab-menu-seeded', '1')
     localStorage.clear()
     localStorage.setItem('spexcode.tabs.root', JSON.stringify([
       { page: 'spec', param: 'alpha', query: null },
       { page: 'sessions', param: held.slice('#/sessions/'.length), query: null },
+      { page: 'sessions', param: secondId, query: null },
     ]))
-  }, { sessionKey })
+  }, { sessionKey, secondId })
   await page.goto(`${base}/${sessionKey}`, { waitUntil: 'domcontentloaded' })
   await settle(`.region [role="tab"][data-tab-key="${sessionKey}"]`)
   await page.waitForTimeout(600)
+
+  // Observe paints throughout real tab clicks, including a session's first visit and warm returns.
+  const cdp = await context.newCDPSession(page)
+  await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 })
+  const transitions = []
+  for (const target of [secondId, sessionId, secondId, sessionId]) {
+    await page.locator('.tabstrip-actions [data-action]').first().waitFor()
+    await page.evaluate(() => {
+      window.tabFrames = []
+      const sample = () => {
+        const strip = document.querySelector('.tabstrip')
+        window.tabFrames.push({
+          active: strip.querySelector('.tab.on')?.dataset.tabKey,
+          actions: [...strip.querySelectorAll('[data-action]')].map((el) => el.dataset.action),
+          width: strip.querySelector('.tabstrip-actions').getBoundingClientRect().width,
+        })
+        window.tabFrameId = requestAnimationFrame(sample)
+      }
+      sample()
+    })
+    await page.locator(`[data-tab-key="#/sessions/${target}"] .tab-face`).click()
+    await page.waitForTimeout(250)
+    transitions.push(await page.evaluate(() => { cancelAnimationFrame(window.tabFrameId); return window.tabFrames }))
+  }
+  await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 })
+  const frames = transitions.flat()
+  const emptyFrames = frames.filter((frame) => !frame.actions.length)
+  const widths = [...new Set(frames.map((frame) => frame.width))]
+  const actionSets = [...new Set(frames.map((frame) => frame.actions.join(',')))]
+  scene('session tab switches never paint an empty action strip', emptyFrames.length === 0 && widths.length === 1 && actionSets.length === 1,
+    { frames: frames.length, emptyFrames, widths, actionSets })
+  await page.screenshot({ path: join(out, 'session-switch.png') })
 
   // 1 — the session tab on the Sessions document
   const sessionTabItems = await rightClickTab(sessionKey)

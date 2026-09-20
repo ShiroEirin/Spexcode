@@ -199,6 +199,10 @@ the strip's usual working set) and shows one: the rest are `display:none`, not u
 session console has always kept its terminals ([[session-console]]'s warm layers). Only exceeding the bound
 unmounts anything, and then it is the least recently shown.
 
+The pool updates a reused pane's address before browser paint, together with its document-action registration.
+The band and pane must not paint different addresses during a switch. In particular, two sessions sharing
+one console mount must not briefly lose their action buttons while that console receives its next address.
+
 Three properties make that safe rather than merely fast:
 
 - **Render order is insertion order, never recency.** Reordering keyed children moves real DOM nodes, and a

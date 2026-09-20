@@ -1,4 +1,4 @@
-import { Suspense, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import SideBar from './SideBar.jsx'
 import DockToggle from './DockToggle.jsx'
 import TooltipLayer from './Tooltip.jsx'
@@ -129,7 +129,8 @@ function ViewPool({ group, override = null, inactive = false }) {
   const address = routeHash(page, param, query)
   const seq = useRef(0)
   const [pool, setPool] = useState(() => [{ key, address, page, param, query, seq: 0 }])
-  useEffect(() => {
+  // The band already names the arriving address; hand it to the pane before either can paint.
+  useLayoutEffect(() => {
     setPool((prev) => {
       const stamp = ++seq.current
       const held = prev.find((entry) => entry.key === key)
