@@ -411,6 +411,38 @@ writeTrust(proj, cmdFor): readonly string[]      // 信任写入（Snow 可能 n
 
 ---
 
+## 6.1 结算记录（2026-09-20，会话 #3）
+
+| # | 判定 | 状态 | 依据 |
+| --- | --- | --- | --- |
+| 1 | 测试失败数 = 0（或仅剩已记录的平台跳过） | 🟡 接近 | 逐文件串行实测：19 个「平台限制」已逐条记录理由（tmux 缺失 15 / POSIX 信号 1 / 无权限位 1 / 路径分隔符 1 / CRLF 源码正则 1）；7 个已修复转绿；**剩 7 个测试待定性**（session-public-projection 3 / sessions-hot 3 / session-transcript 1），本小姐**不声称**它们是平台问题 |
+| 2 | bug #22 修复 + 回归测试 | ✅ | `codex-harness.ts` TOML 转义，测试在 `harness.test.ts` |
+| 3 | `TEMP/SPEX-WINDOWS-VERIFY.md` 存在 + 核心链路全绿 | ✅ | 7222 字节；CLI / hook / dashboard 三链路已实测 |
+| 4 | `spex init --harness snow` + `materialize` 直产 `.snow/` | ✅ | investflow 端到端通过 |
+| 5 | `snow-harness.test.ts` 全绿 | ✅ | 12/12 |
+| 6 | spec 同步 + `spex spec lint` 0 error | ✅ | `platform-support` / `snow-harness`（新建）/ `test-home-isolation` / `tsx-test-runner` 已同步 |
+| 7 | `npm run build` + `npm run typecheck` 干净 | ✅ | 都 EXIT 0；`npm run lint` 亦 EXIT 0 |
+| 8 | `TEMP/SPEX-GOAL-REPORT.md` 存在（含提交建议） | ✅ | 11495 字节，§1-§9 完整 |
+| 9 | `claude` harness 在 investflow 仍正常 | ✅ | 回归验证通过 |
+
+### 本轮新抓到并修复的真 bug（详见报告 §1）
+
+| # | 位置 | 症状 |
+| --- | --- | --- |
+| **#52** | `spec-cli/src/snow-harness.ts` | hook timeout 单位写 30（Snow 是**毫秒**）→ 实际 30ms，spec-first 门在 Snow 下**完全失效** |
+| **#53** | `distribution/gugu/spexcode-atlas/archify.mjs` | 改了 archify 源未重生成分发产物 → `npm run lint` 自 `691c2944a` 起一直红 |
+| **#54** | `README.md` / `docs/README.zh-CN.md` / `guide.ts` | 注册表加 `snow` 漏同步 3 处文档（`docs-quickstart.test.ts` 逐字比对注册表） |
+| **#55** | `commit-gate.test.ts` ×3 / `graphStream.api.test.ts` ×3 / `distribution.test.mjs` ×1 | 硬编码 `:` 拼 PATH（同文件别处早已用 `delimiter`） |
+| **#56** | `scripts/test-home.mjs` | 测试隔离漏了 Snow 注入的 `SNOW_SESSION_ID`/`SNOW_CWD`/`SNOW_PLATFORM` → fixture 读到宿主会话身份 |
+| **#57/#58** | `uninstall.test.ts` | Codex trust fixture 手写未转义路径、且不走 `mainCheckout` → strip 永不匹配 |
+| **#60** | `spec-cli/src/tsx-bin.ts` | `node --import <loader>` 的 loader 在 Windows 上必须是 `file://` URL，裸盘符被解析成 scheme `c:` → **仪表板「添加项目」与 session materialize 在 Windows 上完全不可用** |
+
+### 未解决（如实留白，勿当结论）
+
+- **bug #59**：`commit-gate.test.ts` 单跑挂起 >50 分钟（CPU 仅 29s）。现场停在 `env .git/hooks/post-checkout`。两个候选假设（coreutils `env` 抢先命中；post-checkout 里的 `spex internal refresh-footprint` 走全局 link 落到本仓 396 节点）**都未证实** —— 本小姐的最小复现实验两个 `env.exe` 都正常。
+- **§6 判定的 7 个待定性测试**（见上表第 1 项）。
+
+
 ## 7. 交付物
 
 | # | 交付物 | 路径 |
