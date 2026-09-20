@@ -2,6 +2,7 @@ import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
 import { loadGraph, loadPublicGraph, subscribeBoardLive, projectIdentity } from './data.js'
 import { PROJECT_ID } from './project.js'
 import { SessionCloseProvider } from './SessionCloseProvider.jsx'
+import { observeSessionProjection } from './launch.js'
 import { CATALOG_POLL_MS, applyCatalogResult, loadProjects, selectGatewayIdentity, selectProjectIdentity, tabTitle } from './projects.js'
 import CredentialGate from './CredentialGate.jsx'
 import { useIsMobile } from './useIsMobile.js'
@@ -54,7 +55,10 @@ export default function App({ surface = 'workspace' }) {
     return undefined
   }, [isMobile])
   const [board, setBoard] = useState(null)
-  const applyBoard = useCallback((next) => { setBoard(next) }, [])
+  const applyBoard = useCallback((next) => {
+    observeSessionProjection(next.sessions)
+    setBoard(next)
+  }, [])
   // fail loudly at boot: a board that never arrives (backend down / proxy dead) shows an error + retry
   // panel, never an eternal spinner. Only the pre-first-board window reads this — once a board has landed,
   // a failed refetch keeps the last good board and the poll/stream keep retrying on their own.
