@@ -41,9 +41,14 @@ test('the checker states the rule between the two tracked copies, and names ever
     write(join(seed, 'shared', 'run.sh'), '#!/bin/sh\n', 0o755)
     assert.deepEqual(check(), [], 'the rule holds: same words, its own root, no seed: line, held-back node absent')
 
-    chmodSync(join(seed, 'shared', 'run.sh'), 0o644)
-    assert.deepEqual(check(), ['mode: shared/run.sh'], 'an executable helper that lost its bit is a difference')
-    chmodSync(join(seed, 'shared', 'run.sh'), 0o755)
+    // @@@ the exec bit is a POSIX filesystem concept - Windows has no such bit and `chmodSync` is a documented
+    // no-op there, so both sides read 0o666 and there is no difference for the rule to find. The rule itself is
+    // exercised on POSIX; this one ASSERTION is skipped by platform, never deleted.
+    if (process.platform !== 'win32') {
+      chmodSync(join(seed, 'shared', 'run.sh'), 0o644)
+      assert.deepEqual(check(), ['mode: shared/run.sh'], 'an executable helper that lost its bit is a difference')
+      chmodSync(join(seed, 'shared', 'run.sh'), 0o755)
+    }
 
     writeFileSync(join(seed, 'shared', 'spec.md'), 'one-sided edit\n')
     rmSync(join(seed, 'shared', 'run.sh'))

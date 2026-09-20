@@ -14,15 +14,26 @@ const root = join(fileURLToPath(new URL('.', import.meta.url)), '..')
 export const LIVE_PLUGINS = join(root, '.spec', 'spexcode', '.plugins')
 export const INIT_PLUGINS = join(root, 'spec-cli', 'templates', 'spec', 'project', '.plugins')
 
-const frontmatter = (source) => source.match(/^---\n([\s\S]*?)\n---(?:\n|$)/)?.[1] ?? ''
+// @@@ line endings - a Windows checkout (core.autocrlf=true) has CRLF on disk while every rule here is
+// authored in LF, so an LF-only pattern never matched: `frontmatter()` returned '' for every node, `seed: false`
+// became invisible, and a skill the tree deliberately holds back (`.plugins/skills/taste`) was reported as
+// five files missing from the seed. The rule is about CONTENT, so both sides are normalized to LF first — on
+// POSIX, where both are already LF, this changes nothing.
+const lf = (text) => text.replace(/\r\n/g, '\n')
+const frontmatter = (source) => lf(source).match(/^---\n([\s\S]*?)\n---(?:\n|$)/)?.[1] ?? ''
 const heldBack = (body) => /^seed:\s*false\s*$/m.test(frontmatter(body))
 
+// @@@ keys are '/'-separated on EVERY platform - a Map keyed by the OS's own separator gives TWO spellings of
+// the same file: `relative()` hands back `core\\spec.md` on Windows, while callers (the parity test, the
+// distribution preset lookup) name it `core/spec.md`. The lookup then misses and reads as an ABSENT file — the
+// test's `text()` returned '' for a file that was right there, so a real assertion failed for a path reason.
+// Same rule the .gitignore writer and bundleFiles already follow.
 function walk(dir, base = dir, out = new Map()) {
   if (!existsSync(dir)) return out
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const path = join(dir, entry.name)
     if (entry.isDirectory()) walk(path, base, out)
-    else out.set(relative(base, path), path)
+    else out.set(relative(base, path).replace(/\\/g, '/'), path)
   }
   return out
 }
@@ -107,7 +118,7 @@ export function initPluginDifferences({ sourceDir = LIVE_PLUGINS, targetDir = IN
     if (!from) { differences.push(`extra in the seed: ${rel}`); continue }
     if (!to) { differences.push(`missing from the seed: ${rel}`); continue }
     const body = readFileSync(from, 'utf8')
-    if (asSeed(body, basename(rel) === 'spec.md') !== readFileSync(to, 'utf8')) differences.push(`content: ${rel}`)
+    if (lf(asSeed(body, basename(rel) === 'spec.md')) !== lf(readFileSync(to, 'utf8'))) differences.push(`content: ${rel}`)
     if ((statSync(from).mode & 0o111) !== (statSync(to).mode & 0o111)) differences.push(`mode: ${rel}`)
     if (basename(rel) === 'spec.md') {
       for (const id of danglingLinks(body, known, seeded)) {

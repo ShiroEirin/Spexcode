@@ -25,9 +25,18 @@ const spexWithPage = `npx -y ${REGISTRY} -p spexcode${tag} -p @spexcode/spec-das
 // A penguin plugin's version is the date of its content, by that host's convention; bump it when the skill changes.
 const PENGUIN_VERSION = '2026.09.10.1'
 
-const preset = seedFiles().get(join('skills', 'atlas', 'spec.md'))
+// one line-ending normalizer for every content compare below (\line endings\ above).
+const lf = (text) => text.replace(/\r\n/g, '\n')
+
+// @@@ '/'-separated key - seedFiles() keys are POSIX-spelled on every platform (check-init-plugins' walk),
+// so `join()` (a backslash on Windows) would miss here and read as a missing file.
+const preset = seedFiles().get('skills/atlas/spec.md')
 if (!preset) throw new Error('.spec/spexcode/.plugins/skills/atlas/spec.md is missing')
-const [, frontmatter, body] = preset.content.toString('utf8').match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/) ?? []
+// @@@ line endings - a Windows checkout (core.autocrlf=true) has CRLF on disk while this pattern is LF-only,
+// so the match failed on every node and the script threw ".spec/spexcode/.plugins/skills/atlas/spec.md is
+// missing"-shaped errors about a file that was right there. The preset's CONTENT is what is read here, so
+// normalize first; on POSIX, where it is already LF, this changes nothing.
+const [, frontmatter, body] = preset.content.toString('utf8').replace(/\r\n/g, '\n').match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/) ?? []
 const trigger = frontmatter?.match(/^desc:\s*(.+)$/m)?.[1]?.trim()
 if (!trigger || !body) throw new Error('the atlas preset needs a desc: line and a body')
 const [, title, campaign] = body.trimStart().match(/^(# [^\n]+)\n([\s\S]*)$/) ?? []
@@ -258,7 +267,11 @@ const files = new Map([
 ])
 
 if (process.argv.includes('--check')) {
-  const stale = [...files].filter(([path, content]) => !existsSync(join(root, path)) || readFileSync(join(root, path), 'utf8') !== content)
+  // @@@ line endings - a Windows checkout (core.autocrlf) stores every text file CRLF, both the generated
+  // targets AND the source files a few of them are copied from, so a raw string compare called files stale for
+  // reasons that have nothing to do with their content. BOTH sides go through one normalizer: comparing what a
+  // file SAYS, never which platform wrote it. On POSIX both sides are already LF and nothing moves.
+  const stale = [...files].filter(([path, content]) => !existsSync(join(root, path)) || lf(readFileSync(join(root, path), 'utf8')) !== lf(content))
   if (stale.length) {
     console.error(`distribution is stale (${stale.map(([path]) => path).join(', ')}) — run npm run build:distribution`)
     process.exit(1)
