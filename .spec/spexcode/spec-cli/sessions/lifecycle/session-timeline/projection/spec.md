@@ -22,6 +22,11 @@ appears where it happened and maps to the same status and sent rows as its live 
 last appended sequence, which is what a follower's cheap tick compares.
 The human-owned terminal `archived` event belongs to [[session-state-model]]'s complete lifecycle domain and
 has an explicit display word, including the CLI follow glyph; it is never an unsupported cast into work state.
+For a live `session.state.changed.v1` archive transition, the public timeline note is null: this terminal
+event announces a human-owned close, not another authored reply. The canonical state and raw event retain
+the last note for replay and record readers. This interpretation applies equally to whole windows and growth
+reads, including events already stored before the fix. Migrated historical notes retain their original content;
+ordinary authored declarations are never deduplicated by comparing their text.
 Historical display-status entries are decoded by that same module's explicit legacy history mapping. An
 unknown lifecycle or proposal is a loud read failure, not a cast into valid history or a silently missing event.
 

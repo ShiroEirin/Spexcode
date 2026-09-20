@@ -58,6 +58,34 @@ test('timeline reads canonical state events and preserves declaration history', 
   assert.equal(timelineStamp(ID), String(app().readEvents(ID).at(-1)!.eventSeq))
 })
 
+test('archive announces closure without repeating the retained reply in whole or incremental history', () => {
+  freshHome()
+  const reply = 'Hello! What would you like to work on?'
+  recordStatus(ID, 'asking', null, reply)
+  recordStatus(ID, 'awaiting', 'nothing', reply)
+  const before = Number(timelineStamp(ID))
+  app().transitionSession(ID, { status: 'archived', proposal: null, note: reply })
+  const events = readTimeline(ID)!.events
+  assert.equal(events.filter((event) => event.kind === 'status' && event.note === reply).length, 2,
+    'intentional repeated work declarations must remain intact')
+  const archived = events.at(-1)!
+  assert.equal(archived.kind === 'status' && archived.note, null)
+  const growth = readTimeline(ID, { since: before })!.events
+  assert.equal(growth.length, 1)
+  assert.deepEqual(growth, [events.at(-1)])
+  assert.equal(app().readState(ID)?.note, reply)
+  assert.equal(app().replayState(ID)?.note, reply)
+  const raw = JSON.parse(Buffer.from(app().readEvents(ID).at(-1)!.payload).toString())
+  assert.equal(raw.note, reply, 'presentation never rewrites the durable event')
+  app().protocol.withTransaction((tx) => {
+    app().events.append(tx, { eventId: 'd'.repeat(32), type: MIGRATED_STATE_EVENT, schemaVersion: 1,
+      subjectSessionId: ID, ignorable: true, occurredAtMs: Date.now() + 1,
+      payload: encodeEventJson({ status: 'archived', proposal: null, note: 'historical close note' }) })
+  })
+  const migrated = timelineEvents(ID).at(-1)!
+  assert.equal(migrated.kind === 'status' && migrated.note, 'historical close note')
+})
+
 test('timeline shows migrated legacy history where it happened, not where it was appended', () => {
   const id = 'timeline-migrated-order'
   app().createSession({ sessionId: id, status: 'idle' })
