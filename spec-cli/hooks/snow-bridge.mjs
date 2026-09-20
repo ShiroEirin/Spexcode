@@ -13,6 +13,11 @@
  *
  * PAYLOAD SHAPES
  *   Snow  beforeToolCall: {toolName, args:{filePath,…}, sessionId, cwd}   afterToolCall: + {result, error}
+ *
+ * HARNESS IDENTITY: the dispatcher is invoked as `dispatch.sh snow <Event>`, never `claude`. The bridge
+ * translates the PAYLOAD into Claude's shape, but the harness id is the tree's own selection (materialize
+ * wrote `snow` into this tree's allowlist), so borrowing `claude` made the dispatcher reject every event and
+ * the gates silently no-opped. The payload shape and the identity are separate axes.
  *   Claude               : {session_id, hook_event_name, tool_name, tool_input:{file_path}}
  *   Snow's tool vocabulary is its own (filesystem-read/edit/replaceedit/create); spec-first and
  *   spec-of-file only recognize Claude's Read/Edit/Write/NotebookEdit, so TOOL_MAP reduces them.
@@ -57,9 +62,16 @@ const TOOL_MAP = {
 
 // Snow hook kind (argv[2], from the .snow/hooks/<kind>.json the user installed) → Claude event name.
 const EVENT_MAP = {
+  onSessionStart: 'SessionStart',
+  onUserMessage: 'UserPromptSubmit',
   beforeToolCall: 'PreToolUse',
   afterToolCall: 'PostToolUse',
+  onStop: 'Stop',
 }
+
+// Hook types that are NOT tool calls. They carry no toolName/filePath, so the tool parts of the payload
+// below are simply absent; dispatch.sh's handlers branch on the event, not on the tool.
+const NON_TOOL_EVENTS = new Set(['SessionStart', 'UserPromptSubmit', 'Stop'])
 
 // Git for Windows' bash, in the order a normal install lands. PATH is consulted first so a portable Git
 // (scoop, winget, a custom prefix) wins over the conventional location.
@@ -98,8 +110,11 @@ function main() {
     process.exit(0)
   }
 
-  const tool = TOOL_MAP[payload.toolName]
-  if (!tool) process.exit(0) // not a file-access tool: nothing for either handler to say
+  // A tool-call event with a tool we do not map has nothing for either handler to say. A NON-tool event
+  // (session start, user message, stop) has no tool at all and must still reach dispatch.sh.
+  const nonTool = NON_TOOL_EVENTS.has(event)
+  const tool = nonTool ? undefined : TOOL_MAP[payload.toolName]
+  if (!nonTool && !tool) process.exit(0)
 
   let args = payload.args
   if (typeof args === 'string') {
@@ -110,9 +125,9 @@ function main() {
     }
   }
   args = args || {}
-  let filePath = args.filePath ?? args.file_path ?? args.path
+  let filePath = nonTool ? undefined : (args.filePath ?? args.file_path ?? args.path)
   if (Array.isArray(filePath)) filePath = filePath[0] // filesystem-read takes an array; the first path decides
-  if (!filePath) process.exit(0)
+  if (!nonTool && !filePath) process.exit(0)
 
   const bash = findBash()
   if (!bash) process.exit(0)
@@ -120,14 +135,23 @@ function main() {
   const claudePayload = {
     session_id: payload.sessionId || payload.session_id || 'snow-session',
     hook_event_name: event,
-    tool_name: tool,
-    tool_input: { file_path: toPosix(filePath) },
+    // UserPromptSubmit carries the message; the pre-tool events carry the tool. Only include what exists —
+    // dispatch.sh's handlers read the field their event defines.
+    ...(nonTool
+      ? { prompt: payload.message ?? payload.prompt ?? '' }
+      : { tool_name: tool, tool_input: { file_path: toPosix(filePath) } }),
   }
 
-  const result = spawnSync(bash, [toPosix(DISPATCH), 'claude', event], {
+  const result = spawnSync(bash, [toPosix(DISPATCH), 'snow', event], {
     input: JSON.stringify(claudePayload),
     encoding: 'utf8',
     timeout: 20000,
+    // @@@ cwd - the dispatcher and every handler under it resolve the WORKTREE with `git rev-parse
+    // --show-toplevel`, which reads the PROCESS cwd, not CLAUDE_PROJECT_DIR. Inheriting this node process's cwd
+    // (wherever the harness happened to launch it) made that resolve against the wrong directory: git fails, the
+    // spec-first gate takes its "not a repo" exit 0, and the block vanishes with no diagnostic. The payload's cwd
+    // IS the worktree Snow ran the tool in, so pin it here.
+    cwd: payload.cwd || process.cwd(),
     env: {
       ...process.env,
       SPEX_PROFILE: 'repo',

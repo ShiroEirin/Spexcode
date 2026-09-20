@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync, rmSync, rmdirSync, statSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createConnection } from 'node:net'
@@ -220,6 +220,39 @@ export function buildShim(id: HarnessId, events: readonly string[], dispatch: st
   return { content: JSON.stringify({ hooks }, null, 2), hooks, cmd }
 }
 
+// @@@ shim identity, one directory at a time - a harness whose shim is a DIRECTORY (hook-file-per-type:
+// `.snow/hooks/<type>.json`, one file per hook) cannot be read as one string. `readFileSync` on it throws
+// EISDIR, which aborted the whole clean AND the deselect reconcile, so the hooks were left on disk and the
+// allowlist still named a harness the project had dropped. Each file carries the same dispatch.sh stamp as a
+// single-file shim, so the identity gate is per file, and the directory itself is never the unit.
+const isOurShimFile = (file: string): boolean => {
+  try {
+    if (!statSync(file).isFile()) return false
+    return readFileSync(file, 'utf8').includes('dispatch.sh')
+  } catch { return false }
+}
+// @@@ a hook-file-per-type shim is a DIRECTORY (/`.snow/hooks/<type>.json`), and its identity stamp is NOT
+// `dispatch.sh` - the command that dispatches it is the harness's own node entry (snow-bridge.mjs; dispatch.sh
+// is bash and node cannot run it). Reading one file through the single-file gate matched nothing, so the hooks
+// survived every deselect. Identity here is the one thing that is both STABLE across processes and provably
+// ours: the command names a hook entry under THIS installation (`<PKG>/hooks`). Byte-equality with a freshly
+// generated shim would NOT do - the generated line embeds this process's node path (on a version-manager host
+// that differs per shell), so the same artifact compares unequal to itself across runs.
+function removeHookFiles(dir: string): void {
+  const installHooks = posixPath(join(PKG, 'hooks'))
+  try {
+    if (!statSync(dir).isDirectory()) return
+    for (const entry of readdirSync(dir)) {
+      const f = join(dir, entry)
+      let text: string
+      try { text = readFileSync(f, 'utf8') } catch { continue }
+      if (!text.includes(installHooks)) continue          // a hand-made hooks folder is never touched
+      rmSync(f, { force: true })
+    }
+    rmdirSync(dir)   // throws unless EMPTY, so a user file left in it keeps the directory; rmSync({recursive:false}) is EISDIR on a directory
+  } catch { /* absent or not ours: nothing to un-land */ }
+}
+
 // is this file git-tracked in proj? (guards cleanHarness's deleteIfEmpty; env-stripped git, never throws)
 function isTrackedFile(proj: string, f: string): boolean {
   try { git(['-C', proj, 'ls-files', '--error-unmatch', f]); return true } catch { return false }
@@ -242,10 +275,11 @@ export function cleanHarness(h: Harness, proj: string, arts: HarnessArtifacts, p
   // a file wholly ours goes whole, gated on its own dispatch.sh stamp.
   if (h.shimScope === 'tree' || !preserveProject) {
     if (h.shimOwnership === 'shared-json') removeManagedJsonHooks(shim)
-    else if (existsSync(shim) && readFileSync(shim, 'utf8').includes('dispatch.sh')) rmSync(shim, { force: true })
+    else if (h.shimOwnership === 'hook-file-per-type') removeHookFiles(shim)
+    else if (isOurShimFile(shim)) rmSync(shim, { force: true })
   }
   const anchor = h.worktreeHookAnchor(proj)   // the linked-worktree anchor copy, same identity gate as the shim
-  if (anchor && existsSync(anchor) && readFileSync(anchor, 'utf8').includes('dispatch.sh')) rmSync(anchor, { force: true })
+  if (anchor && isOurShimFile(anchor)) rmSync(anchor, { force: true })
   if (!preserveProject) h.removeTrust(proj)
   // the name sweep is identity-gated exactly like the stamp sweep: a live spec node named `distill` says
   // WHICH path to look at, never that the file sitting there is ours. A user's same-named skill (the write

@@ -1,4 +1,4 @@
-import { writeFileSync, mkdirSync, readFileSync, existsSync, readdirSync, renameSync, rmSync, rmdirSync, copyFileSync, chmodSync } from 'node:fs'
+import { writeFileSync, mkdirSync, readFileSync, existsSync, readdirSync, renameSync, rmSync, rmdirSync, copyFileSync, chmodSync, statSync } from 'node:fs'
 import { join, dirname, relative, delimiter } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
@@ -20,7 +20,9 @@ export type MaterializedArtifact = {
 export type MaterializeResult = { contentHash: string; planted: MaterializedArtifact[] }
 // one shim landing: the adapter's bytes plus WHO OWNS the file they land in ([[harness-adapter]]'s
 // shimOwnership). `hooks` rides along for the shared-json case, where the bytes are merged rather than written.
-type ShimTarget = { ownership: 'exclusive' | 'shared-json'; content: string; hooks?: Record<string, unknown[]>
+// 'hook-file-per-type' names a DIRECTORY in `path` and writes one file per key of `hooks` — the harness
+// discovers hooks by FILE NAME (Snow: .snow/hooks/<hookType>.json), which one merged config cannot serve.
+type ShimTarget = { ownership: 'exclusive' | 'shared-json' | 'hook-file-per-type'; content: string; hooks?: Record<string, unknown[]> | Record<string, string>
   // an EXISTENCE-only target: what it needs is a file at this path, not these bytes in it. Writing over one
   // that is already there would be taking content we do not read.
   existenceOnly?: true }
@@ -31,13 +33,52 @@ type ShimTarget = { ownership: 'exclusive' | 'shared-json'; content: string; hoo
 // user's to fix. Report it and carry on: their broken JSON must not also cost them the contract, the skills
 // and the allowlist this pass still owes every other target (the pre-commit anchor runs this on the way into
 // every commit). Returns whether the shim actually landed.
+// @@@ shim identity without assuming a file - a hook-file-per-type shim is a DIRECTORY and `readFileSync` on it
+// throws EISDIR (the deselect crash). One predicate for BOTH the single-file and directory cases, so no caller
+// has to know which ownership it is holding.
+function isOurShim(path: string): boolean {
+  try {
+    if (!statSync(path).isFile()) return false
+    return readFileSync(path, 'utf8').includes('dispatch.sh')
+  } catch { return false }
+}
+// un-land one <type>.json per entry of a hooks DIRECTORY, then drop the directory only if nothing of the user's
+// is left. Identity is the installation's own hook dir in the command (/`<PKG>/hooks`), never a `dispatch.sh`
+// grep (a hook-file-per-type command runs the harness's node entry, not dispatch.sh) and never byte-equality
+// with a fresh shim (its node path is per-process on a version-manager host, so the same artifact compares
+// unequal across runs). Mirrors cleanHarness's removeHookFiles (harness-shim.ts).
+function unlandHookFiles(dir: string): boolean {
+  const installHooks = posixPath(join(PKG, 'hooks'))
+  let removed = false
+  try {
+    if (!statSync(dir).isDirectory()) return false
+    for (const entry of readdirSync(dir)) {
+      const f = join(dir, entry)
+      let text: string
+      try { text = readFileSync(f, 'utf8') } catch { continue }
+      if (!text.includes(installHooks)) continue
+      rmSync(f, { force: true }); removed = true
+    }
+    if (removed) rmdirSync(dir)   // throws unless EMPTY, so a user file left in it keeps the directory; rmSync({recursive:false}) is EISDIR on a directory
+  } catch { /* absent or not ours */ }
+  return removed
+}
+
 function landShim(file: string, shim: ShimTarget): boolean {
   // An anchor's whole job is that the path EXISTS, so a file already there has already done it — and its
   // bytes may be the project's own (a repository that commits its `.codex/hooks.json` puts real hooks at
   // exactly this path). Overwriting them would destroy configuration we never read.
   if (shim.existenceOnly && existsSync(file)) return true
   try {
-    if (shim.ownership === 'shared-json' && shim.hooks) writeManagedJsonHooks(file, shim.hooks)
+    if (shim.ownership === 'hook-file-per-type' && shim.hooks) {
+      // `file` is the hooks DIRECTORY; each key becomes <key>.json. mkdir -p first: the adapter's shimFile
+      // is a path inside the project, and nothing else guarantees the directory exists yet.
+      mkdirSync(file, { recursive: true })
+      for (const [name, body] of Object.entries(shim.hooks as Record<string, string>)) {
+        if (body === undefined) continue
+        writeFileIfChanged(join(file, `${name}.json`), body)
+      }
+    } else if (shim.ownership === 'shared-json' && shim.hooks) writeManagedJsonHooks(file, shim.hooks as Record<string, unknown[]>)
     else writeFileIfChanged(file, shim.content)
     return true
   } catch (e) {
@@ -294,13 +335,19 @@ function reconcileTree(proj: string, targets: TreeTargets, tracked: (file: strin
   // a DESELECTED harness's shim is un-landed the same way its owner would clean it: entry-by-entry out of a
   // config file the host agent shares with the user, whole-file only when the file is wholly ours.
   const shimSites = HARNESSES.flatMap((h) => [
-    ...(h.shimScope === 'tree' ? [[h.shimFile(proj), h.shimOwnership] as const] : []),
-    ...((path) => path ? [[path, h.shimOwnership] as const] : [])(h.worktreeHookAnchor(proj)),
+    ...(h.shimScope === 'tree' ? [[h.shimFile(proj), h] as const] : []),
+    ...((path) => path ? [[path, h] as const] : [])(h.worktreeHookAnchor(proj)),
   ])
-  for (const [file, ownership] of new Map(shimSites)) {
+  for (const [file, h] of new Map(shimSites)) {
     if (targets.treeShims.has(file) || targets.anchors.has(file) || !existsSync(file)) continue
-    if (ownership === 'shared-json') { removeManagedJsonHooks(file); removed = true; continue }
-    if (readFileSync(file, 'utf8').includes('dispatch.sh')) { rmSync(file, { force: true }); removed = true }
+    if (h.shimOwnership === 'shared-json') { removeManagedJsonHooks(file); removed = true; continue }
+    // @@@ a hook-file-per-type shim is a DIRECTORY (`.snow/hooks/<type>.json`), so the single-file identity
+    // read threw EISDIR here and aborted the entire reconcile — the deselect never un-landed anything.
+    if (h.shimOwnership === 'hook-file-per-type') {
+      if (unlandHookFiles(file)) removed = true
+      continue
+    }
+    if (isOurShim(file)) { rmSync(file, { force: true }); removed = true }
   }
   for (const dir of new Set(HARNESSES.map((h) => h.skillDir(proj)).filter((path): path is string => !!path)))
     removed = pruneGeneratedSkills(dir, targets.skills.get(dir) ?? new Set()) || removed
@@ -557,8 +604,8 @@ export function materialize(proj = process.cwd()): MaterializeResult {
   const mc = mainCheckout(proj)
   const bundlePaths = curFolders.map((f) => pluginBundleDir(proj, f))
   const commonEntries = [
-    ...[...new Set(HARNESSES.filter((h) => h.shimScope === 'project' && existsSync(h.shimFile(proj)) &&
-      readFileSync(h.shimFile(proj), 'utf8').includes('dispatch.sh')).map((h) => relative(mc, h.shimFile(proj))))]
+    ...[...new Set(HARNESSES.filter((h) => h.shimScope === 'project' && isOurShim(h.shimFile(proj)))
+      .map((h) => relative(mc, h.shimFile(proj))))]
       .filter((p) => !p.startsWith('..')),
     '.spec/spexcode.local.json', '.worktrees/', '.session',
   ]

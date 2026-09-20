@@ -21,8 +21,14 @@ set -u
 # ([[opencode-harness]]), `pi` the generated extension ([[pi-harness]]), and `zcode` the native adapter: all four
 # carry Claude-shaped payloads (Claude tool names + file_path), so they join the claude branch in harness.sh via
 # the default case — no parse arm of their own.
+#
+# @@@ snow is a first-class id, not a claude alias - the Snow adapter ([[snow-harness]]) reaches this dispatcher
+# through hooks/snow-bridge.mjs, which TRANSLATES Snow's payload into the Claude shape but must still announce
+# itself as `snow`: the tree's `harnesses` allowlist below is the set of harnesses the user selected, so a bridge
+# that borrowed `claude` was rejected by a snow-only tree and every gate silently no-opped. Its payload IS
+# Claude-shaped, so it takes the default case like the others; only the identity differs.
 harness=claude
-case "${1:-}" in claude|codex|opencode|pi|zcode|plugin) harness="$1"; shift ;; *)
+case "${1:-}" in claude|codex|opencode|pi|zcode|snow|plugin) harness="$1"; shift ;; *)
   printf 'dispatch.sh: missing or unknown harness id\n' >&2
   exit 64
 ;; esac

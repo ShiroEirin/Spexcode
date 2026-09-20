@@ -8,6 +8,9 @@ export const HARNESS_IDENTITIES = [
   { id: 'opencode', sessionEnvVar: 'OPENCODE_SESSION_ID' },
   { id: 'pi', sessionEnvVar: 'PI_SESSION_ID' },
   { id: 'zcode', sessionEnvVar: 'ZCODE_SESSION_ID' },
+  // Snow CLI carries its session id in the payload rather than the environment, so its env name follows
+  // the same convention as the others (the adapter exports it for tool subprocesses to inherit).
+  { id: 'snow', sessionEnvVar: 'SNOW_SESSION_ID' },
   { id: 'claude-headless', sessionEnvVar: 'CLAUDE_CODE_SESSION_ID' },
   { id: 'opencode-headless', sessionEnvVar: 'OPENCODE_SESSION_ID' },
   { id: 'pi-headless', sessionEnvVar: 'PI_SESSION_ID' },

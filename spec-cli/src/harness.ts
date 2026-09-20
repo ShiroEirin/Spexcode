@@ -15,6 +15,7 @@ import { claudeTranscript, claudeTranscriptReader, opencodeTranscript, piTranscr
 import { harnessIdentity, type HarnessId } from '@spexcode/spec-core'
 import { codexHarness, codexHeadlessHarness } from './codex-harness.js'
 import { buildShim, cleanHarness, listenerAt, noLaunchEnv, pexec, SPEX } from './harness-shim.js'
+import { buildSnowHooks, snowPaths, SNOW_EVENT_MAP } from './snow-harness.js'
 import { sessionHost } from './session-host.js'
 import type { ListenerProbe } from './harness-shim.js'
 export { buildShim, cleanHarness, headlessTurnFailureShell, listenerAt, noLaunchEnv, paneTreeRuns, procSnapshot, sessionIdentityEnvVars, writeManagedBlock, removeManagedBlock, writeManagedJsonHooks, removeManagedJsonHooks, sharedShimHasHostContent, GENERATED_MARK, isGeneratedArtifact } from './harness-shim.js'
@@ -267,11 +268,19 @@ export interface Harness {
   // ONLY place agent-surface divergence lives (the skillDir analog). Claude reads .claude/agents/<name>.md;
   // native adapter has no file-discovered agent-definition primitive, so it returns null and materialize skips it.
   agentDir(proj: string): string | null
+  // the dir this harness auto-discovers COMMAND definitions from, or null/undefined when it has no command
+  // primitive — the skillDir analog for the `/`-menu surface. OPTIONAL on purpose: every adapter that
+  // predates it keeps its behaviour, because absent reads as "no file-discovered command" and materialize
+  // skips the pass. Snow is the one that needs it (`.snow/commands/<name>.json`).
+  commandDir?(proj: string): string | null
   // the shim payload: `content` is whatever artifact THIS harness auto-discovers to wire every event to the
   // dispatcher (harness id baked in) — a settings/hooks JSON for claude/native adapter, a generated event-bus PLUGIN
   // for opencode, a generated TypeScript EXTENSION for pi — plus the per-event command string (shared with
   // the trust writer so they hash identically).
-  shim(dispatch: string, spex: string): { content: string; hooks?: Record<string, unknown[]>; cmd: (e: string) => string }
+  // `hooks` carries what the ownership mode needs to write. 'shared-json' supplies hook ENTRIES to merge
+  // into a host config (`unknown[]` per event). 'hook-file-per-type' supplies WHOLE FILE BODIES keyed by
+  // file name (`string` per hook type) — the two never mix, which is why the value type is the union.
+  shim(dispatch: string, spex: string): { content: string; hooks?: Record<string, unknown[]> | Record<string, string>; cmd: (e: string) => string }
   // WHO OWNS shimFile. 'exclusive' — a spexcode-named source file (opencode's plugin, pi's extension) that is
   // wholly ours: whole-file write, whole-file delete. 'shared-json' — a config file the HOST AGENT shares with
   // the user (`.claude/settings.json`, `.agent/hooks.json`, `.zcode/settings.json` also carry their
@@ -279,7 +288,10 @@ export interface Harness {
   // inside it: merged in by writeManagedJsonHooks, removed the same way, and the file itself deleted only
   // when nothing of the user's is left. A 'shared-json' adapter's shim() also returns the `hooks` payload the
   // merge writer needs; an 'exclusive' one returns only `content`.
-  shimOwnership: 'exclusive' | 'shared-json'
+  // 'hook-file-per-type' — shimFile names a DIRECTORY, and one `<hookType>.json` lands inside it per key of
+  // shim().hooks. Snow discovers hooks by FILENAME (`.snow/hooks/beforeToolCall.json`), so a single merged
+  // file cannot serve it. These are wholly ours: whole-file writes, whole-file deletes.
+  shimOwnership: 'exclusive' | 'shared-json' | 'hook-file-per-type'
   // make a dispatched/self-launched agent run the hooks with zero prompts. native adapter writes PROJECT trust — and, on
   // a binary without `--dangerously-bypass-hook-trust`, per-hook trusted_hash blocks — into the GLOBAL
   // ~/.agent/config.toml (native adapter's security model: trust is global-only). PROJECT trust is UNCONDITIONAL: it
@@ -1043,6 +1055,57 @@ export const zcodeHarness: Harness = {
   resumeArg: () => { throw new Error(ZCODE_CONTROL_UNAVAILABLE) },
 }
 
+// @@@ snowHarness - the Snow CLI adapter ([[snow-harness]]). Snow discovers hooks BY FILENAME
+// (`.snow/hooks/<hookType>.json`), so its shim is a DIRECTORY of files rather than one merged config —
+// that is what `shimOwnership: 'hook-file-per-type'` carries. It also reads AGENTS.md (never CLAUDE.md)
+// and has a command surface of its own (`.snow/commands/<name>.json`), which is why the interface grew an
+// optional `commandDir`. The hook line goes through snow-bridge.mjs: Snow's payload shape and exit-code
+// protocol differ from Claude's and the bridge already translates between them.
+export const snowHarness: Harness = {
+  id: 'snow',
+  dispatchId: 'snow',
+  headless: true,
+  launchOneShot: true,
+  events: Object.keys(SNOW_EVENT_MAP) as string[],
+  ownsRendezvous: false,
+  paneTitleIsSelfSummary: false,
+  transcript: unsupportedTranscript('snow'),
+  baseCmd: (cmd) => cmd || 'snow',
+  launchCmd: (_id, _rt, cmd) => cmd || 'snow',
+  oneShotTurn: (prompt, cmd) => ({ command: `${cmd || 'snow'} --prompt`, stdin: prompt }),
+
+  sessionIdArg: () => '',
+  sessionEnvVar: harnessIdentity('snow').sessionEnvVar,
+  launchEnv: noLaunchEnv,
+  // A DIRECTORY, not a file: one <hookType>.json lands inside it per entry of shim().hooks.
+  shimFile: (proj) => snowPaths(proj).hooksDir,
+  shimScope: 'tree',
+  shimOwnership: 'hook-file-per-type',
+  worktreeHookAnchor: () => null,
+  contractFiles: (proj) => [snowPaths(proj).contractFile],
+  skillDir: (proj) => snowPaths(proj).skillsDir,
+  commandDir: (proj) => snowPaths(proj).commandsDir,
+  agentDir: (proj) => snowPaths(proj).agentsDir,
+  shim: (dispatch, spex) => {
+    // `dispatch` is .../hooks/dispatch.sh; the node entry the hook line must run is its sibling
+    // snow-bridge.mjs (dispatch.sh is bash). Deriving it from the same directory keeps the two together
+    // through a package move.
+    const bridge = join(dirname(dispatch), 'snow-bridge.mjs')
+    const { files, cmd } = buildSnowHooks(bridge, spex, Object.keys(SNOW_EVENT_MAP))
+    return { content: JSON.stringify(files, null, 2), hooks: files, cmd }
+  },
+  writeTrust: () => [],                            // Snow gates project hooks by folder trust, not a file
+  removeTrust: () => { /* nothing to strip */ },
+  clean(proj, arts, preserveProject) { cleanHarness(this, proj, arts, preserveProject) },
+  slashCommands: () => [],
+  liveness: panePidLiveness,
+  exactNativeTargetId: () => null,
+  deliver: async () => { throw new Error('snow has no SpexCode-managed delivery transport') },
+  cleanupRuntime: async () => { /* one-shot snow owns no SpexCode transport to remove */ },
+  coldRuntime: async () => ({ ok: true }),
+  resumeArg: () => '',
+}
+
 export const opencodeHarness: Harness = {
   id: 'opencode',
   dispatchId: 'opencode',
@@ -1128,7 +1191,7 @@ export const opencodeHeadlessHarness: Harness = {
 }
 
 // every adapter — materialize iterates this to write each harness's artifacts in one pass.
-export const HARNESSES: readonly Harness[] = [claudeHarness, codexHarness, opencodeHarness, piHarness, zcodeHarness, claudeHeadlessHarness, opencodeHeadlessHarness, piHeadlessHarness, codexHeadlessHarness]
+export const HARNESSES: readonly Harness[] = [claudeHarness, codexHarness, opencodeHarness, piHarness, zcodeHarness, snowHarness, claudeHeadlessHarness, opencodeHeadlessHarness, piHeadlessHarness, codexHeadlessHarness]
 
 // the legacy/default adapter for old records and config defaults. New launches derive harness from a launcher.
 export const defaultHarness: Harness = claudeHarness
