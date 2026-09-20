@@ -117,7 +117,15 @@ export function contentHash(proj: string): string {
     // handed both `Path` and `PATH` sees an ambiguous pair. The separator is the platform's, not `:`.
     const env: NodeJS.ProcessEnv = { ...process.env }
     for (const key of Object.keys(env)) if (key.toLowerCase() === 'path') delete env[key]
-    env.PATH = `${gitDir}${delimiter}${process.env.PATH || ''}`
+    // The shell below pipes through find/sort/xargs/cat/sha256sum, which resolve on PATH — so PATH
+    // has to lead with tools that agree on what `-name` means. Git ships that set beside git.exe
+    // (usr/bin holds find/sort/xargs/sha256sum); a host whose PATH leads with a different coreutils
+    // build answers `-name "*.md"` with nothing at all and still returns a plausible digest — one
+    // that covers ZERO plugin files, so an edited `.plugins/` never moves the stamp. Absent on
+    // POSIX, where the path does not exist and PATH governs as before.
+    const gitUsrBin = join(gitDir, '..', 'usr', 'bin')
+    const toolPrefix = existsSync(gitUsrBin) ? `${gitUsrBin}${delimiter}` : ''
+    env.PATH = `${toolPrefix}${gitDir}${delimiter}${process.env.PATH || ''}`
     // Both paths go to bash, so both must be POSIX-spelled: a Windows backslash path is eaten as
     // escapes and the file is never found ([[harness-delivery]]).
     return execFileSync('bash', ['-c', `cd "${posixPath(proj)}" && . "${posixPath(harnessSh)}" && hp_config_hash`], { env }).toString().trim()
