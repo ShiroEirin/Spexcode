@@ -474,10 +474,7 @@ function DocumentRegion({ group, single, specs, sessions, dock, foldable, inacti
   }), [single])
   const hasContext = route?.page === 'spec'
   useEffect(() => registerContextToggle(single && hasContext ? toggleContext : null), [single, hasContext, toggleContext])
-  // Keep the shell slot stable across document switches. Non-spec documents make the control inert and
-  // invisible, but the 28px reservation remains so the tab list and document actions never reflow for one
-  // frame while the next document registers its own controls.
-  const reservation = <span className="context-toggle-reservation" aria-hidden="true" />
+  const reservation = hasContext ? <span className="context-toggle-reservation" aria-hidden="true" /> : null
   // the fold switch stands at the strip's left edge only while the sidebar it folds is closed, and only in
   // the group that stands against that sidebar — the first one.
   const leading = single && foldable && !dock ? <DockToggle variant="strip" /> : null
@@ -496,7 +493,7 @@ function DocumentRegion({ group, single, specs, sessions, dock, foldable, inacti
       </div>
       {/* the slot is positioned by the REGION, not by its body, so its top-right corner is the band's right end
           — the column the strip's trailing reservation keeps free. Inside the body it would land on the document. */}
-      <div className="context-toggle-slot"><ContextToggle available={hasContext} visible={contextOpen} onToggle={toggleContext} /></div>
+      {hasContext && <div className="context-toggle-slot"><ContextToggle visible={contextOpen} onToggle={toggleContext} /></div>}
     </div>
   )
 }
@@ -554,12 +551,11 @@ function RegionTree({ node, single, specs, sessions, dock, foldable, inactive, f
 // State is also `aria-pressed` plus the `.on` tint. The shell keeps one instance of this control in a
 // right-edge slot over the region's band, in both states; moving it between the tab strip and the animated
 // dock would briefly expose the dock's zero-width first frame and make the button flash.
-function ContextToggle({ available = true, visible, onToggle }) {
+function ContextToggle({ visible, onToggle }) {
   const t = useT()
   const label = withShortcut(t(visible ? 'contextDock.close' : 'contextDock.open'), 'shell.contextToggle')
-  return <button type="button" className={`context-toggle dock-head-act${visible ? ' on' : ''}${available ? '' : ' context-toggle-unavailable'}`} onClick={available ? onToggle : undefined}
-    aria-pressed={available ? visible : undefined} aria-label={available ? label : undefined} data-tip={available ? label : undefined}
-    aria-hidden={available ? undefined : 'true'} tabIndex={available ? undefined : -1} disabled={!available}>
+  return <button type="button" className={`context-toggle dock-head-act${visible ? ' on' : ''}`} onClick={onToggle}
+    aria-pressed={visible} aria-label={label} data-tip={label}>
     <Icon name={visible ? 'panel-right-close' : 'panel-right-open'} size={14} />
   </button>
 }

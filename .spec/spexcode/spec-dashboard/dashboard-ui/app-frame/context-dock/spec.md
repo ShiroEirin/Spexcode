@@ -97,9 +97,9 @@ long issue list clipped out of reach. The resize grip stays outside the scroller
 from the edge it drags.
 The open/close control belongs to the document area and stays at its REGION's right edge: one slot per region
 paints it over the right end of that region's band, closed or open — the band spans the region, so the open
-dock's head stands beneath the control rather than hosting it. The slot stays mounted and reserves its 28px
-target while a non-spec document is focused, but the control is invisible and not keyboard-reachable there;
-that stable shell geometry prevents the tab actions from reflowing during a document switch. The
+dock's head stands beneath the control rather than hosting it. Only spec documents render the control and
+reserve its column. Other documents, including the session timeline, end at their last visible action with
+the normal band padding; no invisible context control occupies a blank button-sized space. The
 same `28px` target stays mounted through the dock's width animation, with the same `4px` right inset, so
 opening and closing keep the pointer over the control without a replacement flash. The
 workspace-shell rule says a control belongs to the region whose question it answers, and context is neither
