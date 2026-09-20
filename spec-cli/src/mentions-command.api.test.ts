@@ -1,3 +1,15 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
@@ -6,7 +18,7 @@ import net from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { processStartToken } from '@spexcode/spec-core'
+import { killTree, processStartToken } from '@spexcode/spec-core'
 import { tsxBin } from './tsx-bin.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -36,10 +48,7 @@ async function stopBackend(child: ChildProcess): Promise<void> {
   const startToken = pid ? processStartToken(pid) : null
   const signal = (name: 'SIGTERM' | 'SIGKILL'): void => {
     if (!pid || !startToken || processStartToken(pid) !== startToken) return
-    if (process.platform !== 'win32') {
-      try { process.kill(-pid, name); return } catch { /* fall through to the exact child */ }
-    }
-    try { child.kill(name) } catch { /* already gone */ }
+    killTree(child, name)
   }
   signal('SIGTERM')
   if (child.exitCode !== null || child.signalCode !== null) return
@@ -138,8 +147,8 @@ test('a Command Box @session stays in the selected session instead of prompting 
     for (const id of created.reverse()) await request(base, `/api/sessions/${id}/close`, { method: 'POST' }).catch(() => {})
     await stopBackend(backend)
     if (backend.exitCode && backend.exitCode !== 0) console.error(logs())
-    rmSync(project, { recursive: true, force: true })
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(project)
+    sweepTemp(home)
   }
 })
 
@@ -227,7 +236,7 @@ test('a Command Box @new creates a child under the selected session, optionally 
     for (const id of created.reverse()) await request(base, `/api/sessions/${id}/close`, { method: 'POST' }).catch(() => {})
     await stopBackend(backend)
     if (backend.exitCode && backend.exitCode !== 0) console.error(logs())
-    rmSync(project, { recursive: true, force: true })
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(project)
+    sweepTemp(home)
   }
 })

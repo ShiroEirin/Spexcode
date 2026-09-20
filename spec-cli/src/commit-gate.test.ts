@@ -1,8 +1,20 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, isAbsolute, join } from 'node:path'
+import { delimiter, dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import { tsxBin } from './tsx-bin.js'
@@ -47,31 +59,43 @@ function fixture(): Fixture {
   writeFileSync(join(root, 'README.md'), 'fixture\n')
   writeFileSync(join(root, '.spec', 'project', 'spec.md'), '---\ntitle: project\n---\n# project\n')
   writeFileSync(join(root, '.spec', 'project', 'calc', 'spec.md'), NODE)
-  writeFileSync(join(root, '.spec/spexcode.json'), JSON.stringify({ mainBranch: 'main', lint: { governedRoots: ['src'] } }) + '\n')
+  // `harnesses` is REQUIRED by the product (an explicit delivery choice, never defaulted) — the
+  // pre-commit materialize leg fails loud without it, which would mask the gate behavior under test.
+  writeFileSync(join(root, '.spec/spexcode.json'), JSON.stringify({ mainBranch: 'main', harnesses: [], lint: { governedRoots: ['src'] } }) + '\n')
   git('add', '-A')
   git('commit', '-qm', 'seed contract')
   git('switch', '-qc', 'node/calc')
 
   mkdirSync(join(root, 'node_modules', '.bin'), { recursive: true })
-  const spex = join(root, 'node_modules', '.bin', 'spex')
-  writeFileSync(spex, `#!/usr/bin/env bash\nexec tsx ${JSON.stringify(CLI)} "$@"\n`)
-  chmodSync(spex, 0o755)
+  // A bash shim + chmod is the POSIX spelling; on Windows a .cmd is what PATH lookup runs (and chmod is
+  // a no-op there). Both spellings exec the SAME tsx entry through node, so the fixture is identical.
+  const spex = process.platform === 'win32'
+    ? join(root, 'node_modules', '.bin', 'spex.cmd')
+    : join(root, 'node_modules', '.bin', 'spex')
+  if (process.platform === 'win32') writeFileSync(spex, `@echo off\r\n"${process.execPath}" "${TSX}" "${CLI}" %*\r\n`)
+  else {
+    writeFileSync(spex, `#!/usr/bin/env bash\nexec "${process.execPath}" "${TSX}" ${JSON.stringify(CLI)} "$@"\n`)
+    chmodSync(spex, 0o755)
+  }
   const hooks = join(root, '.git', 'hooks')
   for (const name of readdirSync(HOOK_TEMPLATES)) {
     const target = join(hooks, name)
     copyFileSync(join(HOOK_TEMPLATES, name), target)
     chmodSync(target, 0o755)
   }
+  // delimiter, not a hardcoded ':': Windows separates PATH entries with ';'.
+  const binPath = `${join(root, 'node_modules', '.bin')}${delimiter}${process.env.PATH}`
   const runGit = (env: NodeJS.ProcessEnv, ...args: string[]) => spawnSync('git', ['-C', root, ...args], {
     encoding: 'utf8',
-    env: { ...process.env, PATH: `${join(root, 'node_modules', '.bin')}:${process.env.PATH}`, ...env },
+    env: { ...process.env, PATH: binPath, ...env },
   })
   const commitEnv = (env: NodeJS.ProcessEnv, ...args: string[]) => runGit(env, 'commit', ...args)
   const commit = (...args: string[]) => commitEnv({}, ...args)
   const lint = (...args: string[]) => spawnSync(spex, ['spec', 'lint', ...args], {
     cwd: root,
     encoding: 'utf8',
-    env: { ...process.env, PATH: `${join(root, 'node_modules', '.bin')}:${process.env.PATH}` },
+    shell: process.platform === 'win32',
+    env: { ...process.env, PATH: binPath },
   })
   return { root, git, commit, commitEnv, runGit, lint }
 }
@@ -570,7 +594,9 @@ test('a rejected conflict merge can be aborted back to its exact pre-merge state
   const aborted = fx.runGit({}, 'merge', '--abort')
   assert.equal(aborted.status, 0, `${aborted.stdout}${aborted.stderr}`)
   assert.equal(fx.git('rev-parse', 'HEAD'), before)
-  assert.equal(readFileSync(join(fx.root, 'src', 'calc.py'), 'utf8'), SOURCE(3))
+  // normalize CRLF: a Windows checkout (core.autocrlf) materializes the blob with \r\n while SOURCE()
+  // is authored in LF — the CONTENT claim is what this asserts, not the checkout's line endings.
+  assert.equal(readFileSync(join(fx.root, 'src', 'calc.py'), 'utf8').replace(/\r\n/g, '\n'), SOURCE(3))
   assert.equal(fx.git('status', '--porcelain'), '')
   assert.ok(!existsSync(join(fx.root, '.git', 'MERGE_HEAD')))
 })
@@ -921,7 +947,9 @@ function repo(): { main: string; wt: string } {
 function gate(cwd: string, proposal?: string): { ok: boolean; out: string } {
   const cli = join(import.meta.dirname, 'cli.ts')
   try {
-    const out = execFileSync('npx', ['tsx', cli, 'internal', 'commit-gate', ...(proposal ? [proposal] : [])], {
+    // TSX + node: the module's own cross-platform tsx entry ([[tsx-bin]]) — `npx` is not on PATH under
+    // every runner and its .cmd shim is not directly spawnable on Windows.
+    const out = execFileSync(process.execPath, [TSX, cli, 'internal', 'commit-gate', ...(proposal ? [proposal] : [])], {
       cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
     })
     return { ok: true, out: out.trim() }
@@ -942,7 +970,7 @@ test('a clean branch with nothing ahead may propose NOTHING but not MERGE', () =
     assert.match(merge.out, /0 commits ahead/)
     // the refusal names the honest alternative rather than implying an empty commit
     assert.match(merge.out, /propose nothing/)
-  } finally { rmSync(main, { recursive: true, force: true }) }
+  } finally { sweepTemp(main) }
 })
 
 test('an uncommitted tree refuses BOTH proposals — the shared claim is that the work is committed', () => {
@@ -956,7 +984,7 @@ test('an uncommitted tree refuses BOTH proposals — the shared claim is that th
       assert.match(r.out, /uncommitted changes/)
       assert.match(r.out, /work\.ts/)
     }
-  } finally { rmSync(main, { recursive: true, force: true }) }
+  } finally { sweepTemp(main) }
 })
 
 test('committed work ahead of base passes either proposal, and a bare call still means merge', () => {
@@ -969,5 +997,5 @@ test('committed work ahead of base passes either proposal, and a bare call still
     assert.equal(gate(dir, 'nothing').ok, true)
     // the hook passes the proposal explicitly; a bare call keeps the strict (merge) reading
     assert.equal(gate(dir).ok, true)
-  } finally { rmSync(main, { recursive: true, force: true }) }
+  } finally { sweepTemp(main) }
 })

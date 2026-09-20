@@ -1,3 +1,15 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import { test, before, after, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, chmodSync, readdirSync } from 'node:fs'
@@ -38,7 +50,7 @@ before(() => {
 })
 
 after(() => {
-  rmSync(home, { recursive: true, force: true })
+  sweepTemp(home)
   for (const k of ENV_KEYS) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k] }
 })
 
@@ -89,8 +101,8 @@ test('a store dir with no record never resolves to another record that aliases i
     const entry = readAliasedRecordEntry('id_ghost')
     assert.equal(entry.kind, 'absent')   // the live session's own name is not answerable by id_C
   } finally {
-    rmSync(sessionStoreDir('id_ghost'), { recursive: true, force: true })
-    rmSync(sessionStoreDir('id_C'), { recursive: true, force: true })
+    sweepTemp(sessionStoreDir('id_ghost'))
+    sweepTemp(sessionStoreDir('id_C'))
   }
 })
 
@@ -106,6 +118,6 @@ test('resolving a record-less store dir does not enumerate the store', { skip: p
     assert.equal(readAliasedRecordEntry('id_quiet').kind, 'absent')
   } finally {
     chmodSync(root, 0o755)
-    rmSync(sessionStoreDir('id_quiet'), { recursive: true, force: true })
+    sweepTemp(sessionStoreDir('id_quiet'))
   }
 })

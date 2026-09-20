@@ -1,3 +1,15 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
@@ -91,7 +103,7 @@ test('a known peer makes client send use its forward and missing peers fail befo
     if (forward) await close(forward)
     if (previous === undefined) delete process.env.SPEXCODE_HOME
     else process.env.SPEXCODE_HOME = previous
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
   }
 })
 
@@ -212,7 +224,7 @@ test('the peer and session CLI surfaces use the gateway-owned peer forward', asy
     if (forward) await close(forward)
     if (previous === undefined) delete process.env.SPEXCODE_HOME
     else process.env.SPEXCODE_HOME = previous
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
   }
 })
 
@@ -237,7 +249,7 @@ test('the control socket claim is proven by a connect, not by the file', async (
     await first.close()
     if (previous === undefined) delete process.env.SPEXCODE_HOME
     else process.env.SPEXCODE_HOME = previous
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
   }
 })
 
@@ -281,7 +293,7 @@ test('ordinary ssh options are parsed in ssh grammar, recorded on the peer, and 
   } finally {
     if (previous === undefined) delete process.env.SPEXCODE_HOME
     else process.env.SPEXCODE_HOME = previous
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
   }
 })
 
@@ -312,7 +324,7 @@ test('peer records written before the single door are dropped loudly, once', asy
     console.error = realError
     if (previous === undefined) delete process.env.SPEXCODE_HOME
     else process.env.SPEXCODE_HOME = previous
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
   }
 })
 
@@ -422,6 +434,6 @@ test('a dial forwards the far gateway only when the far side publishes one, and 
     if (previousHome === undefined) delete process.env.SPEXCODE_HOME
     else process.env.SPEXCODE_HOME = previousHome
     process.env.PATH = previousPath
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
   }
 })

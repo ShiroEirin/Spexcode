@@ -1,3 +1,15 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import assert from 'node:assert/strict'
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { once } from 'node:events'
@@ -8,6 +20,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
+import { killTree } from '@spexcode/spec-core'
 
 // [[dispatch]]: `POST /api/sessions/:id/interrupt` is ONE verb whose transport branch is decided in the
 // backend. A pane-backed TUI without a native interrupt receives the operator's own key — C-c into its own
@@ -37,7 +50,7 @@ async function waitFor(check: () => Promise<boolean>, label: string, ms = 30_000
 }
 async function stop(child: ChildProcess): Promise<void> {
   if (child.exitCode !== null || child.signalCode !== null) return
-  try { process.kill(-child.pid!, 'SIGTERM') } catch { child.kill('SIGTERM') }
+  killTree(child, 'SIGTERM')
   await Promise.race([once(child, 'exit'), new Promise((resolve) => setTimeout(resolve, 5_000))])
 }
 const tmux = (socket: string, ...args: string[]) => spawnSync('tmux', ['-L', socket, ...args], { encoding: 'utf8' })
@@ -62,7 +75,7 @@ test('YATU: interrupt reaches a pane-backed TUI as its own key, and refuses wher
   const headless = 'interrupt-api-headless'
   let backend: ChildProcess | null = null
   const record = (id: string, harness: string, status: string) => {
-    const sessionDir = join(home, 'projects', project.replace(/[/.]/g, '-'), 'sessions', id)
+    const sessionDir = join(home, 'projects', project.replace(/[/.:\\]/g, '-'), 'sessions', id)
     mkdirSync(sessionDir, { recursive: true })
     writeFileSync(join(sessionDir, 'session.json'), JSON.stringify({
       session_id: id, governed: true, worktree_path: project, branch: 'main', title: 'interrupt API', name: '', parent: '',
@@ -113,6 +126,6 @@ test('YATU: interrupt reaches a pane-backed TUI as its own key, and refuses wher
   } finally {
     if (backend) await stop(backend)
     tmux(socket, 'kill-server')
-    rmSync(fixture, { recursive: true, force: true })
+    sweepTemp(fixture)
   }
 })

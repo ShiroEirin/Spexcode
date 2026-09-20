@@ -1,3 +1,15 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
@@ -73,7 +85,7 @@ test('register: a fresh project has no ready store, so nothing is registered and
     assert.equal(r.status, 0, r.stderr)
     assert.match(r.stdout, /^skipped: .*cutover state fresh/)
     assert.equal(spawnSync('test', ['-e', db]).status, 1, 'no store was created by a skipped registration')
-  } finally { rmSync(home, { recursive: true, force: true }) }
+  } finally { sweepTemp(home) }
 })
 
 test('dequeue: one-shot takes exactly one message, then reports an empty queue', () => {
@@ -99,7 +111,7 @@ test('dequeue: one-shot takes exactly one message, then reports an empty queue',
     const unregistered = run(['dequeue', '--session', STRANGER], f.env)
     assert.equal(unregistered.code, 2)
     assert.match(unregistered.stderr, /not a registered address/)
-  } finally { f.app.close(); rmSync(f.home, { recursive: true, force: true }) }
+  } finally { f.app.close(); sweepTemp(f.home) }
 })
 
 test('wait-dequeue: blocks as a background command and exits with the one message that arrives', async () => {
@@ -120,7 +132,7 @@ test('wait-dequeue: blocks as a background command and exits with the one messag
     assert.equal(timeout.code, 1)
     assert.equal(timeout.stdout, '')
     assert.match(timeout.stderr, /timeout/)
-  } finally { f.app.close(); rmSync(f.home, { recursive: true, force: true }) }
+  } finally { f.app.close(); sweepTemp(f.home) }
 })
 
 test('stream-dequeue: a persistent monitor prints one line per message and only a signal ends it', async () => {
@@ -144,7 +156,7 @@ test('stream-dequeue: a persistent monitor prints one line per message and only 
     child.kill('SIGTERM')
     const [code] = await once(child, 'close') as [number | null]
     assert.equal(code, 0)
-  } finally { f.app.close(); rmSync(f.home, { recursive: true, force: true }) }
+  } finally { f.app.close(); sweepTemp(f.home) }
 })
 
 test('send to a registered recordless address with no backend queues locally; an unregistered id is refused', () => {
@@ -164,5 +176,5 @@ test('send to a registered recordless address with no backend queues locally; an
     const oddSend = run(['send', odd, 'to an odd-shaped address'], { ...f.env, SPEXCODE_SESSION_ID: '' })
     assert.equal(oddSend.code, 0, oddSend.stderr)
     assert.equal(JSON.parse(run(['dequeue', '--session', odd, '--json'], f.env).stdout).text, 'to an odd-shaped address')
-  } finally { f.app.close(); rmSync(f.home, { recursive: true, force: true }) }
+  } finally { f.app.close(); sweepTemp(f.home) }
 })

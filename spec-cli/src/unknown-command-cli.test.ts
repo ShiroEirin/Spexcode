@@ -2,12 +2,16 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { tsxBin } from './tsx-bin.js'
 
 const pkgRoot = fileURLToPath(new URL('..', import.meta.url))
 const cli = fileURLToPath(new URL('./cli.ts', import.meta.url))
+// tsx through node, resolved from this package: the `.bin/tsx` shim is an unspawnable sh script on
+// Windows, so a bare `spawnSync('tsx', …)` is an ENOENT there ([[tsx-bin]]).
+const TSX = tsxBin(pkgRoot)
 
 function run(command: string) {
-  return spawnSync('tsx', [cli, command], { cwd: pkgRoot, encoding: 'utf8' })
+  return spawnSync(process.execPath, [TSX, cli, command], { cwd: pkgRoot, encoding: 'utf8' })
 }
 
 test('unknown top-level commands teach a nearby public repair without inventing one', () => {

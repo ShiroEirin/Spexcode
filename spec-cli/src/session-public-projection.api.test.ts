@@ -1,3 +1,15 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
@@ -6,7 +18,7 @@ import { once } from 'node:events'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import net from 'node:net'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, delimiter } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -112,7 +124,7 @@ test('all public record APIs share pending projection and malformed fail-closed 
     git(project, 'add', '.')
     git(project, 'commit', '-qm', 'fixture')
 
-    const sessions = join(home, 'projects', project.replace(/[/.]/g, '-'), 'sessions')
+    const sessions = join(home, 'projects', project.replace(/[/.:\\]/g, '-'), 'sessions')
     const writeRecord = (id: string, value: Record<string, unknown>) => {
       const dir = join(sessions, id)
       mkdirSync(dir, { recursive: true })
@@ -197,7 +209,7 @@ test('all public record APIs share pending projection and malformed fail-closed 
     const port = await freePort()
     const env: NodeJS.ProcessEnv = {
       ...process.env,
-      PATH: `${bin}:${process.env.PATH || ''}`,
+      PATH: `${bin}${delimiter}${process.env.PATH || ''}`,
       PORT: String(port),
       SPEXCODE_HOME: home,
       SPEX_SESSION_DATABASE_PATH: join(home, 'sessions.sqlite'),
@@ -317,7 +329,7 @@ test('all public record APIs share pending projection and malformed fail-closed 
     }
   } finally {
     await Promise.all([stopChild(backend), stopChild(pendingProcess), stopChild(livePendingProcess), stopChild(incompleteProcess)])
-    rmSync(fixture, { recursive: true, force: true })
+    sweepTemp(fixture)
     assert.equal(existsSync(fixture), false)
     assert.deepEqual(liveSessionsCensus(), liveBefore, 'isolated public projection fixture leaves the live project store unchanged')
   }

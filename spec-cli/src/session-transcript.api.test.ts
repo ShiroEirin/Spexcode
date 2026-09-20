@@ -1,3 +1,15 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import assert from 'node:assert/strict'
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { once } from 'node:events'
@@ -7,6 +19,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
+import { killTree } from '@spexcode/spec-core'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const index = join(here, 'index.ts')
@@ -32,7 +45,7 @@ async function waitFor(check: () => Promise<boolean>, label: string): Promise<vo
 async function stop(child: ChildProcess): Promise<void> {
   if (child.exitCode !== null || child.signalCode !== null) return
   if (child.pid && process.platform !== 'win32') {
-    try { process.kill(-child.pid, 'SIGTERM') } catch { child.kill('SIGTERM') }
+    killTree(child, 'SIGTERM')
   } else child.kill('SIGTERM')
   await Promise.race([once(child, 'exit'), new Promise((resolve) => setTimeout(resolve, 3_000))])
   if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
@@ -87,7 +100,7 @@ test('YATU: the transcript GET and stream read one native thread through the ada
     spawnSync('git', ['config', 'user.email', 'transcript@example.test'], { cwd: project })
     spawnSync('git', ['config', 'user.name', 'Transcript Fixture'], { cwd: project })
     spawnSync('git', ['add', '.'], { cwd: project }); spawnSync('git', ['commit', '-qm', 'fixture'], { cwd: project })
-    const sessionDir = join(home, 'projects', project.replace(/[/.]/g, '-'), 'sessions', id)
+    const sessionDir = join(home, 'projects', project.replace(/[/.:\\]/g, '-'), 'sessions', id)
     mkdirSync(sessionDir, { recursive: true })
     writeFileSync(join(sessionDir, 'session.json'), JSON.stringify({
       session_id: id, governed: true, worktree_path: project, branch: 'main', title: 'transcript API', name: '', parent: '',
@@ -166,7 +179,7 @@ test('YATU: the transcript GET and stream read one native thread through the ada
     await resumedReader.cancel()
   } finally {
     if (backend) await stop(backend)
-    rmSync(fixture, { recursive: true, force: true })
+    sweepTemp(fixture)
   }
 })
 
@@ -185,7 +198,7 @@ test('YATU: a launcher-declared config dir routes the transcript read — pinned
     stdio: 'ignore', detached: true,
   })
   const record = (id: string, extra: Record<string, unknown>) => {
-    const sessionDir = join(home, 'projects', project.replace(/[/.]/g, '-'), 'sessions', id)
+    const sessionDir = join(home, 'projects', project.replace(/[/.:\\]/g, '-'), 'sessions', id)
     mkdirSync(sessionDir, { recursive: true })
     writeFileSync(join(sessionDir, 'session.json'), JSON.stringify({
       session_id: id, governed: true, worktree_path: project, branch: 'main', title: 'configdir', name: '', parent: '',
@@ -194,7 +207,7 @@ test('YATU: a launcher-declared config dir routes the transcript read — pinned
     }) + '\n')
   }
   const thread = (configDir: string, id: string) => {
-    const path = join(configDir, 'projects', project.replace(/[/.]/g, '-'), `${id}.jsonl`)
+    const path = join(configDir, 'projects', project.replace(/[/.:\\]/g, '-'), `${id}.jsonl`)
     mkdirSync(dirname(path), { recursive: true })
     writeFileSync(path, line({ type: 'assistant', timestamp: new Date().toISOString(), message: { role: 'assistant', content: [{ type: 'text', text: `hello from ${id}` }] } }))
   }
@@ -241,6 +254,6 @@ test('YATU: a launcher-declared config dir routes the transcript read — pinned
     assert.match((((await fallback.json()) as Frame).error) ?? '', /was not found/)
   } finally {
     if (backend) await stop(backend)
-    rmSync(fixture, { recursive: true, force: true })
+    sweepTemp(fixture)
   }
 })

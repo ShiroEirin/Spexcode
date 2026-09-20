@@ -1,3 +1,15 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import assert from 'node:assert/strict'
 import { chmodSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -10,7 +22,7 @@ const moduleUrl = pathToFileURL(join(import.meta.dirname, 'pty-native-helper.mjs
 
 test('repairs a native spawn helper execute mode idempotently', (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'spex-node-pty-'))
-  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  t.after(() => sweepTemp(dir))
   const helper = join(dir, 'spawn-helper')
   writeFileSync(helper, '#!/bin/sh\n')
   chmodSync(helper, 0o644)
@@ -28,6 +40,7 @@ test('derives spawn-helper from the native addon node-pty actually loaded', () =
   const output = execFileSync(process.execPath, ['--input-type=module', '-e', `
     import * as pty from 'node-pty'
     import { createRequire } from 'node:module'
+
     import { nodePtySpawnHelperPath } from ${JSON.stringify(moduleUrl)}
     const require = createRequire(import.meta.url)
     const nativeAddon = Object.values(require.cache).find((loaded) => loaded?.exports === pty.native)?.filename

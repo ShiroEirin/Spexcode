@@ -1,3 +1,15 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, rmSync } from 'node:fs'
@@ -38,7 +50,7 @@ test('launcher exits 75 with a clean message when the source tree is mid-merge',
     assert.match(stderr, /cli\.ts/)
     assert.doesNotMatch(stderr, /TransformError|at /)
   } finally {
-    rmSync(tmp, { recursive: true, force: true })
+    sweepTemp(tmp)
   }
 })
 
@@ -64,6 +76,6 @@ test('launcher forwards SIGTERM to the running CLI child and exits as the child 
     assert.ok(out.includes('child: SIGTERM received'), `the signal did not reach the child: ${out}`)
     assert.equal(code, 7, 'the launcher exits with the child\'s exit code')
   } finally {
-    rmSync(tmp, { recursive: true, force: true })
+    sweepTemp(tmp)
   }
 })

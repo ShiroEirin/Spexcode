@@ -1,3 +1,15 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs'
@@ -74,9 +86,9 @@ test('bare doctor diagnoses an adopted repository before its first commit withou
       assert.match(diagnosis.stdout, new RegExp(layer))
     assert.equal(status(), before, 'doctor must not create, stage, or change adoption files')
   } finally {
-    rmSync(project, { recursive: true, force: true })
-    rmSync(runtime, { recursive: true, force: true })
-    rmSync(codexHome, { recursive: true, force: true })
+    sweepTemp(project)
+    sweepTemp(runtime)
+    sweepTemp(codexHome)
   }
 })
 
@@ -125,8 +137,8 @@ test('doctor separates an unmaterialized tree, an empty manifest, and an unbound
     const gone = cli('doctor')
     assert.match(gone.stdout, /manifest\s*:\s*MISSING from the current tree slot/)
   } finally {
-    rmSync(project, { recursive: true, force: true })
-    rmSync(runtime, { recursive: true, force: true })
-    rmSync(codexHome, { recursive: true, force: true })
+    sweepTemp(project)
+    sweepTemp(runtime)
+    sweepTemp(codexHome)
   }
 })

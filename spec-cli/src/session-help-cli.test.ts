@@ -1,3 +1,15 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
@@ -7,15 +19,19 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { HookPromptCatalog } from './hook-prompts.js'
 import { sessionLaunchReceipt } from './help.js'
+import { tsxBin } from './tsx-bin.js'
 
 const pkgRoot = fileURLToPath(new URL('..', import.meta.url))
 const cli = fileURLToPath(new URL('./cli.ts', import.meta.url))
+// tsx through node, resolved from this package: the `.bin/tsx` shim is an unspawnable sh script on
+// Windows, so a bare `spawnSync('tsx', …)` is an ENOENT there ([[tsx-bin]]).
+const TSX = tsxBin(pkgRoot)
 const stopGatePath = join(pkgRoot, '..', '.spec', 'spexcode', '.plugins', 'core', 'stop-gate', 'stop-gate.sh')
 const stopGate = readFileSync(stopGatePath, 'utf8')
 
 function sessionHelp(verb?: string) {
   const args = verb ? ['session', verb, '--help'] : ['session']
-  return spawnSync('tsx', [cli, ...args], { cwd: pkgRoot, encoding: 'utf8', env: { ...process.env, NODE_NO_WARNINGS: '1' } })
+  return spawnSync(process.execPath, [TSX, cli, ...args], { cwd: pkgRoot, encoding: 'utf8', env: { ...process.env, NODE_NO_WARNINGS: '1' } })
 }
 
 test('session noun-verb help projects the exact verb from the shared drawer definition', () => {
@@ -47,7 +63,7 @@ test('done nothing traps before it can write a terminal state', () => {
   const home = mkdtempSync(join(tmpdir(), 'spex-nothing-trap-'))
   const id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
   const project = dirname(execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: pkgRoot, encoding: 'utf8' }).trim())
-  const record = join(home, 'projects', project.replace(/[/.]/g, '-'), 'sessions', id, 'session.json')
+  const record = join(home, 'projects', project.replace(/[/.:\\]/g, '-'), 'sessions', id, 'session.json')
   try {
     mkdirSync(dirname(record), { recursive: true })
     writeFileSync(record, `${JSON.stringify({
@@ -58,7 +74,7 @@ test('done nothing traps before it can write a terminal state', () => {
     }, null, 2)}\n`)
     const before = readFileSync(record, 'utf8')
     for (const args of [[], ['--propose', 'nothing']]) {
-      const result = spawnSync('tsx', [cli, 'session', 'done', ...args], {
+      const result = spawnSync(process.execPath, [TSX, cli, 'session', 'done', ...args], {
         cwd: pkgRoot, encoding: 'utf8', env: { ...process.env, SPEXCODE_HOME: home, SPEXCODE_SESSION_ID: id },
       })
       assert.equal(result.status, 2)
@@ -70,7 +86,7 @@ test('done nothing traps before it can write a terminal state', () => {
       assert.match(result.stderr, /park.*managed delivery.*background job.*terminal children.*wake-up/)
       assert.equal(readFileSync(record, 'utf8'), before)
     }
-  } finally { rmSync(home, { recursive: true, force: true }) }
+  } finally { sweepTemp(home) }
 })
 
 test('bare session keeps the complete compatible drawer', () => {
@@ -137,5 +153,5 @@ test('Stop gate teaches human decisions and handoffs as asking', () => {
     assert.match(terseReason, /close-pending; settled, no human decision\/follow-up or posted artifact waiting/)
     assert.match(terseReason, /asking; human reply\/direction\/decision, including reported finding\/recommendation or handoff/)
     assert.ok(terseReason.length < fullReason.length, 'the compacted-context teaching remains compact')
-  } finally { rmSync(fixture, { recursive: true, force: true }) }
+  } finally { sweepTemp(fixture) }
 })

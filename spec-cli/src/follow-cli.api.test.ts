@@ -69,7 +69,7 @@ async function refusedPort(): Promise<number> {
 function seedSession(home: string, id = ID, parent: string | null = null, root = pkgRoot): string {
   const worktree = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: root, encoding: 'utf8' }).trim()
   const project = dirname(execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: root, encoding: 'utf8' }).trim())
-  const dir = join(home, 'projects', project.replace(/[/.]/g, '-'), 'sessions', id)
+  const dir = join(home, 'projects', project.replace(/[/.:\\]/g, '-'), 'sessions', id)
   mkdirSync(dir, { recursive: true })
   process.env.SPEXCODE_HOME = home
   process.env.SPEX_SESSION_DATABASE_PATH = join(home, 'sessions.sqlite')

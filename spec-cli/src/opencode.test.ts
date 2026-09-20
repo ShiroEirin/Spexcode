@@ -1,7 +1,19 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, chmodSync, rmSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, delimiter } from 'node:path'
 import { tmpdir } from 'node:os'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
@@ -46,7 +58,7 @@ test('launch script: prompt tail → --prompt; --resume marker → --session; --
   // continue flag — a resumed session fires no bus event, so the env is the plugin's only adoption seed.
   writeFileSync(stub, '#!/usr/bin/env bash\necho "STUB:$* rid=${SPEXCODE_OPENCODE_RESUME_ID:-} cont=${SPEXCODE_OPENCODE_CONTINUE:-}"\n')
   chmodSync(stub, 0o755)
-  const env = { ...process.env, PATH: `${dir}:${process.env.PATH}` }
+  const env = { ...process.env, PATH: `${dir}${delimiter}${process.env.PATH}` }
   delete (env as Record<string, string | undefined>).SPEXCODE_OPENCODE_RESUME_ID
   delete (env as Record<string, string | undefined>).SPEXCODE_OPENCODE_CONTINUE
   const run = (tail: string) =>
@@ -56,7 +68,7 @@ test('launch script: prompt tail → --prompt; --resume marker → --session; --
   assert.equal(run('--resume oc_abc'), 'STUB:--auto --session oc_abc rid=oc_abc cont=')
   assert.equal(run('--continue'), 'STUB:--auto --continue rid= cont=1')
   assert.equal(run(''), 'STUB:--auto rid= cont=')
-  rmSync(dir, { recursive: true, force: true })
+  sweepTemp(dir)
 })
 
 test('the REAL dispatch.sh consumes the `opencode` harness id and routes the claude-family parse (mark-active flips a record)', () => {
@@ -67,7 +79,7 @@ test('the REAL dispatch.sh consumes the `opencode` harness id and routes the cla
   const dispatch = join(repo, 'spec-cli', 'hooks', 'dispatch.sh')
   const dir = mkdtempSync(join(tmpdir(), 'spex-oc-dispatch-'))
   const home = join(dir, 'home')
-  const runtime = join(home, 'projects', dir.replace(/[/.]/g, '-'))
+  const runtime = join(home, 'projects', dir.replace(/[/.:\\]/g, '-'))
   execFileSync('git', ['init', '-q'], { cwd: dir })
   mkdirSync(join(dir, 'hooks'), { recursive: true })
   mkdirSync(join(runtime, 'sessions', 'sid_OC'), { recursive: true })
@@ -93,7 +105,7 @@ test('the REAL dispatch.sh consumes the `opencode` harness id and routes the cla
   const application = openProjectSessionApplication({ databasePath: join(home, 'sessions.sqlite'), locality: () => {} })
   try { assert.equal(application.readState('sid_OC')?.status, 'active', 'the claude-family default branch parsed the payload and flipped canonical state') }
   finally { application.close() }
-  rmSync(dir, { recursive: true, force: true })
+  sweepTemp(dir)
 })
 
 // ---------------------------------------------------------------------------------------------------------
@@ -164,7 +176,7 @@ test('hook bridge: claude-SHAPED payloads reach dispatch.sh (session_id = record
   await t.hooks['tool.execute.after']({ tool: 'bash', sessionID: 'oc_root' }, { args: { command: 'ls' } })
   assert.equal(t.payload('PostToolUse').tool_name, 'Bash')
   assert.equal(OPENCODE_TOOL_NAMES.bash, 'Bash')
-  rmSync(t.dir, { recursive: true, force: true })
+  sweepTemp(t.dir)
 })
 
 test('subagent discriminator: a child session\'s events carry agent_id BEFORE tool_input (the harness.sh prefix scan)', async () => {
@@ -178,7 +190,7 @@ test('subagent discriminator: a child session\'s events carry agent_id BEFORE to
   // a subagent going idle is NOT the worker's Stop
   await t.hooks.event({ event: { type: 'session.idle', properties: { sessionID: 'oc_child' } } })
   assert.ok(!existsSync(join(t.dir, 'Stop.json')))
-  rmSync(t.dir, { recursive: true, force: true })
+  sweepTemp(t.dir)
 })
 
 test('block semantics: a PreToolUse block THROWS (aborts the tool call); a Stop block re-injects the gate reason as a prompt', async () => {
@@ -206,7 +218,7 @@ test('block semantics: a PreToolUse block THROWS (aborts the tool call); a Stop 
     if (!stopActive) await new Promise((r) => setTimeout(r, 20))
   }
   assert.equal(stopActive, true, 'post-block settle → bit true')
-  rmSync(t.dir, { recursive: true, force: true })
+  sweepTemp(t.dir)
 })
 
 test('stop-gate wire shape: a stdout decision:block JSON (stderr empty) injects the parsed REASON with real newlines, never the raw wire JSON', async () => {
@@ -225,7 +237,7 @@ test('stop-gate wire shape: a stdout decision:block JSON (stderr empty) injects 
     () => t.hooks['tool.execute.before']({ tool: 'write', sessionID: 'oc_root' }, { args: { filePath: '/w/x' } }),
     (e: Error) => e.message.startsWith('declare first — pick ONE state:') && !e.message.includes('"decision"'),
   )
-  rmSync(t.dir, { recursive: true, force: true })
+  sweepTemp(t.dir)
 })
 
 test('resumed session (--session route): the env-seeded rootSession makes the daemon deliverable with NO bus event', async () => {
@@ -240,7 +252,7 @@ test('resumed session (--session route): the env-seeded rootSession makes the da
   const p = t.prompts[0] as { path: { id: string }; body: { parts: { text: string }[] } }
   assert.equal(p.path.id, 'oc_resumed')                       // injected into the RESUMED conversation
   assert.equal(p.body.parts[0].text, 'steer straight after resume')
-  rmSync(t.dir, { recursive: true, force: true })
+  sweepTemp(t.dir)
   rmSync(rvSock(session), { force: true })
 })
 
@@ -262,7 +274,7 @@ test('resumed session (--continue route): the SDK session.list fallback adopts t
   for (let i = 0; i < 100 && t.prompts.length === 0; i++) await new Promise((r) => setTimeout(r, 10))
   const p = t.prompts[0] as { path: { id: string } }
   assert.equal(p.path.id, 'oc_newest')
-  rmSync(t.dir, { recursive: true, force: true })
+  sweepTemp(t.dir)
   rmSync(rvSock(session), { force: true })
 })
 
@@ -279,7 +291,7 @@ test('rendezvous daemon: the shared poke lands one prompt for an idempotent mid'
   await new Promise((resolve) => setTimeout(resolve, 10))
   assert.equal(t.prompts.length, 1)
   assert.equal((t.prompts[0] as { body: { parts: { text: string }[] } }).body.parts[0].text, 'manager says: also update the docs')
-  rmSync(t.dir, { recursive: true, force: true })
+  sweepTemp(t.dir)
   rmSync(rvSock(session), { force: true })
 })
 
@@ -294,7 +306,7 @@ test('rendezvous daemon: a turn-length injection does not hold the poke open', a
   await new Promise((resolve) => setTimeout(resolve, 10))
   assert.equal(t.prompts.length, 1)
   assert.equal((t.prompts[0] as { body: { parts: { text: string }[] } }).body.parts[0].text, 'second message under fire')
-  rmSync(t.dir, { recursive: true, force: true })
+  sweepTemp(t.dir)
   rmSync(rvSock(session), { force: true })
 })
 
@@ -311,7 +323,7 @@ test('rendezvous daemon: an interrupt poke aborts the adopted ROOT session throu
   const r = await interruptViaRendezvous(session, 'opencode-headless')
   assert.deepEqual(r, { ok: true })
   assert.deepEqual(t.aborts, [{ path: { id: 'oc_root' } }], 'exactly one session.abort on the root session')
-  rmSync(t.dir, { recursive: true, force: true })
+  sweepTemp(t.dir)
   rmSync(rvSock(session), { force: true })
 })
 
@@ -324,7 +336,7 @@ test('rendezvous daemon: an interrupt with no running turn (SDK abort answers fa
   const r = await interruptViaRendezvous(session, 'opencode-headless')
   assert.equal(r.ok, false)
   assert.match(r.error || '', /no opencode turn is running/)
-  rmSync(t.dir, { recursive: true, force: true })
+  sweepTemp(t.dir)
   rmSync(rvSock(session), { force: true })
   // and with the listener gone the backend's answer is "nothing is running", not a hung connect
   const dead = await interruptViaRendezvous(session, 'opencode-headless')

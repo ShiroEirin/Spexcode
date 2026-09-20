@@ -226,7 +226,7 @@ test('a marked store absorbs legacy residue once: history, watch edges, pending 
   reopened.close()
 })
 
-test('residue migration is re-entrant: an interrupted retire resumes without duplicating any event or queue row', () => {
+test('residue migration is re-entrant: an interrupted retire resumes without duplicating any event or queue row', { skip: process.platform === 'win32' ? 'POSIX-only fault injection: chmodSync(0o500) cannot make a directory unwritable on Windows, so the EACCES the interrupted-retire state needs cannot be produced' : false }, () => {
   const root = mkdtempSync(join(tmpdir(), 'session-json-residue-reentry-'))
   const { recordsRoot, databasePath } = oldImporterStore(root, [{ id: 'live', status: 'awaiting' }])
   mkdirSync(join(recordsRoot, 'live', 'timeline'), { recursive: true })
@@ -234,6 +234,9 @@ test('residue migration is re-entrant: an interrupted retire resumes without dup
   writeFileSync(join(recordsRoot, 'live', 'pending.json'), JSON.stringify([{ mid: 'debt', text: 'owed', from: null }]))
   // The import lands, then retire cannot unlink anything in the session directory: the process dies with the
   // tree intact and the store already carrying the history and the queue row.
+  // POSIX-only fault injection: chmodSync(0o500) makes the directory unwritable, which is what forces the
+  // EACCES/EPERM this test drives on. Windows has no POSIX permission bits (chmod is a no-op for this), so
+  // the interrupted state cannot be produced there — the whole test is skipped on win32 (see the skip option).
   chmodSync(join(recordsRoot, 'live'), 0o500)
   try {
     assert.throws(() => migrateJsonSessionRecords({ databasePath, recordsRoot, locality: () => {} }), /EACCES|EPERM/)
@@ -289,7 +292,8 @@ test('residue migration refuses a retired envelope with no canonical row instead
   mkdirSync(join(recordsRoot, 'ghost'), { recursive: true })
   writeFileSync(join(recordsRoot, 'ghost', 'runtime.json'), JSON.stringify({ session_id: 'ghost', governed: true }))
   writeFileSync(join(recordsRoot, 'ghost', 'timeline.ndjson'), line({ kind: 'status', status: 'active', proposal: null, note: null }))
-  assert.throws(() => migrateJsonSessionRecords({ databasePath, recordsRoot, locality: () => {} }), /retired envelope .*ghost\/runtime\.json has no canonical application state/)
+  // [\\/]: the separator in the message is the platform's own (Windows reports backslashes).
+  assert.throws(() => migrateJsonSessionRecords({ databasePath, recordsRoot, locality: () => {} }), /retired envelope .*ghost[\\/]runtime\.json has no canonical application state/)
   assert.equal(existsSync(join(recordsRoot, 'ghost', 'timeline.ndjson')), true)
 })
 

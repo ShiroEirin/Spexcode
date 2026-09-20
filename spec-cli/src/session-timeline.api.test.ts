@@ -1,3 +1,15 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
@@ -5,8 +17,9 @@ import { once } from 'node:events'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import net from 'node:net'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, delimiter } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { killTree } from '@spexcode/spec-core'
 import { openProjectSessionApplication } from '@spexcode/session-application'
 import { listenerAt, rvSock } from './harness.js'
 import { piHeadlessSock } from './pi-headless.js'
@@ -36,12 +49,9 @@ async function waitFor(check: () => Promise<boolean>, label: string, timeoutMs =
 }
 async function stop(child: ChildProcess): Promise<void> {
   if (child.exitCode !== null || child.signalCode !== null) return
-  const signal = (name: NodeJS.Signals) => {
-    if (child.pid && process.platform !== 'win32') {
-      try { process.kill(-child.pid, name); return } catch { /* parent may have already reaped the group */ }
-    }
-    child.kill(name)
-  }
+  // killTree, not a bare child.kill on Windows: the direct child can exit while ITS children stay
+  // alive holding this process's pipes open ([[kill-tree]]).
+  const signal = (name: NodeJS.Signals) => killTree(child, name)
   signal('SIGTERM')
   await Promise.race([once(child, 'exit'), new Promise((resolve) => setTimeout(resolve, 3_000))])
   if (child.exitCode === null && child.signalCode === null) {
@@ -63,12 +73,12 @@ test('YATU: 128 real session inputs rotate timeline files and API returns the cr
     writeFileSync(join(project, '.spec/spexcode.json'), JSON.stringify({ harnesses: ['claude'] }) + '\n')
     git(project, 'init', '-q', '-b', 'main'); git(project, 'config', 'user.email', 'timeline@example.test'); git(project, 'config', 'user.name', 'Timeline Fixture')
     git(project, 'add', '.'); git(project, 'commit', '-qm', 'fixture')
-    const sessions = join(home, 'projects', project.replace(/[/.]/g, '-'), 'sessions')
+    const sessions = join(home, 'projects', project.replace(/[/.:\\]/g, '-'), 'sessions')
     const dir = join(sessions, id)
     mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, 'session.json'), JSON.stringify({ session_id: id, governed: true, worktree_path: project, branch: 'main', title: 'API timeline', name: '', parent: '', status: 'idle', proposal: '', merges: 0, note: '', sortkey: '', createdAt: 1, harness: 'claude', harness_session_id: '', stopped: false, archived: false, cold_proof: '', adapter_recovery: '', launcher: 'fixture', launch_cmd: 'true', launch_owner: '' }, null, 2) + '\n')
     const bin = join(fixture, 'bin'); mkdirSync(bin); writeFileSync(join(bin, 'tmux'), '#!/bin/sh\nexit 1\n'); chmodSync(join(bin, 'tmux'), 0o755)
-    backend = spawn(process.execPath, ['--import', import.meta.resolve('tsx'), join(here, 'index.ts')], { cwd: project, env: { ...process.env, PATH: `${bin}:${process.env.PATH || ''}`, PORT: String(port), SPEXCODE_HOME: home, SPEXCODE_TIMELINE_SEGMENT_BYTES: '1024', SPEXCODE_TMUX: `timeline-api-${port}` }, stdio: 'ignore', detached: true })
+    backend = spawn(process.execPath, ['--import', import.meta.resolve('tsx'), join(here, 'index.ts')], { cwd: project, env: { ...process.env, PATH: `${bin}${delimiter}${process.env.PATH || ''}`, PORT: String(port), SPEXCODE_HOME: home, SPEXCODE_TIMELINE_SEGMENT_BYTES: '1024', SPEXCODE_TMUX: `timeline-api-${port}` }, stdio: 'ignore', detached: true })
     const base = `http://127.0.0.1:${port}`
     await waitFor(() => fetch(`${base}/health`).then((r) => r.ok).catch(() => false), 'backend health')
     const empty = await fetch(`${base}/api/sessions/${id}/input`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'text', text: ' \n\t' }) })
@@ -150,7 +160,7 @@ test('YATU: 128 real session inputs rotate timeline files and API returns the cr
     assert.equal(reseated.offset, reseated.total! - 5)
   } finally {
     if (backend) await stop(backend)
-    rmSync(fixture, { recursive: true, force: true })
+    sweepTemp(fixture)
   }
 })
 
@@ -170,13 +180,13 @@ test('YATU: five real backends observe 24 CLI lifecycle writes without duplicate
     git(project, 'init', '-q', '-b', 'main'); git(project, 'config', 'user.email', 'timeline@example.test'); git(project, 'config', 'user.name', 'Timeline Fixture')
     git(project, 'add', '.'); git(project, 'commit', '-qm', 'fixture')
 
-    const sessions = join(home, 'projects', project.replace(/[/.]/g, '-'), 'sessions')
+    const sessions = join(home, 'projects', project.replace(/[/.:\\]/g, '-'), 'sessions')
     const dir = join(sessions, id)
     mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, 'session.json'), JSON.stringify({ session_id: id, governed: true, worktree_path: project, branch: 'main', title: 'many backend timeline', name: '', parent: '', status: 'idle', proposal: '', merges: 0, note: '', sortkey: '', createdAt: 1, harness: 'claude', harness_session_id: '', stopped: false, archived: false, cold_proof: '', adapter_recovery: '', launcher: 'fixture', launch_cmd: 'true', launch_owner: '' }, null, 2) + '\n')
     const bin = join(fixture, 'bin'); mkdirSync(bin); writeFileSync(join(bin, 'tmux'), '#!/bin/sh\n[ "$1" = "-V" ] && { echo "tmux 3.4"; exit 0; }\nexit 1\n'); chmodSync(join(bin, 'tmux'), 0o755)
     const env: NodeJS.ProcessEnv = {
-      ...process.env, PATH: `${bin}:${process.env.PATH || ''}`, SPEXCODE_HOME: home,
+      ...process.env, PATH: `${bin}${delimiter}${process.env.PATH || ''}`, SPEXCODE_HOME: home,
       SPEXCODE_TIMELINE_SEGMENT_BYTES: '1024', SPEXCODE_TMUX: `timeline-writers-${process.pid}-${Date.now()}`,
     }
     delete env.SPEXCODE_API_URL
@@ -229,7 +239,7 @@ test('YATU: five real backends observe 24 CLI lifecycle writes without duplicate
     assert.equal(existsSync(join(dir, 'timeline')), false, 'canonical SQLite events do not recreate legacy timeline files')
   } finally {
     await Promise.all(backends.map((backend) => stop(backend)))
-    rmSync(fixture, { recursive: true, force: true })
+    sweepTemp(fixture)
   }
 })
 
@@ -313,7 +323,7 @@ exec ${JSON.stringify(fakeLauncher)} "$@"
     if (id) await fetch(`${base}/api/sessions/${id}/close`, { method: 'POST' }).catch(() => {})
     if (backend) await stop(backend)
     spawnSync('tmux', ['-L', tmux, 'kill-server'], { stdio: 'ignore' })
-    rmSync(fixture, { recursive: true, force: true })
+    sweepTemp(fixture)
   }
 })
 
@@ -377,7 +387,7 @@ for (const harness of ['claude', 'pi'] as const) test(`YATU: a Command Box messa
     if (id) await fetch(`${base}/api/sessions/${id}/close`, { method: 'POST' }).catch(() => {})
     if (backend) await stop(backend)
     spawnSync('tmux', ['-L', tmux, 'kill-server'], { stdio: 'ignore' })
-    rmSync(fixture, { recursive: true, force: true })
+    sweepTemp(fixture)
   }
 })
 
@@ -455,7 +465,7 @@ test('YATU: a stopped session is not polled, and its owed message arrives with t
     if (id) await fetch(`${base}/api/sessions/${id}/close`, { method: 'POST' }).catch(() => {})
     if (backend) await stop(backend)
     spawnSync('tmux', ['-L', tmux, 'kill-server'], { stdio: 'ignore' })
-    rmSync(fixture, { recursive: true, force: true })
+    sweepTemp(fixture)
   }
 })
 
@@ -476,7 +486,9 @@ test('YATU: pi-headless defaults launch and CLI send replies to durable notes', 
     writeFileSync(fakePi, `
 import { appendFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
+
 const prompt = process.argv.at(-1) || ''
+
 const session = process.env.SPEXCODE_SESSION_ID || ''
 const note = prompt.includes('HEADLESS_CLI_QUESTION') ? 'HEADLESS_CLI_ANSWER' : 'HEADLESS_LAUNCH_ANSWER'
 appendFileSync(process.env.SPEX_FIXTURE_TURNS, JSON.stringify({ argv: process.argv.slice(2), prompt, session, note }) + '\\n')
@@ -540,14 +552,14 @@ process.exit(result.status === null ? 1 : result.status)
     const session = await fetch(`${base}/api/sessions/${id}`).then((r) => r.json() as Promise<{ note?: string }>)
     assert.equal(session.note, 'HEADLESS_CLI_ANSWER')
 
-    const pidPath = join(home, 'projects', project.replace(/[/.]/g, '-'), 'sessions', id, 'agent.pid')
+    const pidPath = join(home, 'projects', project.replace(/[/.:\\]/g, '-'), 'sessions', id, 'agent.pid')
     const controllerPid = Number(readFileSync(pidPath, 'utf8').trim())
     const rendezvous = rvSock(id)
     const closed = await fetch(`${base}/api/sessions/${id}/close`, { method: 'POST' })
     const closedText = await closed.text()
     assert.equal(closed.status, 200, closedText)
     assert.deepEqual(JSON.parse(closedText), { ok: true })
-    const sessionStore = join(home, 'projects', project.replace(/[/.]/g, '-'), 'sessions', id)
+    const sessionStore = join(home, 'projects', project.replace(/[/.:\\]/g, '-'), 'sessions', id)
     assert.equal(existsSync(sessionStore), true, 'close retains the archived session store')
     assert.equal(JSON.parse(readFileSync(join(sessionStore, 'runtime.json'), 'utf8')).archived, true,
       'close marks the retained session record archived')
@@ -563,6 +575,6 @@ process.exit(result.status === null ? 1 : result.status)
     if (id) await fetch(`${base}/api/sessions/${id}/close`, { method: 'POST' }).catch(() => {})
     if (backend) await stop(backend)
     spawnSync('tmux', ['-L', tmux, 'kill-server'], { stdio: 'ignore' })
-    rmSync(fixture, { recursive: true, force: true })
+    sweepTemp(fixture)
   }
 })

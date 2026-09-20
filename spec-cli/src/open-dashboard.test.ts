@@ -1,9 +1,21 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import assert from 'node:assert/strict'
 import { execFile, execFileSync } from 'node:child_process'
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, delimiter } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 import { platformOpener, resolveOpenDashboardUrl } from './open-dashboard.js'
@@ -50,7 +62,7 @@ test('spex open prints the scoped URL and invokes xdg-open exactly once', { skip
     }))
     const result = await runCli(['open', 'desktop-deep-link'], {
       SPEXCODE_HOME: home,
-      PATH: `${bin}:${process.env.PATH}`,
+      PATH: `${bin}${delimiter}${process.env.PATH}`,
     })
     const expected = `http://127.0.0.1:${port}/p/project-id/#/spec/desktop-deep-link`
     assert.equal(result.stdout.trim(), expected)
@@ -63,14 +75,14 @@ test('spex open prints the scoped URL and invokes xdg-open exactly once', { skip
 
     const printed = await runCli(['open', 'desktop-deep-link', '--print-only'], {
       SPEXCODE_HOME: home,
-      PATH: `${bin}:${process.env.PATH}`,
+      PATH: `${bin}${delimiter}${process.env.PATH}`,
     })
     assert.equal(printed.stdout.trim(), expected)
     await new Promise((resolve) => setTimeout(resolve, 50))
     assert.equal(readFileSync(capture, 'utf8').trim(), expected, '--print-only starts no second opener')
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()))
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
   }
 })
 

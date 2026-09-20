@@ -114,7 +114,9 @@ test('materialize refreshes legacy core handlers before dispatch and lifecycle h
 
   const result = spawnSync(process.execPath, [TSX, CLI, 'materialize'], { cwd: proj, encoding: 'utf8', env })
   assert.equal(result.status, 0, result.stderr)
-  assert.match(result.stdout, /refreshed core plugin handlers .*mark-active\/mark-active\.sh.*stop-gate\/stop-gate\.sh/)
+  // [\\/] : the printed path is the platform's, so the assertion is about WHICH handlers refreshed,
+  // not about the separator the host happens to use (a bare `/` only matched a POSIX checkout).
+  assert.match(result.stdout, /refreshed core plugin handlers .*mark-active[\\/]mark-active\.sh.*stop-gate[\\/]stop-gate\.sh/)
   assert.deepEqual(readFileSync(mark), templateMark)
   assert.deepEqual(readFileSync(stop), templateStop)
 
@@ -123,10 +125,10 @@ test('materialize refreshes legacy core handlers before dispatch and lifecycle h
   writeFileSync(`${databasePath}.json-migration.json`, '{"version":1}\n')
   const app = openProjectSessionApplication({ databasePath, locality: () => {} })
   try { app.createSession({ sessionId: sid, status: 'parked', note: 'x' }) } finally { app.close() }
-  const runtime = join(env.SPEXCODE_HOME!, 'projects', proj.replace(/[/.]/g, '-'))
+  const runtime = join(env.SPEXCODE_HOME!, 'projects', proj.replace(/[/.:\\]/g, '-'))
   mkdirSync(join(runtime, 'sessions', sid), { recursive: true })
   writeFileSync(join(runtime, 'sessions', sid, 'runtime.json'), JSON.stringify({ session_id: sid, governed: true, status: 'parked', proposal: '', note: 'x' }) + '\n')
-  const manifest = join(runtime, 'trees', proj.replace(/[/.]/g, '-'), 'hooks-manifest')
+  const manifest = join(runtime, 'trees', proj.replace(/[/.:\\]/g, '-'), 'hooks-manifest')
   const hookEnv = { ...env, SPEX_HOOK_MANIFEST: manifest, SPEX_SESSION_DATABASE_PATH: databasePath, SPEX: join(PACKAGE, 'bin', 'spex.mjs') }
   const active = spawnSync('bash', [DISPATCH_PATH, 'claude', 'PreToolUse'], {
     cwd: proj, env: hookEnv, input: JSON.stringify({ session_id: sid, hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'true' } }), encoding: 'utf8',
@@ -399,7 +401,11 @@ test('codex worktree materialize plants the .codex anchor + unconditional projec
   assert.ok(userClaude.hooks.PreToolUse.some((entry: { hooks: Array<{ command: string }> }) => entry.hooks.some((hook) => hook.command.includes('dispatch.sh claude PreToolUse'))), 'our dispatcher is merged beside the user hook')
   assert.ok(existsSync(join(proj, '.codex', 'hooks.json')), 'main checkout still has the codex shim')
   const cfg = readFileSync(join(codex, 'config.toml'), 'utf8')
-  assert.ok(cfg.includes(`[projects."${proj}"]`) && cfg.includes('trust_level = "trusted"'), 'main-checkout project trusted')
+  // The trust key is the MAIN CHECKOUT path as git reports it (`rev-parse --git-common-dir` answers in
+  // forward slashes on Windows), so the assertion normalises separators: it is about WHICH project got
+  // trusted, not about the separator style the host happens to use ([[codex-runtime]]).
+  const cfgPosix = cfg.replace(/\\/g, '/')
+  assert.ok(cfgPosix.includes(`[projects."${proj.replace(/\\/g, '/')}"]`) && cfg.includes('trust_level = "trusted"'), 'main-checkout project trusted')
   for (const snake of ['session_start', 'user_prompt_submit', 'pre_tool_use', 'post_tool_use', 'stop'])
     assert.match(cfg, new RegExp(`hooks.state."[^"]*:${snake}:0:0"\\]\\s*\\ntrusted_hash = "sha256:`), `per-hook trusted_hash for ${snake}`)
 })
@@ -464,7 +470,7 @@ function makeBareRepo(prefix: string) {
   const runtimeHash = () => {
     const projects = join(home, 'projects')
     const enc = readdirSync(projects)[0]
-    return readFileSync(join(projects, enc, 'trees', proj.replace(/[/.]/g, '-'), 'content-hash'), 'utf8').trim()
+    return readFileSync(join(projects, enc, 'trees', proj.replace(/[/.:\\]/g, '-'), 'content-hash'), 'utf8').trim()
   }
   g('init', '-q', '-b', 'main')
   g('config', 'user.email', 't@t.co'); g('config', 'user.name', 't')
@@ -570,7 +576,7 @@ test('one per-tree materialize projection survives a sibling pass across diverge
   g('add', '-A'); g('commit', '-qm', 'adopt', '--no-verify')
   const slotOf = (tree: string) => {
     const projects = join(env.SPEXCODE_HOME, 'projects')
-    return join(projects, readdirSync(projects)[0], 'trees', tree.replace(/[/.]/g, '-'))
+    return join(projects, readdirSync(projects)[0], 'trees', tree.replace(/[/.:\\]/g, '-'))
   }
   const excludePath = join(proj, '.git', 'info', 'exclude')
   writeFileSync(join(proj, 'AGENTS.md'), 'user-owned\n')

@@ -1,3 +1,15 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
@@ -104,7 +116,7 @@ esac
     const postCloseSend = await sendText(id, 'must not leave closed-sender debt', id)
     assert.equal(postCloseSend.ok, false, 'a closed sender cannot append new outbound debt')
     assert.match(postCloseSend.error ?? '', /sender session .* is closed/)
-    assert.equal(runtimeRoot(), join(home, 'projects', project.replace(/[/.]/g, '-')))
+    assert.equal(runtimeRoot(), join(home, 'projects', project.replace(/[/.:\\]/g, '-')))
   } finally {
     codexHarness.sharedRuntimes = originalShared
     codexHarness.coldPreflight = originalColdPreflight
@@ -120,7 +132,7 @@ esac
     if (previousDatabasePath === undefined) delete process.env.SPEX_SESSION_DATABASE_PATH
     else process.env.SPEX_SESSION_DATABASE_PATH = previousDatabasePath
     process.chdir(previousCwd)
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
     leave()
   }
 })
@@ -220,7 +232,7 @@ setTimeout(() => process.exit(0), 50)
     if (previousDatabasePath === undefined) delete process.env.SPEX_SESSION_DATABASE_PATH
     else process.env.SPEX_SESSION_DATABASE_PATH = previousDatabasePath
     process.chdir(previousCwd)
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
     leave()
   }
 })

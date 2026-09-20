@@ -1,3 +1,15 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
@@ -6,16 +18,20 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { initializeFreshSessionApplication } from './session-application.js'
+import { tsxBin } from './tsx-bin.js'
 
 const pkgRoot = fileURLToPath(new URL('..', import.meta.url))
 const cli = fileURLToPath(new URL('./cli.ts', import.meta.url))
+// tsx through node, resolved from this package: the `.bin/tsx` shim is an unspawnable sh script on
+// Windows, so a bare `spawnSync('tsx', …)` is an ENOENT there ([[tsx-bin]]).
+const TSX = tsxBin(pkgRoot)
 const STALE = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const CURRENT = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
 const THREAD = 'codex-thread-for-current-worker'
 
 function recordPath(home: string, id: string, cwd = pkgRoot): string {
   const project = dirname(execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd, encoding: 'utf8' }).trim())
-  return join(home, 'projects', project.replace(/[/.]/g, '-'), 'sessions', id, 'runtime.json')
+  return join(home, 'projects', project.replace(/[/.:\\]/g, '-'), 'sessions', id, 'runtime.json')
 }
 
 function writeRecord(home: string, id: string, harnessSessionId: string): string {
@@ -55,7 +71,7 @@ test('session ask keeps its receipt and attributes a shared Codex worker to its 
     }
     for (const key of ['CLAUDE_CODE_SESSION_ID', 'PI_SESSION_ID', 'OPENCODE_SESSION_ID']) delete env[key]
 
-    const result = spawnSync('tsx', [cli, 'session', 'ask', '--note', note], { cwd: pkgRoot, encoding: 'utf8', env })
+    const result = spawnSync(process.execPath, [TSX, cli, 'session', 'ask', '--note', note], { cwd: pkgRoot, encoding: 'utf8', env })
     assert.equal(result.status, 0, result.stderr)
     assert.equal(result.stderr, '')
     assert.equal(result.stdout, 'asking — recorded; the human sees it in the dashboard. This declaration remains in the session timeline; your next tool call flips only the current graph state back to active (the mark-active hook, by design).\n')
@@ -69,13 +85,15 @@ test('session ask keeps its receipt and attributes a shared Codex worker to its 
     else process.env.SPEXCODE_HOME = previousHome
     if (previousDatabasePath === undefined) delete process.env.SPEX_SESSION_DATABASE_PATH
     else process.env.SPEX_SESSION_DATABASE_PATH = previousDatabasePath
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
   }
 })
 
 test('the CLI hub reaches ask through the lazy declaration handler', () => {
+  // \r?\n: a Windows checkout has CRLF, and a pattern that demands a bare \n silently stops matching
+  // the very source it is checking ([[commit-context]] — the same shape that broke frontmatter parsing).
   const source = readFileSync(cli, 'utf8')
-  assert.match(source, /sub === 'done' \|\| sub === 'park' \|\| sub === 'ask'\) \{\n    const \{ runSessionDeclaration \} = await import\('\.\/session-declarations\.js'\)/)
+  assert.match(source, /sub === 'done' \|\| sub === 'park' \|\| sub === 'ask'\) \{\r?\n    const \{ runSessionDeclaration \} = await import\('\.\/session-declarations\.js'\)/)
   assert.doesNotMatch(source, /sub === 'ask'\) \{[\s\S]{0,1200}markState\('asking'/)
 })
 
@@ -114,7 +132,7 @@ test('merge declaration records without the removed acceptance configuration', (
       archived: false, launcher: 'fixture', launch_cmd: 'true',
     }, null, 2)}\n`)
     application.createSession({ sessionId: id, status: 'active' })
-    const result = spawnSync('tsx', [cli, 'session', 'done', '--propose', 'merge', '--note', 'ready'], {
+    const result = spawnSync(process.execPath, [TSX, cli, 'session', 'done', '--propose', 'merge', '--note', 'ready'], {
       cwd: root,
       encoding: 'utf8',
       env: { ...process.env, SPEXCODE_HOME: home, SPEX_SESSION_DATABASE_PATH: join(home, 'sessions.sqlite'), SPEXCODE_SESSION_ID: id },
@@ -128,6 +146,6 @@ test('merge declaration records without the removed acceptance configuration', (
     else process.env.SPEXCODE_HOME = previousHome
     if (previousDatabasePath === undefined) delete process.env.SPEX_SESSION_DATABASE_PATH
     else process.env.SPEX_SESSION_DATABASE_PATH = previousDatabasePath
-    rmSync(fixture, { recursive: true, force: true })
+    sweepTemp(fixture)
   }
 })

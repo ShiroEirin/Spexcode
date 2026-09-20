@@ -1,3 +1,15 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
@@ -7,7 +19,7 @@ import { tmpdir } from 'node:os'
 import { createServer } from 'node:net'
 import { once } from 'node:events'
 import { fileURLToPath } from 'node:url'
-import { processStartToken } from '@spexcode/spec-core'
+import { killTree, processStartToken } from '@spexcode/spec-core'
 import { cliEntrypointArgs, serverEntrypointArgs } from './tsx-bin.js'
 
 // @@@ compiled release launcher ([[release-launcher]]) - the launcher runs its own emitted JavaScript through
@@ -49,7 +61,7 @@ for (const output of outputs) {
     assert.match(out, /compiled source workspace/)
     assert.ok(existsSync(join(root, 'spec-cli', 'dist', 'cli.js')))
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    sweepTemp(root)
   }
 })
 
@@ -81,7 +93,7 @@ for (const output of ['spec-cli/dist/cli.js', 'packages/spec-core/dist/index.js'
     await Promise.all([launch(), launch()])
     assert.equal(readFileSync(join(root, 'build-count'), 'utf8').trim(), 'build', 'concurrent launchers must share one build')
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    sweepTemp(root)
   }
 })
 
@@ -96,7 +108,9 @@ test('test-only source edits do not rebuild the runtime closure', () => {
     writeFileSync(join(root, 'build.mjs'), `
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+
 const root = process.cwd()
+
 appendFileSync(join(root, 'build-count'), 'build\\n')
 for (const output of ['spec-cli/dist/cli.js', 'packages/spec-core/dist/index.js', 'spec-forge/dist/index.js']) {
   const path = join(root, output)
@@ -113,7 +127,7 @@ for (const output of ['spec-cli/dist/cli.js', 'packages/spec-core/dist/index.js'
     assert.match(execFileSync(process.execPath, [launcher, 'help'], { cwd: root, encoding: 'utf8' }), /compiled source workspace/)
     assert.equal(readFileSync(join(root, 'build-count'), 'utf8'), before)
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    sweepTemp(root)
   }
 })
 
@@ -206,7 +220,7 @@ test('canonical npm run api crosses the scrub boundary before the compiled CLI p
   } finally {
     // Detached gives this fixture one process group. Signal that group even when health assertion fails before
     // the descendant scan, otherwise a slow first build leaks an entire test backend into later cases.
-    const signalGroup = (signal: NodeJS.Signals) => { try { process.kill(-child.pid!, signal) } catch { /* already gone */ } }
+    const signalGroup = (signal: NodeJS.Signals) => killTree(child, signal)
     signalGroup('SIGTERM')
     if (child.exitCode === null) await Promise.race([once(child, 'exit'), new Promise((resolve) => setTimeout(resolve, 3000))])
     for (let i = 0; i < 30 && processStartToken(child.pid!) !== null; i++) {
@@ -217,6 +231,6 @@ test('canonical npm run api crosses the scrub boundary before the compiled CLI p
       await new Promise((resolve) => setTimeout(resolve, 50))
     }
     assert.equal(processStartToken(child.pid!), null, 'canonical npm api fixture leaves no process group leader alive')
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
   }
 })

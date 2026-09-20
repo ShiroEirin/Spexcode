@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, writeFileSync, chmodSync } from 'node:fs'
 import net from 'node:net'
 import { once } from 'node:events'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, delimiter } from 'node:path'
 import test from 'node:test'
 
 import { migrateJsonSessionRecords, openProjectSessionApplication } from '@spexcode/session-application'
@@ -38,7 +38,7 @@ test('YATU cutover matrix: ten distinct stories through the backend HTTP and mig
   writeFileSync(join(bin, 'tmux'), '#!/bin/sh\n[ "$1" = "-V" ] && { echo "tmux 3.4"; exit 0; }\nexit 1\n'); chmodSync(join(bin, 'tmux'), 0o755)
   execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: project }); execFileSync('git', ['config', 'user.email', 'yatu@example.test'], { cwd: project }); execFileSync('git', ['config', 'user.name', 'YATU'], { cwd: project }); execFileSync('git', ['add', '.'], { cwd: project }); execFileSync('git', ['commit', '-qm', 'fixture'], { cwd: project })
   // the test worker pins the canonical database beside its own home; this fixture owns a different home
-  const env = { ...process.env, PATH: `${bin}:${process.env.PATH || ''}`, SPEXCODE_HOME: home, SPEX_SESSION_DATABASE_PATH: databasePath, PORT: String(port) }
+  const env = { ...process.env, PATH: `${bin}${delimiter}${process.env.PATH || ''}`, SPEXCODE_HOME: home, SPEX_SESSION_DATABASE_PATH: databasePath, PORT: String(port) }
   const records = join(fixture, 'legacy')
   mkdirSync(join(records, 'migrated'), { recursive: true })
   writeFileSync(join(records, 'migrated', 'session.json'), JSON.stringify({ session_id: 'migrated', status: 'active', parent: null, createdAt: 1 }))
@@ -52,7 +52,7 @@ test('YATU cutover matrix: ten distinct stories through the backend HTTP and mig
   // The owning backend discovers governed watcher records from the runtime store before it reconciles
   // canonical event cursors. The old direct-recipient route needed no envelope, but the current cutover
   // contract does, so keep this HTTP fixture shaped like a real adopted project.
-  const runtimeSessions = join(home, 'projects', project.replace(/[/.]/g, '-'), 'sessions')
+  const runtimeSessions = join(home, 'projects', project.replace(/[/.:\\]/g, '-'), 'sessions')
   for (const id of ['parent', 'child', 'parent2', 'watch1', 'watch2', 'batch', 'batchw', 'pub', 'pubw', 'a', 'aw', 'b', 'bw']) {
     const dir = join(runtimeSessions, id)
     mkdirSync(dir, { recursive: true })

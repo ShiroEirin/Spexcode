@@ -1,3 +1,15 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
@@ -101,7 +113,7 @@ test('resource sweep keeps resolvable owners visible beside an unknown historica
     else process.env.SPEXCODE_HOME = previousHome
     if (previousDatabasePath === undefined) delete process.env.SPEX_SESSION_DATABASE_PATH
     else process.env.SPEX_SESSION_DATABASE_PATH = previousDatabasePath
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
   }
 })
 
@@ -134,7 +146,7 @@ test('shared runtime spawn records an observed detached process boundary', async
       try { process.kill(identity.pid, 'SIGTERM') } catch {}
       for (let i = 0; i < 50 && processStartToken(identity.pid) === identity.startToken; i++) await new Promise((resolve) => setTimeout(resolve, 20))
     }
-    rmSync(root, { recursive: true, force: true })
+    sweepTemp(root)
   }
 })
 
@@ -289,7 +301,7 @@ test('session stop guard reads only the exact governed target and fails closed o
     else process.env.SPEXCODE_HOME = previousHome
     if (previousDatabasePath === undefined) delete process.env.SPEX_SESSION_DATABASE_PATH
     else process.env.SPEX_SESSION_DATABASE_PATH = previousDatabasePath
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
   }
 })
 
@@ -336,7 +348,7 @@ test('resource report retains the full shared projection and reports its sibling
     else process.env.SPEXCODE_HOME = previousHome
     if (previousDatabasePath === undefined) delete process.env.SPEX_SESSION_DATABASE_PATH
     else process.env.SPEX_SESSION_DATABASE_PATH = previousDatabasePath
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
   }
 })
 
@@ -437,7 +449,7 @@ test('shared-runtime projection uses live adapter refs and fail-closed process i
     writeFileSync(join(foreignDir, 'runtime.json'), `${JSON.stringify(record(foreign, 'thread-without-record', false, { harness: 'claude' }), null, 2)}\n`)
     application.createSession({ sessionId: foreign, status: 'active' })
     await assert.doesNotReject(() => assertSessionStopSafe(target, { session: target, harness: 'codex' }))
-    rmSync(foreignDir, { recursive: true, force: true })
+    sweepTemp(foreignDir)
     const nonGovernedDir = join(root, 'sessions', nonGoverned)
     mkdirSync(nonGovernedDir, { recursive: true })
     writeFileSync(join(nonGovernedDir, 'runtime.json'), `${JSON.stringify(record(nonGoverned, 'thread-without-record', false, { governed: false }), null, 2)}\n`)
@@ -446,7 +458,7 @@ test('shared-runtime projection uses live adapter refs and fail-closed process i
     const collisionReport = await collectResourceReport({ persist: false })
     const collisionShared = collisionReport.owners.find((owner) => owner.kind === 'shared-runtime' && owner.id === 'codex-app-server')
     assert.equal(collisionShared?.references?.find((reference) => reference.threadId === 'thread-without-record')?.ownerState, 'unowned')
-    rmSync(nonGovernedDir, { recursive: true, force: true })
+    sweepTemp(nonGovernedDir)
     probe = governedProbe(false)
     const duplicateDir = join(root, 'sessions', duplicate)
     mkdirSync(duplicateDir, { recursive: true })
@@ -457,7 +469,7 @@ test('shared-runtime projection uses live adapter refs and fail-closed process i
     await assert.rejects(() => assertSessionStopSafe(target, { session: target, harness: 'codex' }), /target thread thread-target has no one exact governed session owner/,
       'duplicate record ownership stays ambiguous even while the native thread is unloaded')
     probe = governedProbe(false)
-    rmSync(duplicateDir, { recursive: true, force: true })
+    sweepTemp(duplicateDir)
     rmSync(codexAppServerPid(root), { force: true })
     probe = { healthy: false, references: [], error: 'fixture probe failed' }
     await assert.rejects(() => assertSessionStopSafe(target, { session: target, harness: 'codex' }), /unproven live reference set.*no readable owner PID/)
@@ -505,7 +517,7 @@ test('shared-runtime projection uses live adapter refs and fail-closed process i
     sessionLeaf = null
     sharedRoot = null
 
-    rmSync(join(root, 'sessions'), { recursive: true, force: true })
+    sweepTemp(join(root, 'sessions'))
     rmSync(codexAppServerPid(root), { force: true })
     codexHarness.sharedRuntimes = originalSharedRuntimes
     codexHeadlessHarness.sharedRuntimes = originalHeadlessSharedRuntimes
@@ -533,7 +545,7 @@ test('shared-runtime projection uses live adapter refs and fail-closed process i
     else process.env.SPEXCODE_HOME = previousHome
     if (previousDatabasePath === undefined) delete process.env.SPEX_SESSION_DATABASE_PATH
     else process.env.SPEX_SESSION_DATABASE_PATH = previousDatabasePath
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
   }
 })
 
@@ -570,6 +582,6 @@ test('resource walk does not charge a shared tmux tree to a retired instance tok
     else process.env.SPEXCODE_HOME = previousHome
     if (previousDatabasePath === undefined) delete process.env.SPEX_SESSION_DATABASE_PATH
     else process.env.SPEX_SESSION_DATABASE_PATH = previousDatabasePath
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
   }
 })

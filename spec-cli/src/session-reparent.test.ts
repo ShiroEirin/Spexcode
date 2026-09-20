@@ -1,3 +1,15 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import test from 'node:test'
 
 import { openProjectSessionApplication } from '@spexcode/session-application'
@@ -22,7 +34,7 @@ type Run = { code: number | null; out: string; err: string }
 
 function sessionDir(home: string, id: string, projectRoot = pkgRoot): string {
   const project = dirname(execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: projectRoot, encoding: 'utf8' }).trim())
-  return join(home, 'projects', project.replace(/[/.]/g, '-'), 'sessions', id)
+  return join(home, 'projects', project.replace(/[/.:\\]/g, '-'), 'sessions', id)
 }
 
 function writeSession(home: string, id: string, parent: string | null, projectRoot = pkgRoot): string {
@@ -161,7 +173,7 @@ test('reparent deduplicates a former parent that is also in the moved child batc
     else process.env.SPEXCODE_HOME = previousHome
     if (previousDatabase === undefined) delete process.env.SPEX_SESSION_DATABASE_PATH
     else process.env.SPEX_SESSION_DATABASE_PATH = previousDatabase
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
   }
 })
 
@@ -268,7 +280,7 @@ test('session reparent rewrites parent/watch through live backend and only falls
     else process.env.SPEXCODE_HOME = previousHome
     if (previousDatabase === undefined) delete process.env.SPEX_SESSION_DATABASE_PATH
     else process.env.SPEX_SESSION_DATABASE_PATH = previousDatabase
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
   }
 })
 
@@ -318,6 +330,6 @@ test('session reparent updates the canonical projection after cutover', { timeou
     } finally { after.close() }
   } finally {
     await stop(backend)
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
   }
 })

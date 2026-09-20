@@ -1,3 +1,15 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
@@ -20,7 +32,7 @@ test('graph rejects a non-Git workspace with one actionable message and no runti
     assert.equal(result.stderr, `spex: workspace is not a Git repository: ${workspace}. Run \`git init\` in that directory, then retry.\n`)
     assert.doesNotMatch(result.stderr, /at node:internal|Command failed:|cannot derive history events/)
   } finally {
-    rmSync(workspace, { recursive: true, force: true })
+    sweepTemp(workspace)
   }
 })
 
@@ -42,6 +54,6 @@ test('the cached graph entrance rejects the same non-Git workspace before layout
       message: `workspace is not a Git repository: ${workspace}. Run \`git init\` in that directory, then retry.`,
     })
   } finally {
-    rmSync(workspace, { recursive: true, force: true })
+    sweepTemp(workspace)
   }
 })

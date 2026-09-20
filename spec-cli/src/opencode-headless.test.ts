@@ -1,10 +1,22 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, chmodSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, delimiter } from 'node:path'
 import { opencodeHeadlessColdRuntime, opencodeHeadlessLaunchCommand, opencodeHeadlessWakeCommand } from './opencode-headless.js'
 import { HARNESSES, opencodeHarness, opencodeHeadlessHarness, rvSock } from './harness.js'
 
@@ -66,7 +78,7 @@ test('launch and wake commands preserve the native id capture/resume markers and
   writeFileSync(loginShell, '#!/bin/sh\n[ "$#" -eq 0 ] && exit 0\n[ "$1" = "-ilc" ] || exit 97\nexport OPENCODE_INTERACTIVE_AUTH=from-login-shell\nshift\nexec /bin/bash -lc "$@"\n')
   chmodSync(stub, 0o755)
   chmodSync(loginShell, 0o755)
-  const env = { ...process.env, PATH: `${dir}:${process.env.PATH}`, SHELL: loginShell }
+  const env = { ...process.env, PATH: `${dir}${delimiter}${process.env.PATH}`, SHELL: loginShell }
   const run = (command: string, tail = '') => execFileSync('bash', ['-c', `${command} ${tail}`], { env })
 
   run(opencodeHeadlessLaunchCommand('opencode --auto'), "'first prompt'")
@@ -86,7 +98,7 @@ test('launch and wake commands preserve the native id capture/resume markers and
   assert.ok(calls.every((call) => !call.argv.includes('--format')), 'default output format stays untouched')
   assert.match(opencodeHeadlessLaunchCommand('opencode --auto'), /internal session-turn-fail.*opencode-headless/, 'non-zero launch turns report through the shared outcome seam')
   assert.match(opencodeHeadlessWakeCommand('opencode --auto', 'oc_abc', 'wake with spaces'), /internal session-turn-fail.*opencode-headless/, 'non-zero wake turns report through the shared outcome seam')
-  rmSync(dir, { recursive: true, force: true })
+  sweepTemp(dir)
 })
 
 test('a live turn uses the rendezvous poke before considering a cold wake', async (t) => {
@@ -141,7 +153,7 @@ writeFileSync(${JSON.stringify(log)}, JSON.stringify({ argv: process.argv.slice(
     try { execFileSync('tmux', ['-L', tmuxSock, 'kill-server']) } catch { /* already gone */ }
     if (oldTmux === undefined) delete process.env.SPEXCODE_TMUX
     else process.env.SPEXCODE_TMUX = oldTmux
-    rmSync(dir, { recursive: true, force: true })
+    sweepTemp(dir)
     rmSync(rvSock(id), { force: true })
   })
 

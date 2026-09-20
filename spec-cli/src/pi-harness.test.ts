@@ -27,10 +27,15 @@ function stubPi() {
 }
 
 // write a dispatch stub + the generated extension against it, and import the extension like pi would.
+// @@@ toPosix - the dispatch body is BASH, so every path it embeds must use forward slashes: a Windows
+// backslash is an escape character there, which silently ate the separator and wrote the fixture's output
+// to a file named `CUsers12971AppData...` in the CWD (the stray files this repo kept committing).
+const toPosix = (p: string): string => p.replace(/\\/g, '/')
+
 async function loadExtension(dir: string, dispatchBody: string) {
   const dispatch = join(dir, 'dispatch.sh')
   writeFileSync(dispatch, `#!/usr/bin/env bash\n${dispatchBody}\n`)
-  chmodSync(dispatch, 0o755)
+  if (process.platform !== 'win32') chmodSync(dispatch, 0o755)
   const ext = join(dir, 'spexcode.ts')
   writeFileSync(ext, piExtensionSource(dispatch, '/abs/spex.mjs'))
   const mod = await import(pathToFileURL(ext).href)
@@ -40,7 +45,7 @@ async function loadExtension(dir: string, dispatchBody: string) {
 test('pi extension: synthesizes a claude-shaped payload and passes a clean dispatch through', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'pi-ext-'))
   const seen = join(dir, 'payload.json')
-  const { factory } = await loadExtension(dir, `[ "$1 $2" = "pi PreToolUse" ] || exit 9\ncat > ${seen}\nexit 0`)
+  const { factory } = await loadExtension(dir, `[ "$1 $2" = "pi PreToolUse" ] || exit 9\ncat > ${toPosix(seen)}\nexit 0`)
   const { api, handlers, ctx } = stubPi()
   factory(api)
   await handlers.get('session_start')!({ reason: 'startup' }, ctx)
@@ -79,9 +84,9 @@ test('pi extension: dual Stop binding never duplicates — allowed agent_end = O
   // production-shaped stub: block only an UNFLAGGED Stop (the real gate's continuation paths always allow)
   const { factory } = await loadExtension(dir, [
     `[ "$2" = Stop ] || exit 0`,
-    `cat > ${dir}/last.json; cat ${dir}/last.json >> ${log}; echo >> ${log}`,
-    `grep -q '"stop_hook_active":true' ${dir}/last.json && exit 0`,
-    `if [ -f ${gate} ]; then echo "declare it" >&2; exit 2; fi`,
+    `cat > ${toPosix(join(dir, 'last.json'))}; cat ${toPosix(join(dir, 'last.json'))} >> ${toPosix(log)}; echo >> ${toPosix(log)}`,
+    `grep -q '"stop_hook_active":true' ${toPosix(join(dir, 'last.json'))} && exit 0`,
+    `if [ -f ${toPosix(gate)} ]; then echo "declare it" >&2; exit 2; fi`,
     `exit 0`,
   ].join('\n'))
   const { api, handlers, sent, ctx } = stubPi()
@@ -136,7 +141,7 @@ test('pi extension: a stdout decision:block JSON (the stop-gate shape — exit 2
   assert.equal(sent[0].text, expected)
 })
 
-test('pi extension: binds the rendezvous socket and accepts a reply poke', async () => {
+test('pi extension: binds the rendezvous socket and accepts a reply poke', { skip: process.platform === 'win32' ? 'asserts unix-domain socket FILE semantics (existsSync on the bound path + unlink on shutdown); a Windows named pipe has no filesystem presence' : false }, async () => {
   const dir = mkdtempSync(join(tmpdir(), 'pi-ext-'))
   const sock = join(dir, 'rv.sock')
   const { factory } = await loadExtension(dir, 'exit 0')

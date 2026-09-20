@@ -1,3 +1,15 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
@@ -6,10 +18,10 @@ import { once } from 'node:events'
 import { chmodSync, copyFileSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, writeFileSync as fsWriteFileSync, existsSync, rmSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, join, sep } from 'node:path'
 import { claudeHarness, sessionIdentityEnvVars, stampRvSock, type SharedRuntimeProbe } from './harness.js'
 import { codexHarness, codexHeadlessHarness } from './codex-harness.js'
-import { processStartToken } from '@spexcode/spec-core'
+import { killTree, processStartToken } from '@spexcode/spec-core'
 import { jsonMigrationFencePath } from '@spexcode/session-application'
 import { spawnDetachedRuntime } from './runtime-ownership.js'
 import { adapterResidentLiveness, bootstrapMaterialize, canonicalRecordProjection, closeSession, drainQueue, drainSession, existingHarnessLaunchTarget, turnFailureNote, turnFailureRetryDelay, installSessionLeafProcessProbeForTest, launchPreflight, listSessions, markIdle, markState, markTurnFailure, markHeadlessTurnFailure, markInterrupted, stampInterrupt, INTERRUPTED_NOTE, parseSessionLeafReceipt, resumeSession, sendText, sessionCreateRequest, sessionHasPendingDelivery, sessionLeafReceiptCandidate, sessionLeafReceiptIdentityState, spawnerClause, stageHarnessLaunchProof, stopSession } from './sessions.js'
@@ -140,7 +152,7 @@ test('backend restart does not re-arm readiness for a witnessed active session',
     ;(claudeHarness as any).launchReady = originalLaunchReady
     if (previousHome === undefined) delete process.env.SPEXCODE_HOME
     else process.env.SPEXCODE_HOME = previousHome
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
   }
 })
 
@@ -170,7 +182,7 @@ test('late launch readiness diagnostics do not overwrite a later declaration not
     else process.env.SPEXCODE_HOME = previousHome
     if (previousDatabasePath === undefined) delete process.env.SPEX_SESSION_DATABASE_PATH
     else process.env.SPEX_SESSION_DATABASE_PATH = previousDatabasePath
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
   }
 })
 
@@ -231,8 +243,9 @@ function assertIsolatedResumeStore(home: string, id: string): void {
   // The test bootstrap pins an explicit database path. Keep that path aligned with the temporary home when
   // a fixture swaps homes inside one worker; otherwise the runtime envelope and canonical SQLite row split.
   process.env.SPEX_SESSION_DATABASE_PATH = join(home, 'sessions.sqlite')
-  assert.ok(sessionStoreDir(id).startsWith(`${home}/`), `resume fixture ${id} store escaped isolated SPEXCODE_HOME`)
-  assert.ok(runtimeRoot().startsWith(`${home}/`), `resume fixture ${id} runtime root escaped isolated SPEXCODE_HOME`)
+  // the separator is the platform's own — a Windows path never contains the '/' this used to require.
+  assert.ok(sessionStoreDir(id).startsWith(`${home}${sep}`), `resume fixture ${id} store escaped isolated SPEXCODE_HOME`)
+  assert.ok(runtimeRoot().startsWith(`${home}${sep}`), `resume fixture ${id} runtime root escaped isolated SPEXCODE_HOME`)
 }
 function canonicalState(id: string): { status: string; proposal: string | null; note: string | null; parentSessionId: string | null } {
   const state = configuredSessionApplication()?.readState(id)
@@ -314,7 +327,7 @@ test('Codex registration does not persist an unbound thread when exact generatio
     else process.env.SPEX_SESSION_DATABASE_PATH = previousDatabasePath
     if (previousGeneration === undefined) delete process.env.SPEXCODE_CODEX_GENERATION
     else process.env.SPEXCODE_CODEX_GENERATION = previousGeneration
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
   }
 })
 
@@ -365,7 +378,7 @@ test('Codex launch retry reuses a staged native target after the first payload i
     else process.env.SPEX_SESSION_DATABASE_PATH = previousDatabasePath
     if (previousGeneration === undefined) delete process.env.SPEXCODE_CODEX_GENERATION
     else process.env.SPEXCODE_CODEX_GENERATION = previousGeneration
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
   }
 })
 
@@ -423,7 +436,7 @@ test('session-create API refuses the retired JSON store while migration is fence
     else process.env.SPEXCODE_HOME = previousHome
     if (previousDatabasePath === undefined) delete process.env.SPEX_SESSION_DATABASE_PATH
     else process.env.SPEX_SESSION_DATABASE_PATH = previousDatabasePath
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
   }
 })
 
@@ -475,10 +488,10 @@ test('launchScript registers the agent pid before exec and preserves tricky quot
     assert.equal(readFileSync(argsFile, 'utf8'), argVal)
   } finally {
     try { if (existsSync(pidPath)) process.kill(Number(readFileSync(pidPath, 'utf8').trim())) } catch { /* already gone */ }
-    try { if (child?.pid) process.kill(-child.pid) } catch { /* group already reaped */ }
+    if (child) killTree(child)
     if (prevHome === undefined) delete process.env.SPEXCODE_HOME
     else process.env.SPEXCODE_HOME = prevHome
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
   }
 })
 
@@ -498,8 +511,8 @@ test('launch transport keeps a launch.sh path with spaces and quotes as one shel
   } finally {
     if (previousHome === undefined) delete process.env.SPEXCODE_HOME
     else process.env.SPEXCODE_HOME = previousHome
-    rmSync(home, { recursive: true, force: true })
-    rmSync(spaced, { recursive: true, force: true })
+    sweepTemp(home)
+    sweepTemp(spaced)
   }
 })
 
@@ -691,7 +704,7 @@ exec sleep 30
     if (previousHome === undefined) delete process.env.SPEXCODE_HOME
     else process.env.SPEXCODE_HOME = previousHome
     process.env.PATH = previousPath
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
     assertLiveSessionsUnchanged(liveBefore, 'no-thread resume fixture')
   }
 })
@@ -844,7 +857,7 @@ exec sleep 30
     if (previousHome === undefined) delete process.env.SPEXCODE_HOME
     else process.env.SPEXCODE_HOME = previousHome
     process.env.PATH = previousPath
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
     assertLiveSessionsUnchanged(liveBefore, 'queued launch proof fixture')
   }
 })
@@ -969,7 +982,7 @@ touch ${JSON.stringify(consumed)}
     if (previousHome === undefined) delete process.env.SPEXCODE_HOME
     else process.env.SPEXCODE_HOME = previousHome
     process.env.PATH = previousPath
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
     assert.equal(existsSync(home), false, 'delayed resume fixture root is removed exactly')
     assertLiveSessionsUnchanged(liveBefore, 'delayed resume fixture')
   }
@@ -1030,7 +1043,7 @@ test('successful resume publishes a capacity-queued record as idle after readine
     if (previousHome === undefined) delete process.env.SPEXCODE_HOME
     else process.env.SPEXCODE_HOME = previousHome
     process.env.PATH = previousPath
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
     assertLiveSessionsUnchanged(liveBefore, 'queued resume state fixture')
   }
 })
@@ -1088,7 +1101,7 @@ test('successful resume clears a prior terminal error instead of leaving an onli
     if (previousHome === undefined) delete process.env.SPEXCODE_HOME
     else process.env.SPEXCODE_HOME = previousHome
     process.env.PATH = previousPath
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
     assertLiveSessionsUnchanged(liveBefore, 'error resume state fixture')
   }
 })
@@ -1148,7 +1161,7 @@ test('a stopped queued record is ineligible for automatic and repeated queue dra
     if (previousHome === undefined) delete process.env.SPEXCODE_HOME
     else process.env.SPEXCODE_HOME = previousHome
     process.env.PATH = previousPath
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
     assertLiveSessionsUnchanged(liveBefore, 'stopped queue drain fixture')
   }
 })
@@ -1220,7 +1233,7 @@ test('resume missing, failed, or invalidated readiness preserves the stopped off
       else process.env.SPEXCODE_HOME = previousHome
       process.env.PATH = previousPath
       await waitForFixtureLaunchExit(launchPidPath)
-      rmSync(home, { recursive: true, force: true })
+      sweepTemp(home)
       assert.equal(existsSync(home), false, `${outcome} resume fixture root is removed exactly`)
       assertLiveSessionsUnchanged(liveBefore, `${outcome} resume fixture`)
     }
@@ -1290,7 +1303,7 @@ test('a stale launch-readiness pending record recovers fail-closed before anothe
     if (previousHome === undefined) delete process.env.SPEXCODE_HOME
     else process.env.SPEXCODE_HOME = previousHome
     process.env.PATH = previousPath
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
     assert.equal(existsSync(home), false, 'stale resume fixture root is removed exactly')
     assertLiveSessionsUnchanged(liveBefore, 'stale resume fixture')
   }
@@ -1324,7 +1337,7 @@ test('expired launch readiness residue becomes terminal error/offline during que
     else process.env.SPEXCODE_HOME = previousHome
     if (previousDatabasePath === undefined) delete process.env.SPEX_SESSION_DATABASE_PATH
     else process.env.SPEX_SESSION_DATABASE_PATH = previousDatabasePath
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
   }
 })
 
@@ -1404,7 +1417,7 @@ test('stop revalidates the exact leaf after every shared guard before TERM and K
         try { originalKill(shared.pid, 'SIGTERM') } catch { /* already exited */ }
         for (let i = 0; i < 50 && processStartToken(shared.pid) === shared.startToken; i++) await sleep(20)
       }
-      rmSync(home, { recursive: true, force: true })
+      sweepTemp(home)
     }
   }
 
@@ -1609,10 +1622,9 @@ esac
     else process.env.SPEX_TEST_TMUX_STATE = previousState
     if (previousKillPid === undefined) delete process.env.SPEX_TEST_TMUX_KILL_PID
     else process.env.SPEX_TEST_TMUX_KILL_PID = previousKillPid
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
   }
 })
-
 
 test('public close files queued and unbound rows without entering the unrelated shared-runtime guard', serial, async () => {
   const previousHome = process.env.SPEXCODE_HOME
@@ -1742,7 +1754,7 @@ test('public close files queued and unbound rows without entering the unrelated 
     if (previousDatabasePath === undefined) delete process.env.SPEX_SESSION_DATABASE_PATH
     else process.env.SPEX_SESSION_DATABASE_PATH = previousDatabasePath
     process.chdir(previousCwd)
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
   }
 })
 
@@ -1764,7 +1776,7 @@ test('launch retry log names the fast exit without guessing a daemon race', seri
   } finally {
     if (prevHome === undefined) delete process.env.SPEXCODE_HOME
     else process.env.SPEXCODE_HOME = prevHome
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
   }
 })
 
@@ -1849,7 +1861,7 @@ test('a launch failure the harness itself called settled is attempted exactly on
   } finally {
     if (prevHome === undefined) delete process.env.SPEXCODE_HOME
     else process.env.SPEXCODE_HOME = prevHome
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
   }
 })
 
@@ -1878,7 +1890,7 @@ test('launchPreflight refuses a launch that cannot succeed, naming which fact se
     assert.equal(launchPreflight({ ...live, launchCmd: '/nope/not-here --flag' })?.code, 'no-launcher')
     assert.equal(launchPreflight({ ...live, launchCmd: 'bare-name-on-path' }), null, 'a bare name is left to PATH, never guessed at')
   } finally {
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
   }
 })
 
@@ -1894,7 +1906,7 @@ test('one-shot headless launch does not retry a successful fast exit', serial, (
   } finally {
     if (prevHome === undefined) delete process.env.SPEXCODE_HOME
     else process.env.SPEXCODE_HOME = prevHome
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
   }
 })
 
@@ -1926,7 +1938,7 @@ test('a failed creation-time materialize is reported loud and stamped on the rec
     console.error = prevError
     if (prevHome === undefined) delete process.env.SPEXCODE_HOME
     else process.env.SPEXCODE_HOME = prevHome
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
   }
 })
 
@@ -2001,7 +2013,7 @@ test('machine turn failures share one active-only error projection', serial, () 
     else process.env.SPEXCODE_HOME = prevHome
     if (prevDatabasePath === undefined) delete process.env.SPEX_SESSION_DATABASE_PATH
     else process.env.SPEX_SESSION_DATABASE_PATH = prevDatabasePath
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
   }
 })
 
@@ -2029,7 +2041,7 @@ test('lifecycle hook writers reject self-launched records in the canonical layer
   } finally {
     if (previousHome === undefined) delete process.env.SPEXCODE_HOME
     else process.env.SPEXCODE_HOME = previousHome
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
   }
 })
 
@@ -2179,7 +2191,7 @@ test('the launch readiness identity stage exits on the bound identity, whoever c
     if (previousHome === undefined) delete process.env.SPEXCODE_HOME
     else process.env.SPEXCODE_HOME = previousHome
     process.env.PATH = previousPath
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
     assertLiveSessionsUnchanged(liveBefore, 'readiness identity stage fixture')
   }
 })

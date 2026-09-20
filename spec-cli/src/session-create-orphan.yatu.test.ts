@@ -1,10 +1,22 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import assert from 'node:assert/strict'
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { once } from 'node:events'
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import net from 'node:net'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, delimiter } from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
@@ -76,7 +88,7 @@ test('YATU: @parent:none creates a depth-zero row and no managed watch', { timeo
 
   const env: NodeJS.ProcessEnv = {
     ...process.env,
-    PATH: `${tmuxDir}:${process.env.PATH || ''}`,
+    PATH: `${tmuxDir}${delimiter}${process.env.PATH || ''}`,
     SPEXCODE_HOME: home,
     PORT: String(port),
     SPEXCODE_TMUX: `session-orphan-${port}`,
@@ -112,6 +124,6 @@ test('YATU: @parent:none creates a depth-zero row and no managed watch', { timeo
     assert.doesNotMatch(watches.stderr, new RegExp(orphan.id))
   } finally {
     if (backend) await stop(backend)
-    rmSync(fixture, { recursive: true, force: true })
+    sweepTemp(fixture)
   }
 })

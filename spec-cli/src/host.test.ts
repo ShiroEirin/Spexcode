@@ -18,7 +18,7 @@ import {
   reconcileProjects, reconcileNow, startHostDashboard, type EndpointRecord,
 } from './host.js'
 import { isWsl } from './host-facts.js'
-import { encodeProject } from '@spexcode/spec-core'
+import { encodeProject, killTree } from '@spexcode/spec-core'
 import { tsxBin } from './tsx-bin.js'
 import { setAdminPassword, setProjectPassword, loadAuthStore, grantPeer, PEER_CREDENTIAL_HEADER } from './gateway-auth.js'
 import { readHostRecord } from './host-record.js'
@@ -76,10 +76,7 @@ function childOutput(child: ReturnType<typeof spawn>): () => string {
 async function stopChild(child: ReturnType<typeof spawn>): Promise<void> {
   if (child.exitCode !== null || child.signalCode !== null) return
   const signal = (name: 'SIGTERM' | 'SIGKILL') => {
-    if (child.pid) {
-      try { process.kill(-child.pid, name); return } catch { /* fall back to the direct child */ }
-    }
-    try { child.kill(name) } catch { /* already gone */ }
+    killTree(child, name)
   }
   const waitForExit = () => new Promise<void>((resolveExit) => child.once('close', () => resolveExit()))
   signal('SIGTERM')

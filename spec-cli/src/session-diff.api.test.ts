@@ -1,3 +1,15 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import assert from 'node:assert/strict'
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
@@ -6,7 +18,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { sessionStoreDir } from '@spexcode/spec-core'
+import { killTreeAndWait, sessionStoreDir } from '@spexcode/spec-core'
 import { tsxBin } from './tsx-bin.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -189,14 +201,12 @@ test('session diff anchors to refs: live worktree, removed worktree, and vanishe
     assert.equal(vanishedBody.code, 'diff-unavailable')
     assert.match(vanishedBody.error, /no longer exists/)
   } finally {
-    if (backend?.pid) {
-      try { process.kill(-backend.pid, 'SIGTERM') } catch { /* group already gone */ }
-      await new Promise((done) => setTimeout(done, 500))
-      try { process.kill(-backend.pid, 'SIGKILL') } catch { /* group already gone */ }
-    }
+    // The tree, not just the direct child: a surviving backend holds the pipes open and this test
+    // process never reaches its exit condition ([[kill-tree]]).
+    if (backend?.pid) await killTreeAndWait(backend)
     process.chdir(previousCwd)
     if (previousHome === undefined) delete process.env.SPEXCODE_HOME
     else process.env.SPEXCODE_HOME = previousHome
-    rmSync(fixture, { recursive: true, force: true })
+    sweepTemp(fixture)
   }
 })

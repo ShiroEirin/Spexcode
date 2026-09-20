@@ -33,7 +33,7 @@ function fixture(handlers: Array<{ event: string; name: string; body: string; bl
     process.env.SPEXCODE_HOME = home
     try { return readLedger(dir) } finally { if (prior === undefined) delete process.env.SPEXCODE_HOME; else process.env.SPEXCODE_HOME = prior }
   }
-  const ledgerDir = () => join(home, 'projects', join(dir).replace(/[/.]/g, '-'), 'hook-ledger')
+  const ledgerDir = () => join(home, 'projects', join(dir).replace(/[/.:\\]/g, '-'), 'hook-ledger')
   return { dir, home, fire, read, ledgerDir }
 }
 

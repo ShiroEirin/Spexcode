@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { join } from 'node:path'
 import { test } from 'node:test'
 
 import { DatabasePathError, resolveDatabasePath } from './storage-path.js'
@@ -33,10 +34,12 @@ test('database path precedence is explicit, environment, selected config, then r
     },
   }), '/config/sessions.sqlite')
 
-  assert.equal(resolveDatabasePath({ env: { HOME: '/operator' } }), '/operator/.spexcode/sessions.sqlite')
+  // join() renders each expectation in the host's separator, so the assertion is about the RESOLVER's
+  // precedence rather than about a POSIX spelling of the default path.
+  assert.equal(resolveDatabasePath({ env: { HOME: '/operator' } }), join('/operator', '.spexcode', 'sessions.sqlite'))
   assert.equal(resolveDatabasePath({
     env: { SPEXCODE_HOME: '/relocated', HOME: '/ignored' },
-  }), '/relocated/sessions.sqlite')
+  }), join('/relocated', 'sessions.sqlite'))
 })
 
 test('a relative database path is refused without reading cwd', () => {

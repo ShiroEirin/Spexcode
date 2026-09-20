@@ -1,7 +1,19 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync, chmodSync, readFileSync } from 'node:fs'
-import { join, dirname } from 'node:path'
+import { join, dirname, delimiter } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
@@ -98,7 +110,7 @@ test('Tree-sitter is shipped with SpexCode rather than resolved from the governe
   assert.deepEqual(await x.extract('export function applyRate() {\n  return 1\n}\n', 'src/calc.ts'), [
     { name: 'applyRate', kind: 'function', start: 1, end: 3 },
   ])
-  rmSync(adopter, { recursive: true, force: true })
+  sweepTemp(adopter)
 })
 
 test('live anchor extraction cache reuses a blob and invalidates on a changed blob', async () => {
@@ -233,10 +245,10 @@ test('multi-selector hits across file revisions: a commit counts ONCE and unpars
     { commit: c5, selectors: ['f', 'g'], unparseable: true },  // c4 (outside both units) is absent
   ])
   removeFixtureLedger(root)
-  rmSync(root, { recursive: true, force: true })
+  sweepTemp(root)
 })
 
-test('anchor query batch reads one shared immutable window for distinct selectors', { skip: !gitAvailable() && 'git not available' }, async () => {
+test('anchor query batch reads one shared immutable window for distinct selectors', { skip: process.platform === 'win32' ? 'the git-call counter is a POSIX shim (#!/bin/sh wrapper + chmodSync + a colon PATH separator); Windows cannot stage the same interception' : (!gitAvailable() && 'git not available') }, async () => {
   const root = mkdtempSync(join(tmpdir(), 'spex-anchor-batch-'))
   const g = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim()
   const oldPath = process.env.PATH
@@ -252,21 +264,21 @@ test('anchor query batch reads one shared immutable window for distinct selector
     const count = join(bin, 'count')
     writeFileSync(join(bin, 'git'), `#!/bin/sh\nprintf x >> ${count}\nexec /usr/bin/git \"$@\"\n`)
     chmodSync(join(bin, 'git'), 0o755)
-    process.env.PATH = `${bin}:${oldPath}`
+    process.env.PATH = `${bin}${delimiter}${oldPath}`
     const x = treeSitter()
     const win = [{ commit: change, historicalPath: 'src/x.ts', parents: [] }]
     const hits = await anchorHitQueries(root, [{ win, symbols: ['f'] }, { win, symbols: ['g'] }], [x])
     assert.deepEqual(hits.map((rows) => rows.map((row) => row.selectors)), [[['f']], [['g']]])
     assert.equal(readFileSync(count, 'utf8').length, 3, 'two object batches and one shared hunk batch after ledger discovery')
-    rmSync(bin, { recursive: true, force: true })
+    sweepTemp(bin)
   } finally {
     process.env.PATH = oldPath
     removeFixtureLedger(root)
-    rmSync(root, { recursive: true, force: true })
+    sweepTemp(root)
   }
 })
 
-test('a repeated read costs the MOVEMENT, and a commit git was never asked about is always asked', { skip: !gitAvailable() && 'git not available' }, async () => {
+test('a repeated read costs the MOVEMENT, and a commit git was never asked about is always asked', { skip: process.platform === 'win32' ? 'the git-call counter is a POSIX shim (#!/bin/sh wrapper + chmodSync + a colon PATH separator); Windows cannot stage the same interception' : (!gitAvailable() && 'git not available') }, async () => {
   const root = mkdtempSync(join(tmpdir(), 'spex-anchor-repeat-'))
   const g = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim()
   const oldPath = process.env.PATH
@@ -286,7 +298,7 @@ test('a repeated read costs the MOVEMENT, and a commit git was never asked about
     g('add', '-A'); g('commit', '-qm', 'f moves'); const first = g('rev-parse', 'HEAD')
     writeFileSync(join(bin, 'git'), `#!/bin/sh\nprintf '%s\\n' "$*" >> ${argv}\nexec /usr/bin/git "$@"\n`)
     chmodSync(join(bin, 'git'), 0o755)
-    process.env.PATH = `${bin}:${oldPath}`
+    process.env.PATH = `${bin}${delimiter}${oldPath}`
     const x = treeSitter()
     const event = (commit: string) => ({ commit, historicalPath: 'src/repeat.ts', parents: [] })
     ledgerPath = historyEventCachePathForTests(root)
@@ -324,9 +336,9 @@ test('a repeated read costs the MOVEMENT, and a commit git was never asked about
     assert.equal(hunkQueries(), 1, 'one query for the advance, not one per window commit')
   } finally {
     process.env.PATH = oldPath
-    rmSync(bin, { recursive: true, force: true })
-    rmSync(root, { recursive: true, force: true })
-    if (ledgerPath) rmSync(dirname(ledgerPath), { recursive: true, force: true })
+    sweepTemp(bin)
+    sweepTemp(root)
+    if (ledgerPath) sweepTemp(dirname(ledgerPath))
   }
 })
 
@@ -362,7 +374,7 @@ test('an anchor verdict is invariant under a dirty .gitattributes diff-attribute
     assert.deepEqual(flipped, fresh, 'a memoized verdict must equal a fresh module\'s on the same commit and path')
     assert.deepEqual(fresh, [['f']], 'the anchored unit did move, so the verdict is a hit — an attribute may not hide it')
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    sweepTemp(root)
   }
 })
 
@@ -419,7 +431,7 @@ test('a replaced commit object and a regrafted parent are different hunk facts, 
     assert.deepEqual(after, fresh, 'after refs/replace the memoized answer must equal a fresh module\'s')
     assert.deepEqual(after, [], 'the replacement object leaves f alone, so f is no longer hit — a commit-id key would have kept the old hit')
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    sweepTemp(root)
   }
 })
 
@@ -463,7 +475,7 @@ test('a same-process diff.algorithm flip cannot change or freeze an anchor verdi
     assert.deepEqual(underHistogram, underMyers, 'repo diff.algorithm must not move the verdict')
     assert.deepEqual(underHistogram, fresh, 'and the memoized verdict must equal a fresh module\'s after the flip')
     assert.deepEqual(fresh, [['f']], 'the pinned reading attributes the realignment to the anchored line — a myers reading misses it')
-  } finally { rmSync(root, { recursive: true, force: true }) }
+  } finally { sweepTemp(root) }
 })
 
 test('an ambient color.ui cannot blank the hunk parse into a silent zero-drift verdict', { skip: !gitAvailable() && 'git not available' }, async () => {
@@ -478,7 +490,7 @@ test('an ambient color.ui cannot blank the hunk parse into a silent zero-drift v
     assert.deepEqual(colored, [['f']], 'an ANSI-coloured patch must still be parsed — zero hunks here would be a silent clean gate')
     assert.deepEqual(plain, colored, 'and color.ui must not move the verdict')
     assert.deepEqual(fresh, colored, 'nor may the memo hold a colour-blanked answer')
-  } finally { rmSync(root, { recursive: true, force: true }) }
+  } finally { sweepTemp(root) }
 })
 
 test('historical extractor memo stays stable across order and same-process repetition', { skip: !gitAvailable() && 'git not available' }, async () => {
@@ -504,7 +516,7 @@ test('historical extractor memo stays stable across order and same-process repet
         else assert.equal(hits[0]?.unparseable, undefined, 'repeat TS query must stay parseable')
       }
     } finally {
-      rmSync(root, { recursive: true, force: true })
+      sweepTemp(root)
     }
   }
 })

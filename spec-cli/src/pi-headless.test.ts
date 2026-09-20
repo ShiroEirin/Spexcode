@@ -1,3 +1,15 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -75,7 +87,9 @@ test('pi-headless interrupt aborts the running child through its rendezvous shim
   writeFileSync(fake, `
 import { appendFileSync, unlinkSync } from 'node:fs'
 import { createServer } from 'node:net'
+
 const sock = process.env.CLAUDE_BG_RENDEZVOUS_SOCK
+
 try { unlinkSync(sock) } catch {}
 const server = createServer((c) => {
   let buf = ''
@@ -97,7 +111,7 @@ setTimeout(() => process.exit(0), 20000)
   const previous = process.env.CLAUDE_BG_RENDEZVOUS_SOCK
   process.env.CLAUDE_BG_RENDEZVOUS_SOCK = rvSock(id)
   const controller = new PiHeadlessController(id, runtime, `${process.execPath} ${fake}`, process.cwd())
-  t.after(async () => { await controller.close(); process.env.CLAUDE_BG_RENDEZVOUS_SOCK = previous; rmSync(root, { recursive: true, force: true }) })
+  t.after(async () => { await controller.close(); process.env.CLAUDE_BG_RENDEZVOUS_SOCK = previous; sweepTemp(root) })
   await controller.start('INITIAL')
   await waitFor(() => existsSync(rvSock(id)))
   const r = await interruptPiHeadless({ session: id })
@@ -116,7 +130,7 @@ test('pi-headless interrupt terminates a child that never reached its first agen
   writeFileSync(fake, `setTimeout(() => {}, 60000)\n`)   // a pi still booting: no rendezvous listener, no events
   const id = `pi-headless-boot-${process.pid}`
   const controller = new PiHeadlessController(id, join(root, 'runtime'), `${process.execPath} ${fake}`, process.cwd())
-  t.after(async () => { await controller.close(); rmSync(root, { recursive: true, force: true }) })
+  t.after(async () => { await controller.close(); sweepTemp(root) })
   await controller.start('INITIAL')
   await new Promise((resolve) => setTimeout(resolve, 200))
   const r = await interruptPiHeadless({ session: id })
@@ -136,7 +150,7 @@ test('pi-headless cold proof accepts only dead controller and rendezvous listene
   const controller = new PiHeadlessController(id, join(root, 'runtime'), 'true', process.cwd())
   t.after(async () => {
     await controller.close()
-    rmSync(root, { recursive: true, force: true })
+    sweepTemp(root)
   })
   await controller.start()
   const live = await piHeadlessColdRuntime({ session: id })

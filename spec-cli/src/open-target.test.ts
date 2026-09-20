@@ -1,3 +1,15 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -26,7 +38,7 @@ test('resolves nodes before sessions and files into canonical dashboard hashes',
       cwd: root,
     })
     assert.deepEqual(target, { kind: 'node', id: 'same', hash: '#/spec/same' })
-  } finally { rmSync(root, { recursive: true, force: true }) }
+  } finally { sweepTemp(root) }
 })
 
 test('resolves session selectors to their full id', () => {
@@ -43,7 +55,7 @@ test('resolves session selectors to their full id', () => {
       id: 'abc12345-0000-0000-0000-000000000000',
       hash: '#/sessions/abc12345-0000-0000-0000-000000000000',
     })
-  } finally { rmSync(root, { recursive: true, force: true }) }
+  } finally { sweepTemp(root) }
 })
 
 test('resolves a project file and refuses paths outside the project', () => {
@@ -58,8 +70,8 @@ test('resolves a project file and refuses paths outside the project', () => {
     })
     assert.throws(() => resolveOpenTarget(join(outside, 'secret'), { root, specs: [], sessions: [], cwd: root }), /outside the project/)
   } finally {
-    rmSync(root, { recursive: true, force: true })
-    rmSync(outside, { recursive: true, force: true })
+    sweepTemp(root)
+    sweepTemp(outside)
   }
 })
 
@@ -69,5 +81,5 @@ test('fails loudly for an ambiguous session selector or missing file', () => {
     const sessions = [session('abc11111-0000-0000-0000-000000000000', 'node/one'), session('abc22222-0000-0000-0000-000000000000', 'node/two')]
     assert.throws(() => resolveOpenTarget('abc', { root, specs: [], sessions, cwd: root }), /ambiguous/)
     assert.throws(() => resolveOpenTarget('missing', { root, specs: [], sessions: [], cwd: root }), /not a file/)
-  } finally { rmSync(root, { recursive: true, force: true }) }
+  } finally { sweepTemp(root) }
 })

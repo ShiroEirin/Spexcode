@@ -1,3 +1,15 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
@@ -5,13 +17,18 @@ import { createServer } from 'node:http'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { once } from 'node:events'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, delimiter } from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import * as ts from 'typescript'
+import { killTree } from '@spexcode/spec-core'
+import { tsxBin } from './tsx-bin.js'
 
 const pkgRoot = fileURLToPath(new URL('..', import.meta.url))
 const cli = fileURLToPath(new URL('./cli.ts', import.meta.url))
+// tsx through node, resolved from this package: the `.bin/tsx` shim is an unspawnable sh script on
+// Windows, so a bare `spawnSync('tsx', …)` is an ENOENT there ([[tsx-bin]]).
+const TSX = tsxBin(pkgRoot)
 const tsxCli = join(dirname(createRequire(import.meta.url).resolve('tsx/package.json')), 'dist', 'cli.mjs')
 const WATCH_PARENT = 'create-watch-parent'
 const WATCH_CHILD = 'create-watch-child'
@@ -70,7 +87,7 @@ test('every allowed flag read as a value is declared to the positional scanner',
 test('session new keeps name and base values out of positional prompt intake', () => {
   const promptFile = join(tmpdir(), `spex-missing-prompt-${process.pid}`)
   for (const [flag, value] of [['--name', 'spaced session name'], ['--base', 'no-such-commit']]) {
-    const r = spawnSync('tsx', [cli, 'session', 'new', '--prompt-file', promptFile, flag, value], {
+    const r = spawnSync(process.execPath, [TSX, cli, 'session', 'new', '--prompt-file', promptFile, flag, value], {
       cwd: pkgRoot,
       encoding: 'utf8',
       env: { ...process.env, NODE_NO_WARNINGS: '1' },
@@ -83,7 +100,7 @@ test('session new keeps name and base values out of positional prompt intake', (
 })
 
 test('session new help documents the create-time top-level parent spelling', () => {
-  const result = spawnSync('tsx', [cli, 'session', 'new', '--help'], {
+  const result = spawnSync(process.execPath, [TSX, cli, 'session', 'new', '--help'], {
     cwd: pkgRoot, encoding: 'utf8', env: { ...process.env, NODE_NO_WARNINGS: '1' },
   })
   assert.equal(result.status, 0, result.stderr)
@@ -92,7 +109,7 @@ test('session new help documents the create-time top-level parent spelling', () 
 
 function writeGovernedSession(home: string, id: string, parent = ''): string {
   const project = dirname(execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: pkgRoot, encoding: 'utf8' }).trim())
-  const dir = join(home, 'projects', project.replace(/[/.]/g, '-'), 'sessions', id)
+  const dir = join(home, 'projects', project.replace(/[/.:\\]/g, '-'), 'sessions', id)
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, 'session.json'), JSON.stringify({
     session_id: id, governed: true, worktree_path: pkgRoot, branch: `node/${id}`,
@@ -101,7 +118,6 @@ function writeGovernedSession(home: string, id: string, parent = ''): string {
   }, null, 2) + '\n')
   return dir
 }
-
 
 async function runCreate(project: string, env: NodeJS.ProcessEnv, api?: string) {
   const child = spawn(process.execPath, [tsxCli, cli, 'session', 'new', 'probe', ...(api ? ['--api', api] : [])], {
@@ -113,7 +129,7 @@ async function runCreate(project: string, env: NodeJS.ProcessEnv, api?: string) 
   child.stdout.setEncoding('utf8').on('data', (chunk) => { stdout += chunk })
   child.stderr.setEncoding('utf8').on('data', (chunk) => { stderr += chunk })
   let killed = false
-  const timer = setTimeout(() => { killed = true; child.kill('SIGKILL') }, 6_000)
+  const timer = setTimeout(() => { killed = true; killTree(child, 'SIGKILL') }, 6_000)
   const [code] = await once(child, 'close') as [number | null]
   clearTimeout(timer)
   return { code, stdout, stderr, killed }
@@ -122,7 +138,7 @@ async function runCreate(project: string, env: NodeJS.ProcessEnv, api?: string) 
 test('session new rejects stale mode flags through the generic unknown-flag path', () => {
   for (const args of [['--mode', 'headless'], ['--headless']]) {
     const flag = args[0]
-    const r = spawnSync('tsx', [cli, 'session', 'new', 'probe', ...args], { cwd: pkgRoot, encoding: 'utf8', env: { ...process.env, NODE_NO_WARNINGS: '1' } })
+    const r = spawnSync(process.execPath, [TSX, cli, 'session', 'new', 'probe', ...args], { cwd: pkgRoot, encoding: 'utf8', env: { ...process.env, NODE_NO_WARNINGS: '1' } })
     assert.equal(r.status, 2)
     assert.equal(r.stdout, '')
     assert.equal(r.stderr, `spex session new: unknown flag ${flag}\n`)
@@ -130,7 +146,7 @@ test('session new rejects stale mode flags through the generic unknown-flag path
 })
 
 test('session new retires the out-of-band --node flag before launch', () => {
-  const r = spawnSync('tsx', [cli, 'session', 'new', 'probe', '--node', 'launch'], {
+  const r = spawnSync(process.execPath, [TSX, cli, 'session', 'new', 'probe', '--node', 'launch'], {
     cwd: pkgRoot,
     encoding: 'utf8',
     env: { ...process.env, NODE_NO_WARNINGS: '1' },
@@ -140,7 +156,7 @@ test('session new retires the out-of-band --node flag before launch', () => {
   assert.equal(r.stderr, 'spex session new: --node was removed — a session carries no spec node; put the task, and any [[<id>]] reference it needs, in the prompt\n')
 })
 
-test('session new keeps exact JSON stdout and emits the dependency receipt on stderr', async () => {
+test('session new keeps exact JSON stdout and emits the dependency receipt on stderr', { skip: process.platform === 'win32' ? 'the launch is pinned to the claude launcher, whose session runtime requires an attachable tmux host — Windows has none, so the launch cannot reach the receipt this test asserts' : false }, async () => {
   let posted: unknown = null
   const server = createServer((req, res) => {
     if (req.method === 'GET' && (req.url === '/api/instance' || req.url === '/api/settings')) {
@@ -224,7 +240,7 @@ test('session new from a governed parent establishes its child watch before prin
   assert.equal(existsSync(join(childDir, 'watchers.json')), false, 'parent watch is canonical topology, not a JSON projection')
 })
 
-test('session new uses lightweight instance authority and falls back only for explicit connection refusal', { timeout: 20_000 }, async () => {
+test('session new uses lightweight instance authority and falls back only for explicit connection refusal', { timeout: 20_000, skip: process.platform === 'win32' ? 'the fixture fakes tmux with a POSIX `#!/bin/sh` script + chmodSync 0o755, which Windows cannot execute (and it has no tmux at all), so the launcher resolution this test exercises never reaches the authority probe it asserts' : false }, async () => {
   const root = mkdtempSync(join(tmpdir(), 'spex-create-dispatch-'))
   const projectPath = join(root, 'project'); mkdirSync(projectPath)
   const project = realpathSync(projectPath), home = join(root, 'home'), bin = join(root, 'bin')
@@ -258,11 +274,11 @@ dns.lookup = function (hostname, options, callback) {
   execFileSync('git', ['-c', 'user.name=create-dispatch', '-c', 'user.email=create@example.test', 'add', '.'], { cwd: foreign })
   execFileSync('git', ['-c', 'user.name=create-dispatch', '-c', 'user.email=create@example.test', 'commit', '-qm', 'foreign fixture'], { cwd: foreign })
 
-  const runtime = join(home, 'projects', project.replace(/[/.]/g, '-'))
+  const runtime = join(home, 'projects', project.replace(/[/.:\\]/g, '-'))
   mkdirSync(runtime, { recursive: true })
   const env: NodeJS.ProcessEnv = {
     ...process.env,
-    PATH: `${bin}:${process.env.PATH}`,
+    PATH: `${bin}${delimiter}${process.env.PATH}`,
     SPEXCODE_HOME: home,
     SPEXCODE_TMUX: `create-dispatch-${process.pid}`,
     SPEXCODE_TMUX_TRACE: tmuxTrace,
@@ -460,7 +476,7 @@ dns.lookup = function (hostname, options, callback) {
     noArtifacts()
 
     const largeHome = join(root, 'large-home')
-    const largeRuntime = join(largeHome, 'projects', project.replace(/[/.]/g, '-'), 'sessions')
+    const largeRuntime = join(largeHome, 'projects', project.replace(/[/.:\\]/g, '-'), 'sessions')
     for (let i = 0; i < 256; i++) {
       const dir = join(largeRuntime, `fake-${String(i).padStart(4, '0')}`)
       mkdirSync(dir, { recursive: true }); writeFileSync(join(dir, 'session.json'), '{}')
@@ -495,6 +511,6 @@ dns.lookup = function (hostname, options, callback) {
     assert.match(refused.stderr, /session_create_failed: sessions\.defaultLauncher is required/)
     noArtifacts()
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    sweepTemp(root)
   }
 })

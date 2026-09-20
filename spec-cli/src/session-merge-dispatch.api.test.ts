@@ -1,3 +1,15 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
@@ -6,6 +18,7 @@ import net from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { killTree } from '@spexcode/spec-core'
 import { tsxBin } from './tsx-bin.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -87,9 +100,9 @@ test('merge dispatch gives the agent the short local landing flow', { timeout: 1
     const child = backend
     backend = null
     if (child.exitCode === null) {
-      try { process.kill(-child.pid!, 'SIGTERM') } catch { child.kill('SIGTERM') }
+      killTree(child, 'SIGTERM')
       await Promise.race([new Promise((resolve) => child.once('close', resolve)), new Promise((resolve) => setTimeout(resolve, 5_000))])
-      if (child.exitCode === null) { try { process.kill(-child.pid!, 'SIGKILL') } catch { child.kill('SIGKILL') } }
+      if (child.exitCode === null) killTree(child, 'SIGKILL')
     }
   }
 
@@ -146,6 +159,6 @@ test('merge dispatch gives the agent the short local landing flow', { timeout: 1
     if (id && backend) await request(base, `/api/sessions/${id}/close`, { method: 'POST' }).catch(() => {})
     await stopBackend()
     try { execFileSync('tmux', ['-L', tmux, 'kill-server'], { stdio: 'ignore' }) } catch { /* fixture server is already gone */ }
-    rmSync(fixture, { recursive: true, force: true })
+    sweepTemp(fixture)
   }
 })

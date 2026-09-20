@@ -1,3 +1,15 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
@@ -34,7 +46,7 @@ function writeCachedSession(home: string): void {
   execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: worktree })
   execFileSync('git', ['-c', 'user.name=cache-fixture', '-c', 'user.email=cache@example.test', 'commit', '--allow-empty', '-qm', 'fixture'], { cwd: worktree })
   const project = dirname(execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: pkgRoot, encoding: 'utf8' }).trim())
-  const dir = join(home, 'projects', project.replace(/[/.]/g, '-'), 'sessions', ID)
+  const dir = join(home, 'projects', project.replace(/[/.:\\]/g, '-'), 'sessions', ID)
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, 'session.json'), `${JSON.stringify({
     session_id: ID, governed: true, worktree_path: worktree, branch: 'main', title: 'cached read', name: '', parent: null,
@@ -77,7 +89,7 @@ test('cache reads use the local store with unknown liveness only when no backend
     assert.match(review.stdout, new RegExp(`"id": "${ID}"`))
     assert.match(review.stderr, /source: local session store \(liveness unknown\)/)
   } finally {
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
   }
 })
 
@@ -85,7 +97,7 @@ test('selectors resolve a canonical application row without a runtime envelope',
   const home = mkdtempSync(join(tmpdir(), 'spex-client-canonical-cache-'))
   const port = await refusedPort()
   const project = dirname(execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: pkgRoot, encoding: 'utf8' }).trim())
-  const records = join(home, 'projects', project.replace(/[/.]/g, '-'), 'sessions', CANONICAL_ID)
+  const records = join(home, 'projects', project.replace(/[/.:\\]/g, '-'), 'sessions', CANONICAL_ID)
   mkdirSync(records, { recursive: true })
   const databasePath = join(home, 'sessions.sqlite')
   writeFileSync(`${databasePath}.json-migration.json`, JSON.stringify({ version: 1, sourceDigest: 'fixture' }) + '\n')
@@ -101,7 +113,7 @@ test('selectors resolve a canonical application row without a runtime envelope',
     assert.match(ls.stdout, /"status": "close-pending"/)
     assert.match(ls.stdout, /"note": "canonical row"/)
   } finally {
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
   }
 })
 
@@ -115,7 +127,7 @@ test('explicit remote routing stays loud when its port is unreachable', { timeou
     assert.doesNotMatch(result.stderr, /source: local session store/)
     assert.equal(result.stdout, '')
   } finally {
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
   }
 })
 
@@ -136,6 +148,6 @@ test('a backend HTTP 500 is not replaced by the local cache', { timeout: 15_000 
   } finally {
     server.close()
     await once(server, 'close')
-    rmSync(home, { recursive: true, force: true })
+    sweepTemp(home)
   }
 })

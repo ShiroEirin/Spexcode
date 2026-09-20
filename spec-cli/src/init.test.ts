@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { chmodSync, mkdirSync, mkdtempSync, writeFileSync, readFileSync, readdirSync, existsSync, rmSync } from 'node:fs'
-import { join, dirname } from 'node:path'
+import { join, dirname, delimiter } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { execFileSync, spawnSync } from 'node:child_process'
@@ -288,7 +288,7 @@ test('a fresh selected-harness default drives no-choice session creation and pin
   const createEnv = {
     ...env,
     SPEX_SESSION_DATABASE_PATH: join(home, 'sessions.sqlite'),
-    PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+    PATH: `${fakeBin}${delimiter}${process.env.PATH ?? ''}`,
     SPEXCODE_API_URL: `http://127.0.0.1:${refusedPort}`,
     SPEXCODE_TMUX: `safe-init-${process.pid}`,
   }
@@ -304,7 +304,7 @@ test('a fresh selected-harness default drives no-choice session creation and pin
   assert.equal(created.launcher, 'codex')
   assert.equal(created.harness, 'codex')
 
-  const projectKey = proj.replace(/[/.]/g, '-')
+  const projectKey = proj.replace(/[/.:\\]/g, '-')
   const rec = JSON.parse(readFileSync(join(home, 'projects', projectKey, 'sessions', created.id, 'runtime.json'), 'utf8'))
   assert.equal(rec.launcher, 'codex')
   assert.equal(rec.harness, 'codex')
@@ -321,7 +321,7 @@ test('post-checkout defers only the session-owned refresh', { skip: !gitAvailabl
   const fakeSpex = join(bin, 'spex')
   writeFileSync(fakeSpex, '#!/bin/sh\nprintf "%s\\n" "$*" >> "$SPEX_POST_CHECKOUT_TRACE"\n')
   chmodSync(fakeSpex, 0o755)
-  const hookEnv = { ...env, PATH: `${bin}:${process.env.PATH}`, SPEX_POST_CHECKOUT_TRACE: trace }
+  const hookEnv = { ...env, PATH: `${bin}${delimiter}${process.env.PATH}`, SPEX_POST_CHECKOUT_TRACE: trace }
   const deferred = join(proj, '.worktrees', 'deferred')
   execFileSync('git', ['-C', proj, 'worktree', 'add', '-b', 'node/deferred', deferred, 'HEAD'], {
     env: { ...hookEnv, SPEXCODE_DEFER_FOOTPRINT_REFRESH: 'session-create' },
@@ -418,7 +418,7 @@ function createSessionWithDefaultLauncher(proj: string, home: string, env: NodeJ
     env: {
       ...env,
       SPEX_SESSION_DATABASE_PATH: join(home, 'sessions.sqlite'),
-      PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+      PATH: `${fakeBin}${delimiter}${process.env.PATH ?? ''}`,
       SPEXCODE_API_URL: `http://127.0.0.1:${refusedPort}`,
       SPEXCODE_TMUX: `pure-init-${process.pid}`,
     },

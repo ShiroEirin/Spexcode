@@ -1,3 +1,15 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { chmodSync, existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
@@ -371,8 +383,8 @@ test('a held old-topology splice rebases after full completion and cannot erase 
   } finally {
     rmSync(gate.hold, { force: true })
     process.env.PATH = previousPath
-    try { g('worktree', 'remove', '--force', linked) } catch { rmSync(linked, { recursive: true, force: true }) }
-    rmSync(gateRoot, { recursive: true, force: true })
+    try { g('worktree', 'remove', '--force', linked) } catch { sweepTemp(linked) }
+    sweepTemp(gateRoot)
   }
 })
 
@@ -400,7 +412,7 @@ test('a splice retains its base full revision so patrol still repairs an unseen 
   } finally {
     rmSync(gate.hold, { force: true })
     process.env.PATH = previousPath
-    rmSync(gateRoot, { recursive: true, force: true })
+    sweepTemp(gateRoot)
   }
 })
 
@@ -427,7 +439,7 @@ test('a second session invalidation during one splice converges to its newest ge
   } finally {
     rmSync(gate.hold, { force: true })
     process.env.PATH = previousPath
-    rmSync(gateRoot, { recursive: true, force: true })
+    sweepTemp(gateRoot)
   }
 })
 
@@ -462,7 +474,7 @@ test('a held session splice keeps stale reads refreshing without starting a full
   } finally {
     rmSync(gate.hold, { force: true })
     process.env.PATH = previousPath
-    rmSync(gateRoot, { recursive: true, force: true })
+    sweepTemp(gateRoot)
   }
 })
 
@@ -511,8 +523,8 @@ test('a full completion re-bases a published session projection and leaves only 
   } finally {
     rmSync(gate.hold, { force: true })
     process.env.PATH = previousPath
-    try { g('worktree', 'remove', '--force', linked) } catch { rmSync(linked, { recursive: true, force: true }) }
-    rmSync(gateRoot, { recursive: true, force: true })
+    try { g('worktree', 'remove', '--force', linked) } catch { sweepTemp(linked) }
+    sweepTemp(gateRoot)
   }
 })
 
@@ -595,9 +607,9 @@ test('archiving a dirty worktree subtracts its overlays without a full git walk'
     writeSessionRecord({ status: 'active', note: 'archive fixture restored', worktree_path: proj, branch: 'node/child-bs01', archived: false, stopped: false, cold_proof: '' })
     cache.invalidateBoard('full')
     await cache.getBoard()
-    try { g('worktree', 'remove', '--force', linked) } catch { rmSync(linked, { recursive: true, force: true }) }
+    try { g('worktree', 'remove', '--force', linked) } catch { sweepTemp(linked) }
     try { g('branch', '-qD', 'node/archive-subtractive') } catch { /* already removed */ }
-    rmSync(gitRoot, { recursive: true, force: true })
+    sweepTemp(gitRoot)
   }
 })
 
@@ -628,6 +640,6 @@ test('an unrelated worktree root is not a board input, so its birth and death st
     assert.equal(rebuilt.nodes.find((n: any) => n.id === 'child')?.title, 'Child Node AFTER IGNORED ROOTS',
       'a real graph input still rebuilds after the ignored roots came and went')
   } finally {
-    try { g('worktree', 'remove', '--force', ignored) } catch { rmSync(ignored, { recursive: true, force: true }) }
+    try { g('worktree', 'remove', '--force', ignored) } catch { sweepTemp(ignored) }
   }
 })

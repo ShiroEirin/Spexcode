@@ -1,3 +1,15 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import assert from 'node:assert/strict'
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -7,7 +19,7 @@ import { dirname, join, resolve } from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { SESSION_FILE_PREVIEW_MAX_BYTES, sessionFilesPath } from './session-files.js'
-import { sessionStoreDir } from '@spexcode/spec-core'
+import { killTree, sessionStoreDir } from '@spexcode/spec-core'
 import { tsxBin } from './tsx-bin.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -214,7 +226,7 @@ test('public session files CLI stores a live path and the backend authorizes onl
       backend.kill('SIGTERM')
       await new Promise<void>((done) => backend?.once('close', () => done()))
     }
-    rmSync(fixture, { recursive: true, force: true })
+    sweepTemp(fixture)
   }
 })
 
@@ -305,10 +317,10 @@ test('a prompt that carries a completed upload posts it to the receiving session
   } finally {
     if (session) await fetch(`${base}/api/sessions/${session}/close`, { method: 'POST' }).catch(() => {})
     if (backend.pid && backend.exitCode === null) {
-      try { process.kill(-backend.pid, 'SIGTERM') } catch { backend.kill('SIGTERM') }
+      killTree(backend, 'SIGTERM')
       await new Promise<void>((done) => backend.once('close', () => done()))
     }
     for (const path of uploaded) rmSync(path, { force: true })
-    rmSync(fixture, { recursive: true, force: true })
+    sweepTemp(fixture)
   }
 })

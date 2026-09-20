@@ -1,10 +1,22 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import assert from 'node:assert/strict'
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { once } from 'node:events'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import net from 'node:net'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, delimiter } from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { codexAppServerPid, codexAppServerReceipt, codexAppServerSock } from './codex-harness.js'
@@ -59,8 +71,6 @@ async function stopDetachedOwner(owner: ReturnType<typeof spawnDetachedRuntime> 
     await new Promise((resolve) => setTimeout(resolve, 20))
   }
 }
-
-
 
 async function runCli(args: string[], cwd: string, env: NodeJS.ProcessEnv): Promise<{ code: number | null; stdout: string; stderr: string }> {
   const child = spawn(process.execPath, ['--import', import.meta.resolve('tsx'), join(here, 'cli.ts'), ...args], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] })
@@ -140,7 +150,7 @@ test('close refuses active native turns and missing evidence while retaining rec
   const project = join(fixture, 'project')
   const home = join(fixture, 'home')
   const codexHome = join(fixture, 'codex-home')
-  const runtime = join(home, 'projects', project.replace(/[/.]/g, '-'))
+  const runtime = join(home, 'projects', project.replace(/[/.:\\]/g, '-'))
   const sessions = join(runtime, 'sessions')
   const socketDir = join(fixture, 'sockets')
   const spec = join(project, '.spec', 'project', 'spec.md')
@@ -208,7 +218,7 @@ test('close refuses active native turns and missing evidence while retaining rec
     const port = await freePort()
     const env: NodeJS.ProcessEnv = {
       ...process.env,
-      PATH: `${bin}:${process.env.PATH || ''}`,
+      PATH: `${bin}${delimiter}${process.env.PATH || ''}`,
       PORT: String(port),
       SPEXCODE_HOME: home,
       SPEXCODE_CODEX_SOCKET_DIR: socketDir,
@@ -259,6 +269,6 @@ test('close refuses active native turns and missing evidence while retaining rec
     else process.env.SPEXCODE_CODEX_SOCKET_DIR = previousSocketDir
     if (previousDatabasePath === undefined) delete process.env.SPEX_SESSION_DATABASE_PATH
     else process.env.SPEX_SESSION_DATABASE_PATH = previousDatabasePath
-    rmSync(fixture, { recursive: true, force: true })
+    sweepTemp(fixture)
   }
 })

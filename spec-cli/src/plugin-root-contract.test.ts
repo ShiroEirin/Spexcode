@@ -1,3 +1,15 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
@@ -54,11 +66,11 @@ test('the public plugin instance root drives discovery and the legacy-tree guard
       { name: 'system-spec', dir: join('.spec', 'project', 'plugin-system', 'system-spec') },
     ])
 
-    rmSync(join(root, loaded.root), { recursive: true, force: true })
+    sweepTemp(join(root, loaded.root))
     assert.ok(!existsSync(join(root, loaded.root)))
     const legacy = probe(project)
     assert.match(legacy.error ?? '', new RegExp(`\\.spec/project/\\.config exists but \\.spec/project/${escapeRegex(legacy.root)} does not`))
   } finally {
-    rmSync(project, { recursive: true, force: true })
+    sweepTemp(project)
   }
 })

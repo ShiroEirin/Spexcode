@@ -1,3 +1,15 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import assert from 'node:assert/strict'
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -41,7 +53,7 @@ test('generation ledger cache avoids unchanged reads and invalidates on replacem
     assert.equal(readCodexGenerationLedger(root).revision, 1)
     assert.equal(codexGenerationLedgerCacheStatsForTests(root).reads, 2)
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    sweepTemp(root)
   }
 })
 
@@ -183,7 +195,7 @@ test('detached-v3 switch preserves a populated legacy generation while new traff
         try { process.kill(pid, 'SIGTERM') } catch { /* reclaimed or already gone */ }
       }
     }
-    rmSync(root, { recursive: true, force: true })
+    sweepTemp(root)
   }
 })
 
@@ -219,7 +231,7 @@ test('archived historical bindings do not pin a zero-reference draining generati
         try { process.kill(pid, 'SIGTERM') } catch { /* already reclaimed */ }
       }
     }
-    rmSync(root, { recursive: true, force: true })
+    sweepTemp(root)
   }
 })
 
@@ -260,7 +272,7 @@ test('an explicit app-server switch moves only new Codex traffic to a proved fre
         try { process.kill(pid, 'SIGTERM') } catch { /* reclaimed or already gone */ }
       }
     }
-    rmSync(root, { recursive: true, force: true })
+    sweepTemp(root)
   }
 })
 
@@ -320,7 +332,7 @@ test('a host restart retires the gone root and re-pins its sessions, while an un
         try { process.kill(pid, 'SIGTERM') } catch { /* reclaimed or already gone */ }
       }
     }
-    rmSync(root, { recursive: true, force: true })
+    sweepTemp(root)
   }
 })
 

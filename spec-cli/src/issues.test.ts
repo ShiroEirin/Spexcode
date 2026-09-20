@@ -1,3 +1,15 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
@@ -5,6 +17,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { execFileSync } from 'node:child_process'
 
+import { tsxBin } from './tsx-bin.js'
 import { fromForge, issueHierarchy, issueRefs, mergedIssues, type Issue } from './issues.js'
 import { closeLocalIssue, loadLocalIssues, loadOne, openIssue, relateLocalIssue, reparentLocalIssue } from './localIssues.js'
 
@@ -25,7 +38,7 @@ function withDisposableStore(fn: () => void): void {
   try { fn() } finally {
     if (previous === undefined) delete process.env.SPEXCODE_ISSUES_DIR
     else process.env.SPEXCODE_ISSUES_DIR = previous
-    rmSync(dir, { recursive: true, force: true })
+    sweepTemp(dir)
   }
 }
 
@@ -199,7 +212,7 @@ test('legacy rejected local issues stay closed in the current two-state lifecycl
   } finally {
     if (previous === undefined) delete process.env.SPEXCODE_ISSUES_DIR
     else process.env.SPEXCODE_ISSUES_DIR = previous
-    rmSync(dir, { recursive: true, force: true })
+    sweepTemp(dir)
   }
 })
 
@@ -244,7 +257,6 @@ test('a forge issue carries the close instant its host recorded', () => {
   assert.equal(closed.closedAt, '2026-09-13T08:28:18Z')
 })
 
-
 // The landing merge is authored in a TEMPORARY DETACHED WORKTREE ([[local-issues]] and the merge skill's
 // step 4), so the post-merge nudge normally runs where a store write is refused. It must not name a command
 // that tree rejects; from the trunk itself nothing changes. `repoRoot()` is resolved once per process, so the
@@ -254,8 +266,10 @@ test('post-merge nudge names `issue open` only where the store would accept it',
   const trunk = join(dir, 'trunk')
   const linked = join(dir, 'landing')
   const cli = join(import.meta.dirname, 'cli.ts')
+  // tsxBin + node: the project's own cross-platform spelling ([[tsx-bin]] — the .bin shim is an
+  // unspawnable sh script on Windows, and `npx` is not on PATH under every runner).
   const run = (cwd: string) =>
-    execFileSync('npx', ['tsx', cli, 'internal', 'nudge', 'node/demo'], { cwd, encoding: 'utf8' })
+    execFileSync(process.execPath, [tsxBin(join(import.meta.dirname, '..')), cli, 'internal', 'nudge', 'node/demo'], { cwd, encoding: 'utf8' })
   try {
     mkdirSync(trunk, { recursive: true })
     execFileSync('git', ['init', '-q', '-b', 'main', '.'], { cwd: trunk })
@@ -276,7 +290,7 @@ test('post-merge nudge names `issue open` only where the store would accept it',
     assert.match(fromLinked, /spex issue ls/, 'reads still resolve to the trunk, so keep offering the read')
     assert.match(fromLinked, /CLOSE what you finished/, 'the close half is unaffected')
   } finally {
-    rmSync(dir, { recursive: true, force: true })
+    sweepTemp(dir)
   }
 })
 
@@ -301,6 +315,6 @@ test('a local issue id keeps the unicode letters, numbers, and combining marks o
   } finally {
     if (previous === undefined) delete process.env.SPEXCODE_ISSUES_DIR
     else process.env.SPEXCODE_ISSUES_DIR = previous
-    rmSync(dir, { recursive: true, force: true })
+    sweepTemp(dir)
   }
 })

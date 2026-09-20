@@ -1,3 +1,15 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs'
@@ -108,7 +120,7 @@ test('exact-directory transport reconciles directory paths idempotently and clos
     assert.equal(failures.length, 0)
   } finally {
     registry.close()
-    rmSync(root, { recursive: true, force: true })
+    sweepTemp(root)
   }
 })
 
@@ -153,7 +165,7 @@ test('consolidated transport registers one watch per root regardless of corpus w
     assert.equal(failures.length, 0)
   } finally {
     registry.close()
-    rmSync(root, { recursive: true, force: true })
+    sweepTemp(root)
   }
 })
 
@@ -205,7 +217,7 @@ test('a refused registration fails once, reclaims every partial handle, and retr
     assert.match(failures[2].message, /fixture.*\/a.*EMFILE/)
   } finally {
     registry.close()
-    rmSync(root, { recursive: true, force: true })
+    sweepTemp(root)
   }
 })
 
@@ -231,7 +243,7 @@ test('the census counts live registrations and returns to its floor on close', (
   } finally {
     exact.close()
     consolidated.close()
-    rmSync(root, { recursive: true, force: true })
+    sweepTemp(root)
   }
   assert.deepEqual(graphWatcherCensus(), floor, 'close returns every handle the registries took')
 })
@@ -304,7 +316,7 @@ test('worktree watcher observes source, rename, sidecar, and index inputs', asyn
     assert.equal(failures, 0)
   } finally {
     try { watchers.close() } catch { /* closed by the failure path */ }
-    rmSync(root, { recursive: true, force: true })
+    sweepTemp(root)
   }
 })
 
@@ -330,7 +342,7 @@ test('refs watcher fails partial attach and survives repeated atomic ref replace
     assert.equal(failures, 0)
     watchers.close()
   } finally {
-    rmSync(common, { recursive: true, force: true })
+    sweepTemp(common)
   }
 })
 
@@ -353,7 +365,7 @@ test('worktree registry watcher closes and reopens without duplicate delivery', 
     watcher.close()
     assert.equal(failures, 0)
   } finally {
-    rmSync(registry, { recursive: true, force: true })
+    sweepTemp(registry)
   }
 })
 

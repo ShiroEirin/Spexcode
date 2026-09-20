@@ -1,9 +1,21 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, chmodSync, existsSync, readFileSync, renameSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, delimiter } from 'node:path'
 
 import { driftFor, ancestorsOf, primeAncestorClosures, inAncestors, mergeBaseDiff, worktreeSpecDelta, worktreeSpecDeltas, driftIndex, historyIndex, sourceIndexes, sourceIndexesFull, rowsFor, pathRangeEvents, historyCacheStats, pruneHistoryCaches, resetHistoryCachesForTests, historyEventCachePathForTests, withGitAbortSignal, git, gitA, gitBinary, batchRevisionOids, batchBlobTexts, combinedDiffOwnedChanges, unionTopology, GitWorkspaceError, type DriftIndex } from '@spexcode/spec-core'
 import { loadSpecs } from '@spexcode/spec-core'
@@ -33,7 +45,7 @@ test('gitBinary resolves Git for Windows through PATHEXT', { skip: process.platf
   try {
     assert.equal(gitBinary({ PATH: bin, PATHEXT: '.COM;.EXE;.BAT;.CMD' }).toLowerCase(), executable.toLowerCase())
   } finally {
-    rmSync(bin, { recursive: true, force: true })
+    sweepTemp(bin)
   }
 })
 
@@ -56,7 +68,7 @@ test('every history entrance gives a non-Git workspace the same actionable preco
       })
     }
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    sweepTemp(root)
     resetHistoryCachesForTests()
   }
 })
@@ -127,8 +139,8 @@ test('one persistent event transaction stays full-history-equivalent across seed
     resetHistoryCachesForTests()
     assert.equal(driftFor(await driftIndex(root), version, 'src/a.ts', 'a'), 0, 'a new-process same-tip reopen preserves checkpoint coverage')
   } finally {
-    if (cachePath) rmSync(dirname(cachePath), { recursive: true, force: true })
-    rmSync(root, { recursive: true, force: true })
+    if (cachePath) sweepTemp(dirname(cachePath))
+    sweepTemp(root)
   }
 })
 
@@ -154,7 +166,7 @@ test('one topology pass primes the exact independent closures for a branchy fork
   assert.equal(idx.anc.has('off-history'), false, 'unreachable inputs retain ancestorsOf\'s conservative absence')
 })
 
-test('raw identity drift preserves root, path, rename, and merge identity', async () => {
+test('raw identity drift preserves root, path, rename, and merge identity', { skip: process.platform === 'win32' ? 'the fixture needs a pathname containing byte 0x1e (the NUL-stream separator it proves cannot reframe the parse); Windows forbids that byte in a filename' : false }, async () => {
   const root = mkdtempSync(join(tmpdir(), 'spex-drift-raw-'))
   const run = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim()
   const quiet = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
@@ -250,8 +262,8 @@ test('raw identity drift preserves root, path, rename, and merge identity', asyn
     assert.ok(metadataIndex.selfAcks?.get(metadataAck)?.has('a'), 'a control byte in the subject cannot reframe Spec-OK metadata')
     assert.equal(driftFor(metadataIndex, version, rsPath, 'a'), 0, 'the only post-checkpoint content ack quiets itself')
   } finally {
-    if (cachePath) rmSync(dirname(cachePath), { recursive: true, force: true })
-    rmSync(root, { recursive: true, force: true })
+    if (cachePath) sweepTemp(dirname(cachePath))
+    sweepTemp(root)
     resetHistoryCachesForTests()
   }
 })
@@ -275,8 +287,8 @@ test('raw identity drift accepts SHA-256 commit ids', async () => {
     assert.equal(version.length, 64)
     assert.equal(driftFor(cached, version, 'src/a.ts'), 1)
   } finally {
-    if (cachePath) rmSync(dirname(cachePath), { recursive: true, force: true })
-    rmSync(root, { recursive: true, force: true })
+    if (cachePath) sweepTemp(dirname(cachePath))
+    sweepTemp(root)
     resetHistoryCachesForTests()
   }
 })
@@ -293,7 +305,7 @@ test('batch revision/blob reads preserve exact bytes, including large newline bl
     const [oid, missing] = await batchRevisionOids(root, [`${head}:src/blob.txt`, `${head}:src/missing.txt`])
     assert.ok(oid && !missing)
     assert.equal((await batchBlobTexts(root, [oid!])).get(oid!), text)
-  } finally { rmSync(root, { recursive: true, force: true }) }
+  } finally { sweepTemp(root) }
 })
 
 test('combined diff ownership is line-level across mixed, deletion, and octopus prefixes', () => {
@@ -499,7 +511,7 @@ test('history keeps reachable one-parent spec versions hidden by a TREESAME merg
     assert.deepEqual(rows.map((row) => row.hash), [reverted, changed, base],
       'full history must still order every descendant before its ancestor when commit timestamps tie')
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    sweepTemp(root)
   }
 })
 
@@ -539,7 +551,7 @@ test('parallel old-path edits survive a later-walked rename and keep walk-newest
     assert.deepEqual(rows.map((row) => row.hash), [main, side, base])
     assert.equal(rows[0].reason, 'main edits A')
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    sweepTemp(root)
   }
 })
 
@@ -595,7 +607,7 @@ test('parallel spec versions prove that reset drift debt is not a scalar merge f
       'the same hit reappears as debt relative to selected A, although both scalar parent debts were empty')
     assert.equal((didx.fileEvents.get('f.py') ?? []).some((event) => event.commit === hit), true)
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    sweepTemp(root)
   }
 })
 
@@ -629,7 +641,7 @@ test('reusing an old path after a rename starts a separate history', async () =>
     assert.deepEqual(rowsFor(idx, newPath).map((row) => row.hash), [renamed, old])
     assert.deepEqual(rowsFor(idx, oldPath).map((row) => row.hash), [reused])
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    sweepTemp(root)
   }
 })
 
@@ -654,7 +666,7 @@ test('a repeated-result merge rename keeps the side hit on the new lineage', asy
     const events = pathRangeEvents(idx, base, newPath)
     assert.ok(events?.some((event) => event.commit === hit), 'side hit must follow the repeated-result rename')
     assert.equal(driftFor(idx, base, newPath), 2, 'the hit and its restoring commit remain in the new lineage')
-  } finally { rmSync(root, { recursive: true, force: true }) }
+  } finally { sweepTemp(root) }
 })
 
 // One branchy fixture for the whole rename projection: a merge that renames against BOTH parents (its
@@ -748,8 +760,8 @@ test('the rename projection holds equal-commit merge peers, an incomparable fork
     assert.deepEqual(events(drift, oldPath), events(fullDrift, oldPath))
     assert.deepEqual([...drift.lineageEvents.keys()].sort(), [...fullDrift.lineageEvents.keys()].sort())
   } finally {
-    if (cachePath) rmSync(dirname(cachePath), { recursive: true, force: true })
-    rmSync(root, { recursive: true, force: true })
+    if (cachePath) sweepTemp(dirname(cachePath))
+    sweepTemp(root)
   }
 })
 
@@ -857,7 +869,7 @@ test('clean worktree delta pairs keep empty, edit, and rename frames in request 
   assert.equal(renameOutcome.ops[0]?.op, 'moved')
 })
 
-test('an explicit pending tip never occupies or evicts the root-owned HEAD index caches', async () => {
+test('an explicit pending tip never occupies or evicts the root-owned HEAD index caches', { skip: process.platform === 'win32' ? 'the fixture intercepts git with a POSIX sh shim (#!/bin/sh + chmodSync); Windows PATH lookup cannot execute a shebang script' : false }, async () => {
   const { root, run } = specRepo()
   const [headHistory, headDrift] = await Promise.all([historyIndex(root), driftIndex(root)])
   const before = historyCacheStats()
@@ -899,7 +911,7 @@ test('an unborn HEAD is an empty history, not a Git ref to query', async () => {
     assert.notEqual(afterDrift, drift, 'the first real commit replaces the unborn cache identity')
     assert.equal(afterDrift.tip, run('rev-parse', 'HEAD'))
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    sweepTemp(root)
     resetHistoryCachesForTests()
   }
 })
@@ -941,9 +953,9 @@ test('independent same-HEAD clones never share a source index across repository 
     assert.equal(rowsFor(dirtyHistory, specPath).length, 2, 'an uncommitted attributes file cannot erase immutable content versions')
     cachePaths = [historyEventCachePathForTests(first), historyEventCachePathForTests(second)]
   } finally {
-    for (const cachePath of cachePaths) rmSync(dirname(cachePath), { recursive: true, force: true })
-    rmSync(parent, { recursive: true, force: true })
-    rmSync(root, { recursive: true, force: true })
+    for (const cachePath of cachePaths) sweepTemp(dirname(cachePath))
+    sweepTemp(parent)
+    sweepTemp(root)
     resetHistoryCachesForTests()
   }
 })
@@ -967,8 +979,8 @@ test('linked worktrees at one head share the one immutable source-index pair', a
     })
   } finally {
     try { run('worktree', 'remove', '--force', linked) } catch { /* fixture cleanup continues */ }
-    rmSync(parent, { recursive: true, force: true })
-    rmSync(root, { recursive: true, force: true })
+    sweepTemp(parent)
+    sweepTemp(root)
     resetHistoryCachesForTests()
   }
 })
@@ -989,7 +1001,7 @@ test('history caches release roots that leave the live session census', async ()
     assert.deepEqual(historyCacheStats(), { historyHeads: 1, driftHeads: 1, historyRoots: 2, driftRoots: 2 }, 'a later live root reclaims the shared immutable entry')
   } finally {
     try { run('worktree', 'remove', '--force', linked) } catch { /* fixture cleanup continues */ }
-    rmSync(parent, { recursive: true, force: true })
+    sweepTemp(parent)
     resetHistoryCachesForTests()
   }
 })
@@ -998,7 +1010,7 @@ test('history caches release roots that leave the live session census', async ()
 // BYTES, so width per path is as good as path count and a hundredth of the fast-import cost.
 function prefixRepo(paths: number, pathLength: number): { root: string; streamBytes: number } {
   const root = mkdtempSync(join(tmpdir(), 'spex-prefix-'))
-  const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim()
+  const realGit = execFileSync(process.platform === 'win32' ? 'where' : 'which', ['git'], { encoding: 'utf8' }).trim().split(/\r?\n/)[0]
   const run = (...args: string[]) => execFileSync(realGit, ['-C', root, ...args], { encoding: 'utf8' }).trim()
   run('init', '-q', '-b', 'main')
   run('config', 'user.email', 'test@example.com')
@@ -1021,23 +1033,23 @@ test('the synchronous Git adapter returns a complete repository name stream beyo
     assert.ok(Buffer.byteLength(actual) > (1 << 20), 'adapter truncated the large tree response')
     assert.equal(actual.split('\0').filter(Boolean).length, 5000)
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    sweepTemp(root)
   }
 })
 
 // ---- the build context's pack-footprint boundary: bounded inside, git's defaults outside ----
 
-test('a graph build bounds its git children\'s pack footprint, and calls outside the build do not', async () => {
+test('a graph build bounds its git children\'s pack footprint, and calls outside the build do not', { skip: process.platform === 'win32' ? 'the fixture intercepts git with a POSIX sh shim (#!/bin/sh + chmodSync); Windows PATH lookup cannot execute a shebang script' : false }, async () => {
   const { root } = prefixRepo(3, 20)
   const bin = mkdtempSync(join(tmpdir(), 'spex-limits-bin-'))
-  const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim()
+  const realGit = execFileSync(process.platform === 'win32' ? 'where' : 'which', ['git'], { encoding: 'utf8' }).trim().split(/\r?\n/)[0]
   const argvLog = join(bin, 'argv.log')
   const shim = join(bin, 'git')
   writeFileSync(argvLog, '')
   writeFileSync(shim, `#!/bin/sh\nprintf '%s\\n' "$*" >> "${argvLog}"\nexec "${realGit}" "$@"\n`)
   chmodSync(shim, 0o755)
   const oldPath = process.env.PATH
-  process.env.PATH = `${bin}:${oldPath || ''}`
+  process.env.PATH = `${bin}${delimiter}${oldPath}`
   const lines = () => readFileSync(argvLog, 'utf8').split('\n').filter(Boolean)
   const LIMITS = ['core.packedGitWindowSize=1m', 'core.packedGitLimit=32m', 'core.deltaBaseCacheLimit=1m']
   try {
@@ -1066,8 +1078,8 @@ test('a graph build bounds its git children\'s pack footprint, and calls outside
     assert.ok(LIMITS.every((flag) => !lines()[0].includes(flag)), 'the bound leaked past the build context')
   } finally {
     process.env.PATH = oldPath
-    rmSync(root, { recursive: true, force: true })
-    rmSync(bin, { recursive: true, force: true })
+    sweepTemp(root)
+    sweepTemp(bin)
   }
 })
 
@@ -1089,6 +1101,6 @@ test('the pack-footprint bound does not change what a build reads, and an abort 
     assert.equal(await gitA(['definitely-not-a-git-command'], 'x'.repeat(8 << 20)), '', 'a large stdin write survives an immediate command failure')
     assert.equal(await gitA(['-C', join(root, 'missing'), 'cat-file', '--batch-check'], `${'0'.repeat(40)}\n`.repeat(200_000)), '', 'a large stdin write survives an immediate repository failure')
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    sweepTemp(root)
   }
 })

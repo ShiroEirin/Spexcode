@@ -1,9 +1,21 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, delimiter } from 'node:path'
 
 const project = mkdtempSync(join(tmpdir(), 'spex-graph-cache-'))
 const home = mkdtempSync(join(tmpdir(), 'spex-graph-cache-home-'))
@@ -14,7 +26,8 @@ const permitRelease = join(bin, 'permit-release')
 const shim = join(bin, 'git')
 const argvLog = join(bin, 'argv.log')
 const pidLog = join(bin, 'pids.log')
-const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim()
+// `which` is a POSIX utility; Windows has `where`. Both print the resolved path on the first line.
+const realGit = execFileSync(process.platform === 'win32' ? 'where' : 'which', ['git'], { encoding: 'utf8' }).trim().split(/\r?\n/)[0]
 const run = (...args: string[]) => execFileSync(realGit, ['-C', project, ...args], { encoding: 'utf8' })
 
 run('init', '-q', '-b', 'main')
@@ -40,7 +53,7 @@ fi
 exec "${realGit}" "$@"
 `)
 chmodSync(shim, 0o755)
-process.env.PATH = `${bin}:${process.env.PATH || ''}`
+process.env.PATH = `${bin}${delimiter}${process.env.PATH || ''}`
 process.env.SPEXCODE_HOME = home
 process.env.SPEXCODE_TMUX = 'spex-graph-cache-test'
 process.env.SPEXCODE_BOARD_BUILD_TIMEOUT_MS = '1000'
@@ -69,7 +82,7 @@ function hungHistoryPids(): number[] {
   })
 }
 
-test('dirty stale readers are immediate while one fresh flight owns completion', { concurrency: false }, async () => {
+test('dirty stale readers are immediate while one fresh flight owns completion', { concurrency: false, skip: process.platform === 'win32' ? 'the fixture intercepts git with a POSIX sh shim (#!/bin/sh + chmodSync); Windows PATH lookup cannot execute a shebang script' : false }, async () => {
   rmSync(trigger, { force: true })
   cache.invalidateBoard('full')
   const warm = await cache.getBoard()
@@ -139,7 +152,7 @@ test('dirty stale readers are immediate while one fresh flight owns completion',
   assert.ok(after.historyRoots <= 1 && after.driftRoots <= 1, `fixture root slots grew: ${JSON.stringify(after)}`)
 })
 
-test('one graph build bounds git spawn fanout and abort removes queued work', { concurrency: false }, async () => {
+test('one graph build bounds git spawn fanout and abort removes queued work', { concurrency: false, skip: process.platform === 'win32' ? 'the fixture intercepts git with a POSIX sh shim (#!/bin/sh + chmodSync); Windows PATH lookup cannot execute a shebang script' : false }, async () => {
   rmSync(trigger, { force: true })
   rmSync(permitRelease, { force: true })
   writeFileSync(permitTrigger, 'hang\n')
@@ -170,7 +183,7 @@ test('one graph build bounds git spawn fanout and abort removes queued work', { 
   assert.ok((await git.gitA(['-C', project, 'rev-parse', 'HEAD'])).trim(), 'ordinary git remained blocked by the graph pool')
 })
 
-test('revision fence consumes a fresh publication after a held stale flight', { concurrency: false }, async () => {
+test('revision fence consumes a fresh publication after a held stale flight', { concurrency: false, skip: process.platform === 'win32' ? 'the fixture intercepts git with a POSIX sh shim (#!/bin/sh + chmodSync); Windows PATH lookup cannot execute a shebang script' : false }, async () => {
   let publishedRevision = 0
   let invalidations = 0
   let releaseHeld!: () => void
@@ -196,9 +209,19 @@ test('revision fence consumes a fresh publication after a held stale flight', { 
   assert.equal(waits, 2, 'the fence waits for the next publication instead of returning old rows')
 })
 
-test.after(() => {
+test.after(async () => {
   clearInterval(backendLifetime)
-  rmSync(project, { recursive: true, force: true })
-  rmSync(home, { recursive: true, force: true })
-  rmSync(bin, { recursive: true, force: true })
+  // win32: a git child may still hold a handle inside the tree for a few ms after the test ends, and
+  // rmSync then answers EPERM. Retry briefly (the POSIX run deletes on the first try).
+  // win32: a live child's open handle inside the tree keeps rmSync at EPERM for as long as it lives, and
+  // the OS reclaims the temp tree anyway — a cleanup that cannot finish must never fail the run.
+  const sweep = async (dir: string) => {
+    for (let attempt = 0; attempt < 10; attempt++) {
+      try { sweepTemp(dir); return } catch { await new Promise((r) => setTimeout(r, 100)) }
+    }
+    try { sweepTemp(dir) } catch { /* OS temp reclamation */ }
+  }
+  await sweep(project)
+  await sweep(home)
+  await sweep(bin)
 })

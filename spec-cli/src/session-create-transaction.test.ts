@@ -1,10 +1,22 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, delimiter } from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { createServer } from 'node:net'
@@ -43,7 +55,7 @@ test('public session create is bounded, rollback-clean, idempotent, and publishe
   const blockReceiptRetire = join(root, 'block-receipt-retire')
   const materializeFailure = join(root, 'materialize-failure')
   const launcher = join(root, 'stall-launcher'), gitWrapper = join(fakeBin, 'git'), fakeSpex = join(fakeBin, 'spex')
-  const candidateDir = join(home, 'projects', project.replace(/[/.]/g, '-'), '.session-create-candidates')
+  const candidateDir = join(home, 'projects', project.replace(/[/.:\\]/g, '-'), '.session-create-candidates')
   const tmux = `spex-create-${process.pid}-${Date.now()}`, port = await freePort(), base = `http://127.0.0.1:${port}`
   mkdirSync(fakeBin)
   mkdirSync(join(project, '.spec', 'target'), { recursive: true })
@@ -115,7 +127,7 @@ esac
       cwd: project,
       env: {
         ...process.env,
-        PATH: `${fakeBin}:${process.env.PATH}`,
+        PATH: `${fakeBin}${delimiter}${process.env.PATH}`,
         PORT: String(port),
         SPEXCODE_HOME: home,
         SPEXCODE_TMUX: tmux,
@@ -276,7 +288,7 @@ esac
     assert.match(readFileSync(trace, 'utf8'), /worktree add --no-track/, 'session creation never configures a node branch to track its base')
     assert.doesNotMatch(readFileSync(trace, 'utf8'), /hook-spex args=/, 'the session-owned post-checkout hook does not compete with the explicit materialize')
     const ordinaryPath = join(root, 'ordinary-hook-worktree')
-    const ordinaryEnv: Record<string, string | undefined> = { ...process.env, PATH: `${fakeBin}:${process.env.PATH}`, SPEX_CREATE_TRACE: trace }
+    const ordinaryEnv: Record<string, string | undefined> = { ...process.env, PATH: `${fakeBin}${delimiter}${process.env.PATH}`, SPEX_CREATE_TRACE: trace }
     delete ordinaryEnv.SPEXCODE_DEFER_FOOTPRINT_REFRESH
     execFileSync('git', ['-C', project, 'worktree', 'add', '-b', 'ordinary-hook', ordinaryPath, 'staging'], { env: ordinaryEnv })
     assert.match(readFileSync(trace, 'utf8'), /hook-spex args=internal refresh-footprint/, 'an ordinary worktree still invokes the post-checkout refresh')
@@ -464,6 +476,6 @@ esac
     child.kill('SIGTERM')
     try { execFileSync('tmux', ['-L', tmux, 'kill-server'], { stdio: 'ignore' }) } catch { /* no server */ }
     if (child.exitCode === null && child.signalCode === null) await new Promise<void>((resolve) => child.once('close', () => resolve()))
-    rmSync(root, { recursive: true, force: true })
+    sweepTemp(root)
   }
 })

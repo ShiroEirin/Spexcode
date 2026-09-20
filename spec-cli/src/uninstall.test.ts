@@ -10,7 +10,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs'
-import { join, relative, dirname } from 'node:path'
+import { join, relative, dirname, delimiter } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { execFileSync, spawnSync } from 'node:child_process'
@@ -113,7 +113,7 @@ test('init → materialize → uninstall forgets every derived artifact for Clau
       SPEXCODE_HOME: spexHome,
       CODEX_HOME: codexHome,
       SPEXCODE_PI_AGENT_DIR: piHome,
-      PATH: `${toolBin}:${process.env.PATH}`,
+      PATH: `${toolBin}${delimiter}${process.env.PATH}`,
     }
     const g = (...args: string[]) => execFileSync('git', ['-C', proj, ...args], { encoding: 'utf8', env })
     const spex = (...args: string[]) => execFileSync(process.execPath, [CLI, ...args], {

@@ -1,3 +1,15 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
@@ -15,9 +27,9 @@ import {
 } from 'node:fs'
 import net from 'node:net'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, delimiter } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { processStartToken } from '@spexcode/spec-core'
+import { killTree, processStartToken } from '@spexcode/spec-core'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -94,7 +106,7 @@ function fakeTmuxDir(fixture: string): string {
 }
 
 function writeSessionRecord(spexHome: string, project: string, id: string, worktreePath: string, branch: string, status = 'active'): void {
-  const enc = project.replace(/[/.]/g, '-')
+  const enc = project.replace(/[/.:\\]/g, '-')
   const dir = join(spexHome, 'projects', enc, 'sessions', id)
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, 'session.json'), JSON.stringify({
@@ -110,10 +122,9 @@ async function stopChild(child: ChildProcess): Promise<void> {
   const startToken = pid ? processStartToken(pid) : null
   const signal = (name: 'SIGTERM' | 'SIGKILL'): void => {
     if (!pid || !startToken || processStartToken(pid) !== startToken) return
-    if (process.platform !== 'win32') {
-      try { process.kill(-pid, name); return } catch { /* fall through to the exact child */ }
-    }
-    try { child.kill(name) } catch { /* already gone */ }
+    // killTree, not a bare child.kill on Windows: the direct child can exit while ITS children (the
+    // backend's own spawned work) stay alive holding this process's pipes open ([[kill-tree]]).
+    killTree(child, name)
   }
   signal('SIGTERM')
   if (child.exitCode !== null || child.signalCode !== null) return
@@ -187,7 +198,7 @@ async function assertServedProjectTreeObservation(project: string, fixture: stri
       `# ${id}`, '', '## raw source', '', 'Fixture.', '', '## expanded spec', '', 'Fixture graph.', '',
     ].join('\n'))
   }
-  const removeSpecNode = (id: string): void => rmSync(join(project, '.spec', id), { recursive: true, force: true })
+  const removeSpecNode = (id: string): void => sweepTemp(join(project, '.spec', id))
   const waitPromptly = async (predicate: () => boolean | Promise<boolean>, message: string): Promise<void> => {
     const started = Date.now()
     await waitFor(predicate, message, 3_000)
@@ -291,7 +302,7 @@ test('a zero-commit served project starts empty and observes its first .spec tre
     }
     await assertServedProjectTreeObservation(project, fixture, 'unborn')
   } finally {
-    rmSync(fixture, { recursive: true, force: true })
+    sweepTemp(fixture)
   }
 })
 
@@ -305,7 +316,7 @@ test('served base checkout creation and deletion converge from a warmed empty gr
     }
     await assertServedProjectTreeObservation(project, fixture, 'base')
   } finally {
-    rmSync(fixture, { recursive: true, force: true })
+    sweepTemp(fixture)
   }
 })
 
@@ -321,7 +332,7 @@ test('a backend launched from an unrecorded linked worktree watches that served 
     }
     await assertServedProjectTreeObservation(linked, fixture, 'linked')
   } finally {
-    rmSync(fixture, { recursive: true, force: true })
+    sweepTemp(fixture)
   }
 })
 
@@ -347,13 +358,13 @@ test('a backend exits when its served project root disappears', { timeout: 20_00
     await waitFor(async () => fetch(`http://127.0.0.1:${port}/health`).then((response) => response.ok).catch(() => false),
       `backend did not become healthy:\n${serverLog}`)
     await (await fetch(`http://127.0.0.1:${port}/api/graph`)).arrayBuffer()
-    rmSync(project, { recursive: true, force: true })
+    sweepTemp(project)
     await waitFor(() => child.exitCode !== null || child.signalCode !== null,
       `backend stayed alive after its served root disappeared:\n${serverLog}`, 5_000)
     assert.match(serverLog, /served project root disappeared/)
   } finally {
     await stopChild(child)
-    rmSync(fixture, { recursive: true, force: true })
+    sweepTemp(fixture)
   }
 })
 
@@ -384,7 +395,7 @@ test('a refused watcher source fails loud once and repairs on a bounded schedule
   const gone = join(fixture, 'gone')
   git(project, 'worktree', 'add', '-q', '-b', 'node/gone', gone)
   const entry = readdirSync(join(project, '.git', 'worktrees'))[0]
-  rmSync(gone, { recursive: true, force: true })
+  sweepTemp(gone)
   writeSessionRecord(spexHome, project, '11111111-1111-4111-8111-111111111111', gone, 'node/gone')
 
   const port = await freePort()
@@ -454,7 +465,7 @@ test('a refused watcher source fails loud once and repairs on a bounded schedule
     assert.fail(`${error instanceof Error ? error.stack : String(error)}\nserver log:\n${serverLog}`)
   } finally {
     await stopChild(child)
-    rmSync(fixture, { recursive: true, force: true })
+    sweepTemp(fixture)
   }
 })
 
@@ -517,7 +528,7 @@ exec "${realGit}" "$@"
     // watchdog outside that causal window; it is not a product budget change.
     SPEXCODE_BOARD_BUILD_TIMEOUT_MS: '30000',
     SPEXCODE_DISABLE_WATCHERS: 'refs,project-root',
-    PATH: `${bin}:${process.env.PATH || ''}`,
+    PATH: `${bin}${delimiter}${process.env.PATH || ''}`,
   }
   delete env.SPEXCODE_API_URL
   const child = spawn(process.execPath, ['--import', import.meta.resolve('tsx'), join(here, 'index.ts')], {
@@ -691,7 +702,7 @@ exec "${realGit}" "$@"
     abort.abort()
     await streamRead?.catch(() => {})
     await stopChild(child)
-    rmSync(fixture, { recursive: true, force: true })
+    sweepTemp(fixture)
   }
 })
 
@@ -740,7 +751,7 @@ exec "${realGit}" "$@"
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     PORT: String(port),
-    PATH: `${bin}:${process.env.PATH || ''}`,
+    PATH: `${bin}${delimiter}${process.env.PATH || ''}`,
     SPEXCODE_HOME: spexHome,
     SPEXCODE_TMUX: `spex-recovery-${port}`,
     SPEXCODE_BOARD_DEBUG: '1',
@@ -799,7 +810,7 @@ exec "${realGit}" "$@"
     await waitFor(() => existsSync(argvLog) && /HANG /.test(readFileSync(argvLog, 'utf8')),
       `the graph producer never entered the controlled wedge:\n${serverLog}`)
 
-    const sessionPath = join(spexHome, 'projects', project.replace(/[/.]/g, '-'), 'sessions', sessionId, 'runtime.json')
+    const sessionPath = join(spexHome, 'projects', project.replace(/[/.:\\]/g, '-'), 'sessions', sessionId, 'runtime.json')
     const record = JSON.parse(readFileSync(sessionPath, 'utf8'))
     record.name = 'Changed during failed flight'
     writeFileSync(sessionPath, JSON.stringify(record, null, 2) + '\n')
@@ -837,7 +848,7 @@ exec "${realGit}" "$@"
     abort.abort()
     await streamRead?.catch(() => {})
     await stopChild(child)
-    rmSync(fixture, { recursive: true, force: true })
+    sweepTemp(fixture)
   }
 })
 
@@ -898,7 +909,7 @@ exec "${realGit}" "$@"
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     PORT: String(port),
-    PATH: `${bin}:${process.env.PATH || ''}`,
+    PATH: `${bin}${delimiter}${process.env.PATH || ''}`,
     SPEXCODE_HOME: spexHome,
     SPEXCODE_TMUX: `spex-route-owned-${port}`,
     SPEXCODE_BOARD_DEBUG: '1',
@@ -1060,7 +1071,7 @@ exec "${realGit}" "$@"
     abort.abort()
     await streamRead?.catch(() => {})
     await stopChild(child)
-    rmSync(fixture, { recursive: true, force: true })
+    sweepTemp(fixture)
   }
 })
 
@@ -1137,7 +1148,7 @@ test('disabling the worktree leaf blinds it from every entry point', { timeout: 
   } finally {
     abort.abort()
     await stopChild(child)
-    rmSync(fixture, { recursive: true, force: true })
+    sweepTemp(fixture)
   }
 })
 
@@ -1256,7 +1267,7 @@ test('a lifecycle commit from another process reaches the stream without tmux, r
     abort.abort()
     await streamRead?.catch(() => {})
     await stopChild(child)
-    rmSync(fixture, { recursive: true, force: true })
+    sweepTemp(fixture)
   }
 })
 
@@ -1342,6 +1353,6 @@ test('a blinded database leaf is repaired by the patrol through the sessions spl
     abort.abort()
     await streamRead?.catch(() => {})
     await stopChild(child)
-    rmSync(fixture, { recursive: true, force: true })
+    sweepTemp(fixture)
   }
 })

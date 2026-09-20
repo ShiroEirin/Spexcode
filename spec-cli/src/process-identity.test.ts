@@ -1,3 +1,15 @@
+// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
+// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
+// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
+// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
+// this sits above the imports on purpose — the anchor cannot land after a call site.)
+function sweepTemp(dir: string): void {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
+  }
+  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
+}
+
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
@@ -45,7 +57,7 @@ test('Darwin accepts detached PID/start/PGID when ps sess=0 and never consumes t
     assert.equal(verifyDetachedRuntime(18378, receipt, adapter).ok, true)
     assert.equal(sessionReads, 0, 'Darwin does not ask the adapter for ps sess or synthesize a session id')
     assert.equal(Object.hasOwn(JSON.parse(readFileSync(receipt, 'utf8')), 'linuxSessionId'), false)
-  } finally { rmSync(root, { recursive: true, force: true }) }
+  } finally { sweepTemp(root) }
 })
 
 test('detached verifier rejects missing, malformed, wrong receipt identity and changed live identity', () => {
@@ -91,7 +103,7 @@ test('detached verifier rejects missing, malformed, wrong receipt identity and c
     const changedGroup = verifyDetachedRuntime(71, receipt, adapter)
     assert.equal(changedGroup.ok, false)
     if (!changedGroup.ok) assert.match(changedGroup.reason, /not its own process-group leader/)
-  } finally { rmSync(root, { recursive: true, force: true }) }
+  } finally { sweepTemp(root) }
 })
 
 test('Linux requires both receipt and live /proc SID to equal PID', () => {
@@ -115,7 +127,7 @@ test('Linux requires both receipt and live /proc SID to equal PID', () => {
     const wrongReceiptSid = verifyDetachedRuntime(83, receipt, adapter)
     assert.equal(wrongReceiptSid.ok, false)
     if (!wrongReceiptSid.ok) assert.match(wrongReceiptSid.reason, /wrong Linux session 1/)
-  } finally { rmSync(root, { recursive: true, force: true }) }
+  } finally { sweepTemp(root) }
 })
 
 test('a matching Linux v3 scope may be promoted once, while malformed or changed evidence remains unreadable', () => {
@@ -138,7 +150,7 @@ test('a matching Linux v3 scope may be promoted once, while malformed or changed
     writeFileSync(scope, 'detached-v3 91 legacy-start 91\n')
     assert.equal(migrateLegacyDetachedRuntimeReceipt(91, scope, receipt, adapter), false)
     assert.equal(existsSync(receipt), false, 'a malformed v3 scope cannot mint a receipt')
-  } finally { rmSync(root, { recursive: true, force: true }) }
+  } finally { sweepTemp(root) }
 })
 
 test('real detached runtime survives its launcher receiving SIGHUP', { timeout: 10_000, skip: platform() === 'win32' }, async () => {
@@ -183,6 +195,6 @@ test('real detached runtime survives its launcher receiving SIGHUP', { timeout: 
       try { process.kill(runtimePid, 'SIGTERM') } catch {}
       for (let i = 0; i < 100 && processStartToken(runtimePid) === startToken; i++) await new Promise((resolve) => setTimeout(resolve, 10))
     }
-    rmSync(root, { recursive: true, force: true })
+    sweepTemp(root)
   }
 })
