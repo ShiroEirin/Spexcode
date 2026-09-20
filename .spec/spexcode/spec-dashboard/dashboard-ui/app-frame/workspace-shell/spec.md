@@ -156,6 +156,9 @@ entries whose document key is the active route. Switching tabs therefore replace
 projection; a document that registers nothing leaves the slot empty. Registration and state are split like the
 status bar, the registry API is identity-stable, and disposing a registration removes it immediately.
 
+This atomic handover does not require placeholder controls: a document without context has no trailing
+context reservation. Its visible actions reach the band's normal right padding.
+
 Every action supplies an accessible label and may supply an availability state. An unavailable action remains
 visible when the document owns that capability, is disabled rather than hidden, and uses its exact disabled
 reason as the tooltip. The slot owns no document content, route parsing, or action semantics; it only invokes

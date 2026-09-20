@@ -160,25 +160,22 @@ test('both dock switches speak the panel vocabulary, and each names the dock it 
   assert.doesNotMatch(sideBar, /<DockToggle|name="panel-left"/)   // the rail draws no switch of its own
   const contextToggle = shell.match(/function ContextToggle\([\s\S]*?\n}\n\nexport default function Shell/)
   assert.ok(contextToggle, 'Shell must keep a document-owned context toggle')
-  assert.match(contextToggle[0], /className=\{`context-toggle dock-head-act\$\{visible \? ' on' : ''\}\$\{available \? '' : ' context-toggle-unavailable'\}`\}/)
+  assert.match(contextToggle[0], /className=\{`context-toggle dock-head-act\$\{visible \? ' on' : ''\}`\}/)
   assert.match(contextToggle[0], /<Icon name=\{visible \? 'panel-right-close' : 'panel-right-open'\} size=\{14\} \/>/)
-  assert.match(contextToggle[0], /aria-pressed=\{available \? visible : undefined\}/)
-  assert.match(contextToggle[0], /aria-hidden=\{available \? undefined : 'true'\}/)
+  assert.match(contextToggle[0], /aria-pressed=\{visible\}/)
   assert.doesNotMatch(contextToggle[0], /panel-left|list-checks/)
   // EACH REGION ANSWERS CONTEXT FOR ITS OWN DOCUMENT ([[context-dock]]): one dock per region, drawn by the
   // region, never one shell-level dock that only the routed document can ever describe.
   assert.match(shell, /<ContextDock page=\{route\?\.page\} param=\{route\?\.param\} query=\{route\?\.query\} open=\{hasContext && contextOpen\} \/>/)
   // THE SLOT IS THE REGION'S, NOT THE BODY'S: it closes the region after the body, so its top-right corner is
   // the band's right end (the column the strip's reservation keeps free), never a spot on the document.
-  assert.match(shell, /<ContextDock [^\n]*\/>\n\s*<\/div>\n\s*\{\/\*[\s\S]*?\*\/\}\n\s*<div className="context-toggle-slot"><ContextToggle available=\{hasContext\} visible=\{contextOpen\} onToggle=\{toggleContext\} \/><\/div>\n\s*<\/div>/)
-  // The band always reserves the shell control's column, so route switches cannot reflow the action cluster.
-  assert.match(shell, /const reservation = <span className="context-toggle-reservation" aria-hidden="true" \/>/)
+  assert.match(shell, /\{hasContext && <div className="context-toggle-slot"><ContextToggle visible=\{contextOpen\} onToggle=\{toggleContext\} \/><\/div>\}/)
+  assert.match(shell, /const reservation = hasContext \? <span className="context-toggle-reservation" aria-hidden="true" \/> : null/)
   assert.match(shell, /trailing=\{reservation\}/)
   assert.match(css, /\.context-toggle-slot\s*\{[^}]*position:\s*absolute;[^}]*right:\s*var\(--space-2\);/s)
   assert.match(css, /\.context-toggle-reservation\s*\{[^}]*flex:\s*0 0 32px;[^}]*width:\s*32px;/s)
   assert.match(css, /\.dock-head-act\s*\{[^}]*width:\s*28px; height:\s*28px;[^}]*padding:\s*0;/s)
   assert.match(css, /\.si-pill\s*\{[^}]*height:\s*28px;/s)
-  assert.match(css, /\.context-toggle-unavailable\s*\{[^}]*visibility:\s*hidden;[^}]*pointer-events:\s*none;/s)
 })
 
 test('the new-session door is the navigator\'s own pill, and the dock head keeps no second copy', () => {
