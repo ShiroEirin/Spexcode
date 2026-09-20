@@ -8,6 +8,7 @@ const here = fileURLToPath(new URL('.', import.meta.url))
 const source = readFileSync(new URL('./SessionInterface.jsx', import.meta.url), 'utf8')
 const forest = readFileSync(new URL('./SessionForestPanel.jsx', import.meta.url), 'utf8')
 const contextMenu = readFileSync(new URL('./SessionContextMenu.jsx', import.meta.url), 'utf8')
+const closeDialog = readFileSync(new URL('./SessionCloseDialog.jsx', import.meta.url), 'utf8')
 const sessionWindow = readFileSync(new URL('./SessionWindow.jsx', import.meta.url), 'utf8')
 const timelineChat = readFileSync(new URL('./TimelineChat.jsx', import.meta.url), 'utf8')
 const focus = readFileSync(new URL('./focus.js', import.meta.url), 'utf8')
@@ -20,6 +21,21 @@ const zh = readFileSync(new URL('./i18n/zh.js', import.meta.url), 'utf8')
 const mergePlugin = readFileSync(new URL('../../.spec/spexcode/.plugins/skills/merge/spec.md', import.meta.url), 'utf8')
 const mergeTemplate = readFileSync(new URL('../../spec-cli/templates/spec/project/.plugins/skills/merge/spec.md', import.meta.url), 'utf8')
 const shell = readFileSync(new URL('./Shell.jsx', import.meta.url), 'utf8')
+
+test('close keeps an explicit transaction state until the backend answers', () => {
+  const selectBar = readFileSync(new URL('./SessionSelectBar.jsx', import.meta.url), 'utf8')
+  assert.match(contextMenu, /<SessionCloseDialog name=\{sessionHeadline\(closingSession\)\} onConfirm=\{confirmClose\} onClose=\{dismissClose\} \/>/)
+  assert.match(closeDialog, /setPhase\('working'\)/)
+  assert.match(closeDialog, /closeWorkingDetail/)
+  assert.match(closeDialog, /closeSucceeded/)
+  assert.match(closeDialog, /closeRetry/)
+  assert.match(closeDialog, /closeDisabled=\{phase === 'working'\}/)
+  assert.match(closeDialog, /useEscLayer\(true, dismiss\)/)
+  assert.match(closeDialog, /if \(phase === 'working'\) return/)
+  assert.match(selectBar, /<SessionCloseDialog count=\{ids\.length\}/)
+  assert.match(css, /\.sess-close-progress\s*\{[^}]*display:\s*flex;/s)
+  assert.match(css, /\.sess-close-spinner\s*\{[^}]*animation:/s)
+})
 
 test('session faces are routed and the console has no second tab rail', () => {
   assert.doesNotMatch(source, /className="si-tabs"|className="si-base-tabs"/)
@@ -203,9 +219,11 @@ test('the navigator owns the shared keyboard walk and inert chrome boundary', ()
 })
 
 test('close refusals remain visible instead of being swallowed by the background action', () => {
+  assert.match(contextMenu, /<SessionCloseDialog name=\{sessionHeadline\(closingSession\)\} onConfirm=\{confirmClose\} onClose=\{dismissClose\} \/>/)
   assert.match(contextMenu, /const body = await response\.json\(\)\.catch\(\(\) => null\)/)
   assert.match(contextMenu, /!response\.ok \|\| body\?\.ok === false/)
-  assert.match(contextMenu, /onError\?\.\(body\?\.error \|\| `session close refused/)
+  assert.match(closeDialog, /setPhase\('failed'\)/)
+  assert.match(closeDialog, /closeRetry/)
   assert.match(source, /const j = await res\.json\(\)\.catch\(\(\) => null\)/)
   assert.match(source, /!res\.ok \|\| j\?\.ok === false/)
   assert.match(source, /function ActionOutcome\(\{ outcome \}\)/)
@@ -216,7 +234,7 @@ test('close refusals remain visible instead of being swallowed by the background
 
 test('close remains the only right-click lifecycle removal and asks for confirmation', () => {
   assert.match(contextMenu, /<ContextMenuItem icon="trash" danger onClick=\{startClose\}>/)
-  assert.match(contextMenu, /title=\{t\('sessionWindow\.closeTitle'/)
+  assert.match(closeDialog, /t\('sessionWindow\.closeTitle'/)
   assert.doesNotMatch(contextMenu, /startArchive|\/archive`|sessionWindow\.archiveTitle/)
 })
 

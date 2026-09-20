@@ -629,6 +629,13 @@ export default {
     close: '关闭',
     closeTitle: '关闭“{name}”？',
     closeConfirm: '这将关闭会话并删除其工作树。任何未提交的更改都会丢失。',
+    closeWorkingTitle: '正在关闭会话',
+    closeWorking: '正在关闭…',
+    closeWorkingDetail: '正在停止 Agent、归档运行时并移除工作树。',
+    closeSucceeded: '关闭已确认',
+    closeSyncing: '正在同步会话列表…',
+    closeFailed: '关闭失败',
+    closeRetry: '重试关闭',
     renameTitle: '重命名“{name}”',
     renamePlaceholder: '显示名称（留空以重置）',
     // 接入弹窗（[[attach-menu]]）：提供两条可复制的接入命令——`spex session attach` 官方动词，以及原始 `tmux -L … attach` 兜底。

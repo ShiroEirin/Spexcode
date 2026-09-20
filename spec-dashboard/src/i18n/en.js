@@ -637,6 +637,13 @@ export default {
     close: 'close',
     closeTitle: 'close “{name}”?',
     closeConfirm: 'This closes the session and removes its worktree. Any uncommitted changes are lost.',
+    closeWorkingTitle: 'closing session',
+    closeWorking: 'closing…',
+    closeWorkingDetail: 'Stopping the agent, archiving the runtime, and removing the worktree.',
+    closeSucceeded: 'close confirmed',
+    closeSyncing: 'syncing the session list…',
+    closeFailed: 'close failed',
+    closeRetry: 'retry close',
     renameTitle: 'rename “{name}”',
     renamePlaceholder: 'display name (blank to reset)',
     // attach modal ([[attach-menu]]): offers two copyable attach commands — the blessed `spex session attach`

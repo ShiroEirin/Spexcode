@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ContextMenu, ContextMenuGroup, ContextMenuItem, ContextMenuSeparator, ContextMenuSubmenu } from './ContextMenu.jsx'
 import Modal from './Modal.jsx'
+import SessionCloseDialog from './SessionCloseDialog.jsx'
 import SessionAttach from './SessionAttach.jsx'
 import { apiFetch, loadSettings } from './data.js'
 import { openNewTab } from './tabs.js'
@@ -54,7 +55,6 @@ export default function SessionContextMenu({ menu, closeRequest = null, onCloseR
   // press closes the topmost one, never the session panel behind it (the old bespoke window listener raced it).
   useEscLayer(!!menu, onClose)
   useEscLayer(!!renaming, () => setRenaming(null))
-  useEscLayer(!!closing, () => setClosing(null))
   useEscLayer(!!quarantining, () => setQuarantining(null))
   // attach's own Esc layer lives inside SessionAttach (it owns the modal); nothing to peel here.
 
@@ -178,21 +178,15 @@ export default function SessionContextMenu({ menu, closeRequest = null, onCloseR
   const closingSession = closing || closeRequest
   const dismissClose = () => { setClosing(null); onCloseRequestDone?.() }
 
-  // confirmed close: dismiss the confirm AT ONCE and fire the worktree removal in the BACKGROUND — it's
-  // seconds of real work (git worktree remove + killing the agent/tmux), and (like New Session's launch)
-  // the human must never watch a frozen, disabled dialog wait it out. The board reload when it lands drops
-  // the row off every surface; the next poll reconciles a failure. No busy-guard: the prompt is already gone.
-  const confirmClose = () => {
+  // The dialog owns the visible transaction state. The API call remains one close authority; this wrapper only
+  // translates a non-2xx response into the dialog's retryable failure state and refreshes the board after a
+  // successful commit.
+  const confirmClose = async () => {
     const { id } = closingSession
-    dismissClose()
-    apiFetch(`/api/sessions/${id}/close`, { method: 'POST' })
-      .then(async (response) => {
-        const body = await response.json().catch(() => null)
-        if (!response.ok || body?.ok === false)
-          onError?.(body?.error || `session close refused (HTTP ${response.status})`)
-      })
-      .catch((error) => onError?.(error instanceof Error ? error.message : String(error)))
-      .finally(() => onChanged?.())
+    const response = await apiFetch(`/api/sessions/${id}/close`, { method: 'POST' })
+    const body = await response.json().catch(() => null)
+    if (!response.ok || body?.ok === false) throw new Error(body?.error || `session close refused (HTTP ${response.status})`)
+    onChanged?.()
   }
 
   // The door lists the nodes this session is changing, capped so a wide session cannot push the menu's own
@@ -283,22 +277,7 @@ export default function SessionContextMenu({ menu, closeRequest = null, onCloseR
           </form>
         </Modal>
       )}
-      {closingSession && (
-        <Modal
-          title={t('sessionWindow.closeTitle', { name: sessionHeadline(closingSession) })}
-          closeLabel={t('common.close')}
-          className="sess-rename-modal"
-          onClose={dismissClose}
-        >
-          <div className="sess-confirm">
-            <p className="sess-confirm-msg">{t('sessionWindow.closeConfirm')}</p>
-            <div className="sess-rename-actions">
-              <button type="button" className="sess-rename-btn" onClick={dismissClose}>{t('common.cancel')}</button>
-              <button type="button" className="sess-rename-btn danger" onClick={confirmClose} autoFocus>{t('sessionWindow.close')}</button>
-            </div>
-          </div>
-        </Modal>
-      )}
+      {closingSession && <SessionCloseDialog name={sessionHeadline(closingSession)} onConfirm={confirmClose} onClose={dismissClose} />}
       {quarantining && (
         <Modal
           title={t('sessionWindow.quarantineTitle')}
