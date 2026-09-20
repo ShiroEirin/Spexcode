@@ -8,7 +8,7 @@ import test from 'node:test'
 const dashboard = createRequire(import.meta.url).resolve('@spexcode/spec-dashboard/package.json')
 const nodePtyRoot = dirname(createRequire(dashboard).resolve('node-pty/package.json'))
 
-test('node-pty publishes executable Darwin spawn helpers', () => {
+test('node-pty publishes executable Darwin spawn helpers', { skip: process.platform === 'win32' ? "the assertion reads the exec bit of a Darwin prebuild inside the npm artifact; win32 cannot represent it" : false }, () => {
   for (const arch of ['arm64', 'x64']) {
     const helper = join(nodePtyRoot, 'prebuilds', `darwin-${arch}`, 'spawn-helper')
     assert.notEqual(statSync(helper).mode & 0o111, 0, `${arch} spawn-helper must be executable in the npm artifact`)

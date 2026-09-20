@@ -4,7 +4,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync, existsSync, mkdtempSync, writeFileSync, chmodSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { delimiter, dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { spawnSync } from 'node:child_process'
 import * as archify from '../packages/archify/index.mjs'
@@ -101,7 +101,7 @@ test('the ZCode workflow\'s lint gate runs as the command line it submits, and r
     ] }
     writeFileSync(join(bin, 'npx'), `#!/bin/sh\n[ "$1" = "-y" ] || { echo "npx got: $*" >&2; exit 3; }\ncat <<'JSON'\n${JSON.stringify(report)}\nJSON\n`)
     chmodSync(join(bin, 'npx'), 0o755)
-    const run = spawnSync('node', argv, { encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } })
+    const run = spawnSync('node', argv, { encoding: 'utf8', env: { ...process.env, PATH: `${bin}${delimiter}${process.env.PATH}` } })
     assert.equal(run.status, 0, run.stderr)
     const gate = JSON.parse(run.stdout)
     assert.deepEqual({ governed: gate.governed, coverage: gate.coverage, errorCount: gate.errorCount, uncovered: gate.uncovered }, { governed: 4, coverage: 75, errorCount: 1, uncovered: ['d.py'] })

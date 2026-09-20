@@ -341,7 +341,7 @@ test('hostile projectIds: unknown, traversal-shaped, and non-loopback-upstream i
   assert.equal(put.status, 404)
 })
 
-test('store hygiene: verifiers live 0600 in the per-user store, plaintext never touches disk', async () => {
+test('store hygiene: verifiers live 0600 in the per-user store, plaintext never touches disk', { skip: process.platform === 'win32' ? "win32 has no POSIX permission bits — statSync().mode reports a synthesized value, so the 0o600 assertion measures the host" : false }, async () => {
   assert.equal(statSync(authStorePath()).mode & 0o777, 0o600)
   const raw = readFileSync(authStorePath(), 'utf8')
   for (const pw of ['root-pw', 'a-pw', 'a-pw-2', 'b-pw']) assert.ok(!raw.includes(pw), `store must not contain '${pw}'`)

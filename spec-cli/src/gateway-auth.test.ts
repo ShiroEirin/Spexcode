@@ -26,7 +26,7 @@ test('verifier: roundtrip verifies, wrong password fails, plaintext never stored
   assert.ok(!JSON.stringify(v).includes('s3cret'), 'verifier serialization must not contain the password')
 })
 
-test('store: created 0600 with a persistent random secret', () => {
+test('store: created 0600 with a persistent random secret', { skip: process.platform === 'win32' ? "win32 has no POSIX permission bits — statSync().mode reports a synthesized value, so the 0o600 assertion measures the host" : false }, () => {
   const a = loadAuthStore()
   assert.ok(a.secret.length >= 32)
   assert.equal(statSync(authStorePath()).mode & 0o777, 0o600)

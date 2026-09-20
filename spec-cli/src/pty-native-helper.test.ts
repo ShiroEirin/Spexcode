@@ -36,7 +36,7 @@ test('repairs a native spawn helper execute mode idempotently', (t) => {
   assert.equal(statSync(helper).mode & 0o777, 0o755)
 })
 
-test('derives spawn-helper from the native addon node-pty actually loaded', () => {
+test('derives spawn-helper from the native addon node-pty actually loaded', { skip: process.platform === 'win32' ? "chmodSync is a no-op on win32 and statSync().mode is synthesized, so the exec bit can be neither staged nor observed" : false }, () => {
   const output = execFileSync(process.execPath, ['--input-type=module', '-e', `
     import * as pty from 'node-pty'
     import { createRequire } from 'node:module'

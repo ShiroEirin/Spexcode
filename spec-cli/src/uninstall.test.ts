@@ -14,6 +14,8 @@ import { join, relative, dirname, delimiter } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { execFileSync, spawnSync } from 'node:child_process'
+import { mainCheckout } from '@spexcode/spec-core'
+import { tomlEscape } from './codex-harness.js'
 
 const CLI = fileURLToPath(new URL('../bin/spex.mjs', import.meta.url))
 const HOOK_TEMPLATES = fileURLToPath(new URL('../templates/hooks', import.meta.url))
@@ -261,9 +263,14 @@ Follow the house rules.
 
     // Codex-only init writes real trust. Claude-only gets a realistic stale Codex trust table from a prior policy.
     if (row.id === 'claude') {
-      writeFileSync(codexConfig, `${userCodexConfig}\n# spexcode:trust:${proj} (managed — do not edit)\n[projects."${proj}"]\ntrust_level = "trusted"\n# spexcode:trust:end:${proj}\n`)
+      // The product resolves the project through mainCheckout() before writing or stripping trust, so the
+      // stale block must name THAT path, in the TOML-escaped form the product writes. A raw temp path (or an
+      // unescaped Windows one) is a different string from what removeCodexTrust looks for, so the strip would
+      // match nothing and the block would survive.
+      const trustPath = mainCheckout(proj)
+      writeFileSync(codexConfig, `${userCodexConfig}\n# spexcode:trust:${trustPath} (managed — do not edit)\n[projects."${tomlEscape(trustPath)}"]\ntrust_level = "trusted"\n# spexcode:trust:end:${trustPath}\n`)
     }
-    assert.ok(readFileSync(codexConfig, 'utf8').includes(`[projects."${proj}"]`), `${row.id}: current or stale Codex trust is present before uninstall`)
+    assert.ok(readFileSync(codexConfig, 'utf8').includes(`[projects."${tomlEscape(mainCheckout(proj))}"]`), `${row.id}: current or stale Codex trust is present before uninstall`)
 
     const filterDir = join(proj, '.git', 'spexcode')
     writeFileSync(join(filterDir, 'user-evidence'), 'user-owned git-common data\n')

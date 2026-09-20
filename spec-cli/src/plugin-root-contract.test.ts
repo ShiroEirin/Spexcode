@@ -62,8 +62,8 @@ test('the public plugin instance root drives discovery and the legacy-tree guard
     const loaded = probe(project)
     assert.equal(loaded.error, null)
     assert.deepEqual(loaded.presets, [
-      { name: 'instance-system', dir: join('.spec', 'project', loaded.root, 'instance-system') },
-      { name: 'system-spec', dir: join('.spec', 'project', 'plugin-system', 'system-spec') },
+      { name: 'instance-system', dir: ['.spec', 'project', loaded.root, 'instance-system'].join('/') },
+      { name: 'system-spec', dir: ['.spec', 'project', 'plugin-system', 'system-spec'].join('/') },
     ])
 
     sweepTemp(join(root, loaded.root))

@@ -251,7 +251,7 @@ test('a bare receiver reports anchor debt instead of crashing its reference hook
   chmodSync(shim, 0o755)
   fx.git('remote', 'add', 'bare-receiver', bare)
   const push = fx.runGit({
-    PATH: `${shimDir}:${join(fx.root, 'node_modules', '.bin')}:${process.env.PATH}`,
+    PATH: `${shimDir}${delimiter}${join(fx.root, 'node_modules', '.bin')}${delimiter}${process.env.PATH}`,
     SPEXCODE_GATE_TRACE: '1',
   }, 'push', 'bare-receiver', 'node/calc:refs/heads/main')
   const output = `${push.stdout}${push.stderr}`
@@ -489,7 +489,7 @@ test('concurrent linked-worktree commits both reach the unmarked gate', async ()
   fx.git('add', 'src/calc.py')
   writeFileSync(join(linked, 'src', 'calc.py'), SOURCE(3))
   execFileSync('git', ['-C', linked, 'add', 'src/calc.py'])
-  const env = { ...process.env, PATH: `${join(fx.root, 'node_modules', '.bin')}:${process.env.PATH}` }
+  const env = { ...process.env, PATH: `${join(fx.root, 'node_modules', '.bin')}${delimiter}${process.env.PATH}` }
   const commit = (root: string, message: string) => new Promise<{ code: number; output: string }>((resolve) => {
     const child = spawn('git', ['-C', root, 'commit', '-m', message], { env })
     let output = ''
@@ -881,7 +881,7 @@ test('a clone without hooks keeps baseline local coverage and HEAD lint catches 
   const lint = spawnSync(join(source.root, 'node_modules', '.bin', 'spex'), ['spec', 'lint'], {
     cwd: clone,
     encoding: 'utf8',
-    env: { ...process.env, PATH: `${join(source.root, 'node_modules', '.bin')}:${process.env.PATH}` },
+    env: { ...process.env, PATH: `${join(source.root, 'node_modules', '.bin')}${delimiter}${process.env.PATH}` },
   })
   assert.notEqual(lint.status, 0, `HEAD lint missed unhooked clone debt:\n${lint.stdout}${lint.stderr}`)
 })

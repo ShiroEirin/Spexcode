@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { codexHeadlessLaunchCommand } from './codex-headless.js'
 import { codexHarness, codexHeadlessHarness } from './codex-harness.js'
+import { join } from 'node:path'
 import { HARNESSES } from './harness.js'
 
 test('codex-headless composes Codex materialization and shared-runtime ownership without a TUI attach', () => {
@@ -29,8 +30,9 @@ test('codex-headless composes Codex materialization and shared-runtime ownership
   assert.equal(codexHeadlessHarness.deliver, codexHarness.deliver)
   assert.equal(codexHeadlessHarness.observeTurnFailures, codexHarness.observeTurnFailures)
   assert.equal(codexHeadlessHarness.sharedRuntimes, codexHarness.sharedRuntimes)
-  const headlessRuntime = codexHeadlessHarness.sharedRuntimes?.('/tmp/runtime') ?? []
-  const interactiveRuntime = codexHarness.sharedRuntimes?.('/tmp/runtime') ?? []
+  const runtimeDir = process.platform === 'win32' ? 'C:\\tmp\\runtime' : '/tmp/runtime'
+  const headlessRuntime = codexHeadlessHarness.sharedRuntimes?.(runtimeDir) ?? []
+  const interactiveRuntime = codexHarness.sharedRuntimes?.(runtimeDir) ?? []
   const descriptorContract = (descriptor: (typeof headlessRuntime)[number]) => ({
     key: descriptor.key,
     label: descriptor.label,
@@ -46,8 +48,8 @@ test('codex-headless composes Codex materialization and shared-runtime ownership
   assert.deepEqual(headlessRuntime.map(descriptorContract), [{
     key: 'codex-app-server',
     label: 'Codex app-server',
-    pidFile: '/tmp/runtime/codex-app-server.pid',
-    receiptFile: '/tmp/runtime/codex-app-server.detached.json',
+    pidFile: join(runtimeDir, 'codex-app-server.pid'),
+    receiptFile: join(runtimeDir, 'codex-app-server.detached.json'),
     capabilities: { probe: 'function', residency: 'function', mutationGuard: 'function' },
   }])
 })

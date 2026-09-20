@@ -165,7 +165,7 @@ async function assertServedProjectTreeObservation(project: string, fixture: stri
     SPEXCODE_HOME: spexHome,
     SPEXCODE_BOARD_DEBUG: '1',
     SPEXCODE_TMUX: `spex-graph-stream-project-root-${label}-${port}`,
-    PATH: `${fakeTmuxDir(fixture)}:${process.env.PATH}`,
+    PATH: `${fakeTmuxDir(fixture)}${delimiter}${process.env.PATH}`,
   }
   delete env.SPEXCODE_API_URL
   delete env.SPEXCODE_DISABLE_WATCHERS
@@ -405,7 +405,7 @@ test('a refused watcher source fails loud once and repairs on a bounded schedule
     SPEXCODE_HOME: spexHome,
     SPEXCODE_BOARD_DEBUG: '1',
     SPEXCODE_TMUX: `spex-fixture-${port}`,
-    PATH: `${fakeTmuxDir(fixture)}:${process.env.PATH}`,
+    PATH: `${fakeTmuxDir(fixture)}${delimiter}${process.env.PATH}`,
   }
   delete env.SPEXCODE_API_URL
   delete env.SPEXCODE_DISABLE_WATCHERS
@@ -1111,7 +1111,7 @@ test('disabling the worktree leaf blinds it from every entry point', { timeout: 
     SPEXCODE_DISABLE_WATCHERS: 'worktrees',
     // the liveness probe fails, so every session reads `unknown` and its worktree is one the graph would
     // otherwise observe — exactly the state that used to slip past the injection through the poller
-    PATH: `${fakeTmuxDir(fixture)}:${process.env.PATH}`,
+    PATH: `${fakeTmuxDir(fixture)}${delimiter}${process.env.PATH}`,
   }
   delete env.SPEXCODE_API_URL
   const child = spawn(process.execPath, ['--import', import.meta.resolve('tsx'), join(here, 'index.ts')], {
