@@ -5,6 +5,7 @@ import { git, gitBinary } from '@spexcode/spec-core'
 import { writeManagedBlock, removeManagedBlock } from './harness.js'
 import { encodeProject, runtimeRoot, treeSlotDir } from '@spexcode/spec-core'
 import { writeFileIfChanged } from './file-write.js'
+import { posixPath } from './sh.js'
 
 // the three field-sharpened edges this module owes ([[content-filter]]):
 //   ① the configured command points at a STABLE shim path and degrades to `cat` (identity) when the shim is
@@ -48,7 +49,7 @@ start="\${binding%%$'\t'*}"; rest="\${binding#*$'\t'}"
 end="$rest"
 top="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 root="$(cat "$here/contract-filter-root" 2>/dev/null || true)"
-key="$(printf '%s' "$top" | sed 's#[/.]#-#g')"
+key="$(printf '%s' "$top" | sed 's#[/.:\\]#-#g')"
 manifest="$root/trees/$key/contract-filter/manifest"
 payload="$(awk -F '\t' -v p="$path" '$1 == p { print $2; exit }' "$manifest" 2>/dev/null)"
 strip() {
@@ -91,7 +92,10 @@ esac
 // edge ①: the command git runs is a tolerant wrapper — the shim path is an ARGUMENT ($0), and a missing/
 // unreadable shim degrades to `cat` (identity) instead of a per-operation fatal.
 const filterCmd = (shim: string, mode: 'smudge' | 'clean') =>
-  `sh -c 'test -r "$0" && exec bash "$0" ${mode} "$1" || exec cat' '${shim.replace(/'/g, `'\\''`)}' %f`
+  // posixPath: the shim path is an ARGUMENT to `sh -c`, and a Windows backslash path reaches bash as
+  // `C:...contract-filter.sh` — the backslashes are eaten as escapes, `test -r` fails, and every
+  // checkout silently degrades to `cat` (no re-smudge, so the managed block never comes back).
+  `sh -c 'test -r "$0" && exec bash "$0" ${mode} "$1" || exec cat' '${posixPath(shim).replace(/'/g, `'\\''`)}' %f`
 
 // plant (or refresh) the filter for the given contract files (tracked, or untracked-with-host-content —
 // pre-armed): the shim + the block content it smudges, the per-clone git config, and the attribute lines

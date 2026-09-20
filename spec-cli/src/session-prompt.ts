@@ -10,7 +10,7 @@ import { defaultHarness, harnessById, sessionIdentityEnvVars, type Harness } fro
 import { LAUNCH_FAST_FAIL_S } from './session-liveness.js'
 import { readRecord, type SessRec } from './session-record.js'
 import { lastSendVia } from './session-timeline.js'
-import { shQuote } from './sh.js'
+import { posixPath, shQuote } from './sh.js'
 
 const HARNESS = defaultHarness
 // the session's global store, created on demand — the launch artifacts (the script, agent.pid, the identity
@@ -145,7 +145,7 @@ export function titleFromPrompt(prompt: string): string | null {
 // invocation inside the birth-registration `sh -c '…'` wrapper without any segment double-expanding.
 // 后端把这条命令输入交互式 shell，脚本路径必须作为一个 shell 参数传递。
 export function launchShellCommand(file: string): string {
-  return `bash ${shQuote(file)}`
+  return `bash ${shQuote(posixPath(file))}`
 }
 export function launchScript(id: string, tail: string, harness: Harness = HARNESS, cmd?: string): string {
   const file = join(storeDir(id), 'launch.sh')

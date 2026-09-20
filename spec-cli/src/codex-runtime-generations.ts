@@ -36,11 +36,17 @@ const lockReaperOwnerPath = (root: string) => join(lockReaperPath(root), 'owner.
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
 export function codexGenerationSocketPath(root: string, generationId?: string): string {
-  const base = process.env.SPEXCODE_CODEX_SOCKET_DIR || join(tmpdir(), `spexcode-cx-${process.getuid?.() ?? 0}`)
-  mkdirSync(base, { recursive: true, mode: 0o700 })
   // No suffix preserves the deployed legacy location. Every detached-v3 generation has an independent socket.
   const key = generationId ? `${root}\0${generationId}` : root
-  return join(base, `spexcode-cx-${createHash('sha1').update(key).digest('hex').slice(0, 16)}.sock`)
+  const digest = createHash('sha1').update(key).digest('hex').slice(0, 16)
+  // @@@ windows named pipe - a unix-domain socket PATH cannot be bound on win32: `server.listen(<path>)`
+  // there answers EACCES (the address family is AF_UNIX but the path is not a pipe name), so every codex
+  // generation test died at `listen EACCES ... .sock`. Windows addresses a local socket as
+  // `\\.\pipe\<name>` — the same spelling session-host.ts's hostControlSocket and machine-peer.ts use.
+  if (process.platform === 'win32') return `\\\\.\\pipe\\spexcode-cx-${digest}`
+  const base = process.env.SPEXCODE_CODEX_SOCKET_DIR || join(tmpdir(), `spexcode-cx-${process.getuid?.() ?? 0}`)
+  mkdirSync(base, { recursive: true, mode: 0o700 })
+  return join(base, `spexcode-cx-${digest}.sock`)
 }
 
 export function legacyCodexGenerationEndpoint(root: string): CodexGenerationEndpoint {

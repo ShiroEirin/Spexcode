@@ -1752,9 +1752,19 @@ export function codexHookHash(snakeEvent: string, command: string, timeout = 600
 // (no regex escaping of the path), so other projects' trust, the shared parent tables (`[projects]`,
 // `[hooks.state]`), and every other config key are untouched; a skipped table's body ends at the next header,
 // blank, or comment, so a user comment attached to a following table is preserved.
+// @@@ tomlEscape - the inner escapes of a TOML basic string. A Windows path written RAW into one
+// (`[projects."C:\Users\..."]`) is INVALID TOML: `\U` reads as a unicode escape and smol-toml rejects
+// the whole document ("invalid non-hex character in unicode escape"), so assertCodexConfigParses
+// refused every write and codex materialize failed on Windows. Escaping `\` and `"` is byte-identical
+// on POSIX (neither char appears in a POSIX path) and makes the Windows form valid; write and strip
+// MUST use this same function or the strip stops matching what was written.
+export function tomlEscape(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+}
+
 function stripCodexTrustFor(cur: string, proj: string, hooksJson: string): string {
-  const projHeader = `[projects."${proj}"]`
-  const hooksPrefix = `[hooks.state."${hooksJson}:`
+  const projHeader = `[projects."${tomlEscape(proj)}"]`
+  const hooksPrefix = `[hooks.state."${tomlEscape(hooksJson)}:`
   const out: string[] = []
   let skip = false
   for (const line of cur.split('\n')) {
@@ -1790,10 +1800,10 @@ export function writeCodexTrust(proj: string, events: readonly string[], cmdFor:
   const home = process.env.CODEX_HOME || join(homedir(), '.codex')
   const file = join(home, 'config.toml')
   const hooksJson = join(proj, '.codex', 'hooks.json')
-  const lines = [`[projects."${proj}"]`, 'trust_level = "trusted"']
+  const lines = [`[projects."${tomlEscape(proj)}"]`, 'trust_level = "trusted"']
   for (const e of events) {
     const snake = SNAKE[e]
-    lines.push(`[hooks.state."${hooksJson}:${snake}:0:0"]`, `trusted_hash = "${codexHookHash(snake, cmdFor(e))}"`)
+    lines.push(`[hooks.state."${tomlEscape(hooksJson)}:${snake}:0:0"]`, `trusted_hash = "${codexHookHash(snake, cmdFor(e))}"`)
   }
   const blk = `# spexcode:trust:${proj} (managed — do not edit)\n${lines.join('\n')}\n# spexcode:trust:end:${proj}`
   const cleaned = stripCodexTrustFor(existsSync(file) ? readFileSync(file, 'utf8') : '', proj, hooksJson)
@@ -1814,7 +1824,7 @@ function removeCodexTrust(proj: string): void {
   if (!existsSync(file)) return
   const hooksJson = join(proj, '.codex', 'hooks.json')
   const cur = readFileSync(file, 'utf8')
-  if (!cur.includes(`[projects."${proj}"]`) && !cur.includes(`[hooks.state."${hooksJson}:`) &&
+  if (!cur.includes(`[projects."${tomlEscape(proj)}"]`) && !cur.includes(`[hooks.state."${tomlEscape(hooksJson)}:`) &&
       !cur.includes(`# spexcode:trust:${proj} `) && !cur.includes(`# spexcode:trust:end:${proj}`)) return
   const cleaned = stripCodexTrustFor(cur, proj, hooksJson)
   const next = cleaned ? `${cleaned}\n` : ''

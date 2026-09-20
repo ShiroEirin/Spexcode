@@ -1,5 +1,6 @@
 import { dirname, join } from 'node:path'
 import { createRequire } from 'node:module'
+import { pathToFileURL } from 'node:url'
 import { createHash } from 'node:crypto'
 import { gitRequiredA, gitObjectFormat, isGitObjectId, batchRevisionOids, batchBlobTexts, combinedDiffOwnedChanges, driftPathWindow, readImmutableHunkFacts, persistImmutableHunkFacts, withEventLedgerBuild, type DiffLineRange, type DriftIndex, type DriftPathEvent, type ImmutableHunkRanges } from './git.js'
 
@@ -409,7 +410,10 @@ function treeSitterRuntimePath(): string {
 }
 
 async function treeSitterModule(): Promise<any> {
-  if (!treeSitterModulePromise) treeSitterModulePromise = import(treeSitterRuntimePath()).then((m) => m.default ?? m)
+  // pathToFileURL: a dynamic import of a bare Windows path (C:\...) is rejected by the ESM loader
+  // ("Only URLs with a scheme in: file, data, and node are supported") — the path must be a file:// URL.
+  // Same shape as daemon-runtime.ts's import(pathToFileURL(entry).href).
+  if (!treeSitterModulePromise) treeSitterModulePromise = import(pathToFileURL(treeSitterRuntimePath()).href).then((m) => m.default ?? m)
   return treeSitterModulePromise
 }
 

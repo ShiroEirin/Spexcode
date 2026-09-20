@@ -10,6 +10,7 @@ import { runtimeRoot, treeSlotDir, mainCheckout, readConfig } from '@spexcode/sp
 import { resolveHarnessTargets, partitionHarnesses } from './harness-select.js'
 import { emitPlugin, cleanPlugin, pluginBundleDir, pluginVersion } from './plugin-harness.js'
 import { clearContractFilterPayload, contractFilterPlanted, plantContractFilter, removeContractFilter, settleIndexStat, type ContractFilterBinding, type ContractFilterPayload } from './contract-filter.js'
+import { posixPath } from './sh.js'
 import { writeFileIfChanged } from './file-write.js'
 
 export type MaterializedArtifact = {
@@ -117,7 +118,9 @@ export function contentHash(proj: string): string {
     const env: NodeJS.ProcessEnv = { ...process.env }
     for (const key of Object.keys(env)) if (key.toLowerCase() === 'path') delete env[key]
     env.PATH = `${gitDir}${delimiter}${process.env.PATH || ''}`
-    return execFileSync('bash', ['-c', `cd "${proj}" && . "${harnessSh}" && hp_config_hash`], { env }).toString().trim()
+    // Both paths go to bash, so both must be POSIX-spelled: a Windows backslash path is eaten as
+    // escapes and the file is never found ([[harness-delivery]]).
+    return execFileSync('bash', ['-c', `cd "${posixPath(proj)}" && . "${posixPath(harnessSh)}" && hp_config_hash`], { env }).toString().trim()
   } catch { return '' }
 }
 

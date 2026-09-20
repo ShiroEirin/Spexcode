@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { DispatchResult, HarnessDeliveryRecord } from './harness.js'
 import { controlRequest, withTimeout } from './headless-controller.js'
+import { killTree } from '@spexcode/spec-core'
 import { shQuote } from './sh.js'
 import { hostControlSocket } from './session-host.js'
 
@@ -295,13 +296,9 @@ export class ClaudeHeadlessController {
   }
 
   private signalTurn(turn: ChildTurn, signal: NodeJS.Signals): void {
-    const pid = turn.process.pid
-    try {
-      if (pid) process.kill(-pid, signal)
-      else turn.process.kill(signal)
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
-    }
+    // The TURN is a tree, not one process: a native adapter runs its own children, and the POSIX group
+    // kill this used is a silent no-op on Windows ([[kill-tree]]).
+    killTree(turn.process, signal)
   }
 
   private writeLine(turn: ChildTurn, line: string): Promise<void> {

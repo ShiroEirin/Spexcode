@@ -1,3 +1,10 @@
+// @@@ console suppression ([[platform-support]]) - loaded FIRST so the patch is in place before any
+// consumer binds child_process; see spec-cli/src/windows-hide-console.ts for why one point covers every
+// spawn site. The guard keeps a plain-`node` consumer (no tsx loader, so no TypeScript) working: the
+// suppression is a Windows comfort, never a precondition for running the suite.
+try {
+  await import('../spec-cli/src/windows-hide-console.ts')
+} catch { /* no TypeScript loader — skip the suppression, keep the isolation this module exists for */ }
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'

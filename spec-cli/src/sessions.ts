@@ -6,7 +6,7 @@ import { join, dirname, isAbsolute, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { rm as rmAsync, readdir as readdirAsync } from 'node:fs/promises'
 import { seedWorktreeHostState } from './worktree-sources.js'
-import { git, gitTry, withGitAbortSignal, isGitObjectId } from '@spexcode/spec-core'
+import { git, gitTry, killTree as reapTree, withGitAbortSignal, isGitObjectId } from '@spexcode/spec-core'
 import { loadSpecsLite } from '@spexcode/spec-core'
 import { adapterLoadedReferenceState, assertRvSockPath, defaultHarness, defaultLauncher, harnessById, procSnapshot, resolveLauncher, rendezvousListening, stampRvSock, type AdapterLoadedReferenceState, type Harness, type HarnessLaunchReadinessFence, type TurnFailure, type FailureSubscription, type DispatchResult, type ProcTable } from './harness.js'
 import { materialize } from './materialize.js'
@@ -1933,11 +1933,7 @@ async function materializeSessionCandidate(rec: SessRec, signal: AbortSignal): P
         stdio: ['ignore', 'ignore', 'pipe'],
       })
       let stderr = '', settled = false
-      const killTree = () => {
-        if (!child.pid) return
-        try { process.kill(-child.pid, 'SIGKILL') } catch { /* process group already gone */ }
-        try { child.kill('SIGKILL') } catch { /* child already gone */ }
-      }
+      const killTree = () => reapTree(child, 'SIGKILL')
       const abort = () => killTree()
       signal.addEventListener('abort', abort, { once: true })
       child.stderr.setEncoding('utf8').on('data', (chunk) => { if (stderr.length < 64 * 1024) stderr += chunk })

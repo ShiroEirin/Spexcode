@@ -1,3 +1,8 @@
+// @@@ console suppression ([[platform-support]]) - FIRST import, deliberately: it patches child_process
+// before anything else can bind it, so every spawn in this process hides its console window on Windows.
+// See windows-hide-console.ts for why this is one point rather than ~50 call sites.
+import './windows-hide-console.js'
+
 export {} // make this a module so top-level await is allowed
 // static import is fine here: mentions.ts is dependency-free at module level, and stripRefSigil is needed
 // by several verbs (spec owner, graph, issue node args) — a CLI reference arg tolerates an optional @/[[ ]]
@@ -77,6 +82,9 @@ async function assertDaemonRuntime(command: 'spex serve' | 'spex dashboard'): Pr
 // (loadConfig on a malformed .spec/spexcode.json) surfaces as uncaughtException, not unhandledRejection, so BOTH
 // paths route through the same printer.
 function fatal(e: unknown): void {
+  // A deliberate clean exit ([[windows-exit]]'s success-path counterpart): the command already
+  // printed its result; only the exit CODE is left, and the loop must drain undici's closing handles.
+  if (e instanceof Error && e.name === 'CleanExit') { process.exitCode = (e as Error & { exitCode?: number }).exitCode ?? 0; return }
   if (e instanceof Error && ['BackendError', 'ConfigError', 'UsageError', 'GuardError', 'DashboardAssetError', 'GitWorkspaceError', 'SessionFileError'].includes(e.name)) console.error(`spex: ${e.message}`)
   else console.error(e)
   // @@@ windows-exit - process.exit() force-quits while async handles are still closing, and on Windows a
@@ -109,6 +117,18 @@ function flushExit(code = 0): Promise<never> {
     process.stdout.on('error', done)
     process.stdout.write('', done)
   })
+}
+// @@@ cleanExit - the non-crashing counterpart of process.exit for a COMPLETED command.
+// process.exit() force-quits while a fetch's undici socket handles are still closing; on Windows
+// libuv then hits `!(handle->flags & UV_HANDLE_CLOSING)` and the process dies with 0xC0000409
+// AFTER printing its result ([[windows-exit]] — the same class fatal() fixed for the error path,
+// which never covered the success path). Throwing unwinds to the top-level handlers, which set
+// exitCode and let the loop drain its closing handles — the shape fatal() already uses.
+function cleanExit(code = 0): never {
+  const error = new Error(`clean exit ${code}`)
+  error.name = 'CleanExit'
+  ;(error as Error & { exitCode?: number }).exitCode = code
+  throw error
 }
 const has = (name: string) => process.argv.includes(`--${name}`)
 // bare positionals after argv index `from`, skipping flags and their values (selectors for ls/watch).
@@ -751,7 +771,7 @@ if (cmd === 'serve') {
           for (const path of scope.uncoveredSources) console.error(`    ${path}`)
           console.error('  Give each a home in a spec node\'s `code:` (one file) or `related:` — `spex spec search <topic>` finds the node. Allowed to land; coverage is a warning.')
         }
-        process.exit(76)
+        cleanExit(76)
       }
     }
     const report = await specLintReport(undefined, undefined, {
@@ -769,7 +789,9 @@ if (cmd === 'serve') {
     // Blocking tier is anchor-drift ([[code-anchor]]) — CI/default lint judges HEAD; the local armed hook
     // supplies --pending <real commit oid>; canonical pre-commit leaves the whole lint to that one run.
     if (findings.some((f) => f.rule === 'drift' || f.rule === 'anchor-drift')) console.error(`\n${DRIFT_GUIDANCE}`)
-    process.exit(errors.length ? 1 : 0)
+    // cleanExit, not process.exit: this runs after an awaited lint (undici/git handles may be closing) and
+    // a forced exit there trips libuv's UV_HANDLE_CLOSING assertion on Windows ([[windows-exit]]).
+    cleanExit(errors.length ? 1 : 0)
   } else if (sub === 'ack') {
     // An EMPTY stamp commit on top of HEAD, never an amend: driftFor (git.ts) quiets every drift commit
     // REACHABLE from an ack, so a child stamp covers exactly what amending HEAD would — and it works where
@@ -1395,7 +1417,7 @@ if (cmd === 'serve') {
           console.error('queued for the receiver to take at its turn boundary; the backend is down, so it cannot be pushed')
         }
         console.log(`sent to ${descendants.length} descendant${descendants.length === 1 ? '' : 's'}`)
-        process.exit(0)
+        cleanExit(0)
       }
       const full = sendArgs.sshAddress
         ? (FULL_SESSION_ID.test(id ?? '')
@@ -1409,7 +1431,7 @@ if (cmd === 'serve') {
         // dialogs — try plain `session send` text FIRST; reach for --keys only when text provably can't
         // land. Tokens = named keys, single chars, C-/M-/S- combos; whitespace-separated, delivered as ONE
         // ordered batch ([[nav-mode-key-ordering]]). Fail-loud: nothing delivered exits non-zero.
-        if (await c.clientSendRawKeys(full, sendArgs.keys)) { console.log(`sent ${sendArgs.keys.length} key${sendArgs.keys.length === 1 ? '' : 's'} -> ${full}`); process.exit(0) }
+        if (await c.clientSendRawKeys(full, sendArgs.keys)) { console.log(`sent ${sendArgs.keys.length} key${sendArgs.keys.length === 1 ? '' : 's'} -> ${full}`); cleanExit(0) }
         console.error(`spex session send --keys: nothing delivered to ${full} (offline, unknown session, or no valid key token)`)
         process.exit(1)
       }
@@ -1455,11 +1477,11 @@ if (cmd === 'serve') {
         })
         console.error('queued for the receiver to take at its turn boundary; the backend is down, so it cannot be pushed')
         console.log('sent')
-        process.exit(0)
+        cleanExit(0)
       }
-      if (r.ok) { console.log('sent'); process.exit(0) }
+      if (r.ok) { console.log('sent'); cleanExit(0) }
       console.error(`dispatch failed: ${r.error}`)
-      process.exit(1)
+      cleanExit(1)
     } else if (sub === 'show') {
       // the session RECORD as one per-id read (status · branch · launcher · the full originating
       // prompt); --capture swaps in the LIVE PANE face of the same read. The pane contract is unchanged from

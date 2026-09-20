@@ -6,6 +6,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { projectRuntimeRoot } from './project-store.js'
 import { rootSlots, touchRoot as touchRootLru } from './root-lru.js'
 import { processStartToken } from './process-identity.js'
+import { killTree as reapTree } from './kill-tree.js'
 
 const US = '\x1f', RS = '\x1e'
 
@@ -318,11 +319,9 @@ function execGit(args: string[], env: NodeJS.ProcessEnv, signal?: AbortSignal, m
     const stdout: Buffer[] = [], stderr: Buffer[] = []
     let stdoutBytes = 0, stderrBytes = 0, aborted = false, timedOut = false, overflow = false
     let spawnError: Error | null = null
-    const killTree = () => {
-      if (!child.pid) return
-      try { process.kill(-child.pid, 'SIGKILL') } catch { /* group may already be gone */ }
-      try { child.kill('SIGKILL') } catch { /* already exited */ }
-    }
+    // reapTree, not a bare group kill: the POSIX negative-pid spelling is a silent no-op on Windows,
+    // which leaves a wedged git (and its descendants) holding this process's pipes ([[kill-tree]]).
+    const killTree = () => reapTree(child, 'SIGKILL')
     const onAbort = () => { aborted = true; killTree() }
     const append = (chunks: Buffer[], chunk: Buffer, stream: 'stdout' | 'stderr') => {
       const total = stream === 'stdout' ? (stdoutBytes += chunk.length) : (stderrBytes += chunk.length)
@@ -389,11 +388,9 @@ function execGitStream(args: string[], env: NodeJS.ProcessEnv, signal?: AbortSig
     const stdout: Buffer[] = [], stderr: Buffer[] = []
     let settled = false, aborted = false, timedOut = false
     let stdinError: any = null
-    const killTree = () => {
-      if (!child.pid) return
-      try { process.kill(-child.pid, 'SIGKILL') } catch { /* group may already be gone */ }
-      try { child.kill('SIGKILL') } catch { /* already exited */ }
-    }
+    // reapTree, not a bare group kill: the POSIX negative-pid spelling is a silent no-op on Windows,
+    // which leaves a wedged git (and its descendants) holding this process's pipes ([[kill-tree]]).
+    const killTree = () => reapTree(child, 'SIGKILL')
     const onAbort = () => { aborted = true; killTree() }
     const timer = setTimeout(() => { timedOut = true; killTree() }, GIT_TIMEOUT_MS)
     timer.unref?.()
@@ -790,7 +787,10 @@ async function withEventCacheLock<T>(
       break
     } catch (error: any) {
       rmSync(claimant, { recursive: true, force: true })
-      if (error?.code !== 'EEXIST' && error?.code !== 'ENOTEMPTY') throw error
+      // win32: renaming a directory ONTO an existing one answers EPERM (POSIX answers EEXIST/ENOTEMPTY).
+      // Both mean the same thing here — somebody else holds the lock — so the retry/arbitration path below
+      // must treat them alike; otherwise every contended lock threw instead of waiting.
+      if (error?.code !== 'EEXIST' && error?.code !== 'ENOTEMPTY' && error?.code !== 'EPERM' && error?.code !== 'EACCES') throw error
       const held = readEventLockOwner(lock)
       if (!held) {
         if (!existsSync(lock)) continue

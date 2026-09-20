@@ -5,7 +5,7 @@ import { createConnection } from 'node:net'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { git, HARNESS_IDENTITIES, type HarnessId } from '@spexcode/spec-core'
-import { shQuote } from './sh.js'
+import { posixPath, shQuote } from './sh.js'
 import { writeFileIfChanged } from './file-write.js'
 import type { Harness, HarnessArtifacts, PaneProbe, ProcTable } from './harness.js'
 
@@ -208,7 +208,11 @@ export function isGeneratedArtifact(file: string): boolean {
 // baked in so dispatch.sh can export SPEXCODE_HARNESS (the detector for the shell side). SPEX is inherited by
 // the cli-needing handlers.
 export function buildShim(id: HarnessId, events: readonly string[], dispatch: string, spex: string): { content: string; hooks: Record<string, unknown[]>; cmd: (e: string) => string } {
-  const cmd = (e: string) => `SPEX='${spex}' bash ${dispatch} ${id} ${e}`
+  // The command line is handed to BASH, so every path it carries must be in POSIX spelling: a Windows
+  // `C:\\...\\dispatch.sh` reaches bash as `C:Users...dispatch.sh` — the backslashes are eaten as escapes
+  // and the file is never found. Forward slashes are valid in a Windows path AND survive bash, so one
+  // spelling works on both platforms (the same rule the .gitignore writer follows, [[harness-delivery]]).
+  const cmd = (e: string) => `SPEX='${posixPath(spex)}' bash ${posixPath(dispatch)} ${id} ${e}`
   const hooks: Record<string, unknown[]> = {}
   for (const e of events) hooks[e] = [{ hooks: [{ type: 'command', command: cmd(e) }] }]
   // `content` stays the standalone rendering (what a shim file that is wholly ours would hold); `hooks` is
