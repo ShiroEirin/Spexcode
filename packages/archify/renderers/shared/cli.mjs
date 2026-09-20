@@ -24,10 +24,16 @@ export function prepareDiagram(diagramType, diagram, { repoRoot } = {}) {
   return verifyRepositoryEvidence(diagramType, diagram, repoRoot);
 }
 
+// @@@ the template is a SOURCE file and a checkout stores it in the platform's line endings
+// (core.autocrlf=true -> CRLF on Windows). The artifacts this pipeline produces are DEFINED as the bytes the
+// CLI delivered, and their sha256 is pinned in test/example-pages.sha256.json, so a CRLF template silently
+// changed every rendered page and the byte-equality test failed with no visible difference. Normalize on read,
+// the same way scripts/generate-brand-marks.mjs and generate-validators.mjs already do for their outputs.
+const lf = (text) => text.replace(/\r\n?/g, '\n')
 // The viewer template, read once per process.
 let templateText = null;
 export function loadTemplate() {
-  templateText ??= fs.readFileSync(new URL('../../assets/template.html', import.meta.url), 'utf8');
+  templateText ??= lf(fs.readFileSync(new URL('../../assets/template.html', import.meta.url), 'utf8'));
   return templateText;
 }
 
@@ -39,7 +45,7 @@ export function loadDiagram({ rendererDir, diagramType, defaultExample, argv = p
   const inputPath = path.resolve(argv[2] || path.join(skillRoot, 'examples', defaultExample));
   const diagram = JSON.parse(fs.readFileSync(inputPath, 'utf8'));
   const sourceEvidence = prepareDiagram(diagramType, diagram, { repoRoot: process.env.ARCHIFY_REPO_ROOT });
-  const template = fs.readFileSync(path.join(skillRoot, 'assets/template.html'), 'utf8');
+  const template = lf(fs.readFileSync(path.join(skillRoot, 'assets/template.html'), 'utf8'));
   const outputRequest = {
     requestedOutput: argv[3],
     authoredOutput: diagram.meta?.output,

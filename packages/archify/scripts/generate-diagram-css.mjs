@@ -9,7 +9,10 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const output = path.join(root, 'assets/diagram.css');
-const template = fs.readFileSync(path.join(root, 'assets/template.html'), 'utf8');
+// @@@ a checkout stores the template CRLF on Windows; this generator's OUTPUT is compared byte-for-byte by
+// `--check`, so the source must be normalized the same way the writers already do (generate-brand-marks.mjs,
+// generate-validators.mjs).
+const template = fs.readFileSync(path.join(root, 'assets/template.html'), 'utf8').replace(/\r\n?/g, '\n');
 const stylesheet = template.match(/<style>([\s\S]*?)<\/style>/)?.[1];
 if (!stylesheet) throw new Error('assets/template.html has no <style> block');
 
@@ -165,7 +168,7 @@ ${body.join('\n')}
 `;
 
 if (process.argv.includes('--check')) {
-  const current = fs.existsSync(output) ? fs.readFileSync(output, 'utf8') : '';
+  const current = fs.existsSync(output) ? fs.readFileSync(output, 'utf8').replace(/\r\n?/g, '\n') : '';
   if (current !== generated) {
     console.error('assets/diagram.css is stale — run node scripts/generate-diagram-css.mjs');
     process.exit(1);
