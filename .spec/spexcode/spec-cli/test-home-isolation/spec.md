@@ -34,6 +34,20 @@ inherited session-configuration override, so a fixture backend or CLI a test sta
 canonical session database. The isolation is whole-store for SQLite exactly as it is for the record tree: both
 live under the redirected root and die with it.
 
+The bootstrap also clears the environment of the harness that HOSTS the suite, because a test runner
+inherits everything the hosting agent exports into its children. A session identity is the loud shape: a
+fixture that reads one sees the host's session instead of the session it set, so it asserts against a value it
+never wrote — a failure that looks like a product defect and is purely an inheritance artifact. A harness that
+also exports its workspace is the quieter shape, handing a fixture a cwd that is not its own. The strip runs
+ONCE, at the outermost bootstrap: this module propagates into every child a fixture spawns, and a child handed
+a session identity ON PURPOSE must keep it, or the fixture's own input is deleted and its assertion flips to
+the other path. The mark of an ancestor bootstrap already running is the disposable home it hands down, so the
+strip is gated on its absence. The list is a COPY of the adapter's declarations rather than a read of them:
+this module must load before any TypeScript loader is guaranteed, so importing the declarations from the
+adapter source breaks a plain-`node` caller. A hand-kept list normally fails silently, so a test
+reads the adapter source and fails the moment the copy drifts from the declared identities and scrubs — a
+harness added later cannot be forgotten here.
+
 `~/.spexcode` is not the only persistent user store a test can reach. Codex keeps project trust in the user's
 global `~/.codex/config.toml`, and the codex adapter writes there on every materialize of a codex harness — so a
 test that inits a temporary project with codex stamps that user file with a trust block for a path that stops

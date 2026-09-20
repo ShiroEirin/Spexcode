@@ -12,6 +12,39 @@ import { join, resolve } from 'node:path'
 const userHome = resolve(process.env.SPEXCODE_TEST_USER_HOME || join(homedir(), '.spexcode'))
 const inheritedTestHome = process.env.SPEXCODE_TEST_HOME
 process.env.SPEXCODE_TEST_USER_HOME = userHome
+
+// The harness that HOSTS this suite stamps its own environment into every process it spawns, and the runner
+// inherits all of it. The session identity is the loud half: a fixture that reads it sees a foreign session
+// (the runner's) instead of the one it set, so it asserts against a value it never wrote. The quiet half is
+// worse — a harness that also exports its WORKSPACE hands a fixture a cwd that is not its own.
+//
+// Cleared ONCE, in the outermost process, because this module also loads inside every child a fixture spawns
+// (NODE_OPTIONS propagates it). A child that was handed a session identity ON PURPOSE must keep it — that is
+// how a fixture exercises the agent path — so an unconditional strip would delete the fixture's own input and
+// flip its assertion to the human path. \`SPEXCODE_TEST_HOME\` is the existing mark of "an ancestor
+// bootstrap already ran": absent here means this IS the entry point.
+//
+// The list is a COPY of the adapter declarations, not a read of them: the bootstrap must load before any
+// TypeScript loader is guaranteed, so importing spec-cli/src/harness-shim.ts breaks a plain-\`node\` caller
+// outright. A hand-kept list is normally a defect that fails silently, so spec-cli/src/test-home.test.ts reads
+// the adapter source and fails the moment this drifts from the declared identities and scrubs.
+if (!inheritedTestHome) {
+  const HOST_HARNESS_ENV = [
+    'SPEXCODE_SESSION_ID',
+    // A declaration of which identities a session's children carry. A runner is not that session.
+    'SPEXCODE_SESSION_IDENTITY_VARS',
+    'CLAUDE_CODE_SESSION_ID',
+    'CODEX_THREAD_ID',
+    'OPENCODE_SESSION_ID',
+    'PI_SESSION_ID',
+    'ZCODE_SESSION_ID',
+    'SNOW_SESSION_ID',
+    // Snow's non-identity half: the workspace it was launched in, and its own platform tag.
+    'SNOW_CWD',
+    'SNOW_PLATFORM',
+  ]
+  for (const key of HOST_HARNESS_ENV) delete process.env[key]
+}
 // Codex keeps project trust in the user's GLOBAL ~/.codex/config.toml, and the codex adapter writes there on
 // every materialize. That file is a second persistent user store, so it gets the same redirect as ~/.spexcode.
 const userCodexHome = resolve(process.env.SPEXCODE_TEST_USER_CODEX_HOME || join(homedir(), '.codex'))

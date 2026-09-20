@@ -11,7 +11,7 @@ function sweepTemp(dir: string): void {
 }
 
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -24,7 +24,7 @@ test('test bootstrap assigns each process a disposable SPEXCODE_HOME outside the
   const home = process.env.SPEXCODE_HOME
   assert.ok(home, 'the test bootstrap must set SPEXCODE_HOME')
   assert.notEqual(resolve(home), userHome)
-  assert.ok(resolve(home).startsWith(`${resolve(tmpdir())}/spexcode-test-home-`))
+  assert.ok(resolve(home).startsWith(join(resolve(tmpdir()), 'spexcode-test-home-')))
   assert.match(process.env.NODE_OPTIONS || '', /--import=file:.*scripts\/test-home\.mjs/)
 })
 
@@ -83,7 +83,7 @@ test('test bootstrap redirects CODEX_HOME into the disposable home and never at 
   delete env.CODEX_HOME
   const probe = spawnSync(process.execPath, ['--eval', 'process.stdout.write(process.env.CODEX_HOME)'], { encoding: 'utf8', env })
   assert.equal(probe.status, 0, probe.stderr)
-  assert.ok(probe.stdout.startsWith(`${resolve(tmpdir())}/spexcode-test-home-`), `a fresh process gets its own disposable codex home: ${probe.stdout}`)
+  assert.ok(probe.stdout.startsWith(join(resolve(tmpdir()), 'spexcode-test-home-')), `a fresh process gets its own disposable codex home: ${probe.stdout}`)
   assert.equal(existsSync(probe.stdout), false, 'the disposable codex home is removed with the test home at process exit')
 
   const fixtureCodexHome = mkdtempSync(join(tmpdir(), 'spex-explicit-codex-home-'))
@@ -100,4 +100,28 @@ test('test bootstrap redirects CODEX_HOME into the disposable home and never at 
   })
   assert.notEqual(unsafe.status, 0)
   assert.match(unsafe.stderr, /Refusing to run tests with CODEX_HOME pointed at the user codex home/)
+})
+
+// [[test-home-isolation]] — the bootstrap must clear the environment the HOSTING harness stamped into the
+// runner. A session identity is the loud half (a fixture reading it sees a foreign session and asserts against
+// a value it never wrote); a harness that also exports its workspace is the quiet half. The bootstrap keeps a
+// COPY of the adapter's declarations because it has to load before any TypeScript loader is guaranteed, so this
+// test reads the adapter source and fails the moment the two drift — a harness added with a new sessionEnvVar
+// or scrub cannot be forgotten here.
+test('the bootstrap strips every harness identity and scrub the adapters declare', () => {
+  const adapter = readFileSync(join(import.meta.dirname, '..', '..', 'packages', 'spec-core', 'src', 'harness-identity.ts'), 'utf8')
+  const identities = [...adapter.matchAll(/sessionEnvVar: '([A-Z0-9_]+)'/g)].map((m) => m[1])
+  const scrubs = [...adapter.matchAll(/sessionEnvScrubs: \[([^\]]*)\]/g)]
+    .flatMap((m) => [...m[1].matchAll(/'([A-Z0-9_]+)'/g)].map((x) => x[1]))
+  assert.ok(identities.length > 0, 'the adapter declarations must be readable; a silent zero would pass every check below')
+
+  const source = readFileSync(bootstrap, 'utf8')
+  const listed = new Set([...source.matchAll(/^\s+'([A-Z0-9_]+)',$/gm)].map((m) => m[1]))
+  for (const name of [...identities, ...scrubs, 'SPEXCODE_SESSION_ID']) {
+    assert.ok(listed.has(name), `the bootstrap must clear ${name} — the harness it runs under exports it`)
+  }
+
+  // The strip runs ONCE, in the outermost process: this module also loads inside every child a fixture spawns
+  // (NODE_OPTIONS propagates it), and a child handed a session identity ON PURPOSE must keep it.
+  assert.match(source, /if \(!inheritedTestHome\)/, 'the strip must be gated on being the outermost bootstrap')
 })
