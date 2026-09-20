@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { createSession, isDashboardVisibleHarness } from './launch.js'
+import { createSession, isDashboardVisibleHarness, observeSessionProjection, pendingSessionFor } from './launch.js'
 
 test('dashboard hides external adapter harnesses from launch and target choices', () => {
   assert.equal(isDashboardVisibleHarness('zcode'), false)
@@ -52,6 +52,35 @@ test('Conversation launch carries the explicit initial note reply channel', asyn
   } finally {
     globalThis.fetch = originalFetch
   }
+})
+
+test('a creation receipt stops supplying state once its authoritative session is acknowledged', async () => {
+  const originalFetch = globalThis.fetch
+  const receipt = { id: 'receipt-handoff', status: 'queued', title: 'hello' }
+  globalThis.fetch = async () => ({ ok: true, json: async () => receipt })
+  try {
+    await createSession('hello', 'fixture')
+    assert.deepEqual(pendingSessionFor(receipt.id), receipt)
+    observeSessionProjection([receipt])
+    assert.equal(pendingSessionFor(receipt.id), null)
+    observeSessionProjection([])
+    assert.equal(pendingSessionFor(receipt.id), null, 'roster removal cannot resurrect the acknowledged receipt')
+  } finally { globalThis.fetch = originalFetch }
+})
+
+test('a delayed create response cannot restore a receipt after the board observed and removed its session', async () => {
+  const originalFetch = globalThis.fetch
+  const receipt = { id: 'late-receipt', status: 'queued' }
+  let release
+  globalThis.fetch = () => new Promise((resolve) => { release = resolve })
+  try {
+    const request = createSession('hello', 'fixture')
+    observeSessionProjection([{ ...receipt, status: 'asking' }])
+    observeSessionProjection([])
+    release({ ok: true, json: async () => receipt })
+    assert.equal((await request).ok, true)
+    assert.equal(pendingSessionFor(receipt.id), null)
+  } finally { globalThis.fetch = originalFetch }
 })
 
 // THE LAUNCH COMPOSER'S SUBMIT. [[new-session-tab]]: plain Enter launches, Shift+Enter inserts a line,

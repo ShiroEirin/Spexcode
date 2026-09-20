@@ -36,7 +36,9 @@ const publicEvent = (event: SessionEvent): TimelineEvent[] => {
       ts: new Date(event.occurredAtMs).toISOString(),
       kind: 'status',
       ...state,
-      note: payload.note === null || payload.note === undefined ? null : String(payload.note),
+      note: event.type === 'session.state.changed.v1' && state.status === 'archived'
+        ? null
+        : payload.note === null || payload.note === undefined ? null : String(payload.note),
     }]
   }
   if (event.type === 'session.message.sent.v1' || event.type === MIGRATED_MESSAGE_EVENT) return [{

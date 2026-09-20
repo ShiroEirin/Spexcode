@@ -28,6 +28,14 @@ recoverable session receipt, or one structured failure after all session-specifi
 
 ## expanded spec
 
+The browser keeps the creation receipt only until an authoritative session projection takes over. A tab
+may use that receipt for its immediate name and queued indicator; once the page accepts the real session
+projection, the receipt is retired whether or not its tab is open. An in-flight create remembers ids observed
+while it waits, so a late response cannot reinstall a receipt after the board has already observed (and possibly
+removed) that session. These observations end with the create request, not a permanent tombstone registry.
+Later absence from the active roster cannot resurrect the queued receipt. The retained tab title is
+presentation history, not a retained runtime state.
+
 Creation is a bounded transaction whose commit point is the atomic `runtime.json` publication. Before that
 point, launcher resolution and prompt composition are read-only; Git may create exactly the candidate branch
 and worktree; and the global store may contain only the candidate's private preparation files. A deadline,

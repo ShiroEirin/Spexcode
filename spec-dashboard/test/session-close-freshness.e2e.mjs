@@ -9,7 +9,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = resolve(here, '..', '..')
-const cliRoot = join(root, 'spec-cli')
+const cliRoot = resolve(process.env.CLI_ROOT || join(root, 'spec-cli'))
 const dashboardRoot = resolve(process.env.DASHBOARD_ROOT || join(root, 'spec-dashboard'))
 const sharedRoot = resolve(root, '..', '..')
 const dependencyRoot = existsSync(join(root, 'node_modules', 'tsx', 'dist', 'cli.mjs')) ? root : sharedRoot
@@ -80,7 +80,10 @@ try {
     '---', 'title: fixture', 'status: active', 'hue: 180', 'desc: close freshness fixture', '---',
     '# fixture', '', '## raw source', '', 'Fixture.', '', '## expanded spec', '', 'Fixture.', '',
   ].join('\n'))
-  writeFileSync(join(project, '.spec/spexcode.json'), '{}\n')
+  writeFileSync(join(project, '.spec/spexcode.json'), JSON.stringify({
+    harnesses: ['claude'],
+    sessions: { launchers: { fixture: { harness: 'claude', cmd: join(cliRoot, 'test/fixtures/fake-claude') } }, defaultLauncher: 'fixture' },
+  }))
   git(project, 'init', '-q', '-b', 'main')
   git(project, 'config', 'user.email', 'fixture@example.test')
   git(project, 'config', 'user.name', 'fixture')
@@ -286,6 +289,53 @@ try {
   await page.locator(`.si-item[data-sid="${batchIds[0]}"]`).waitFor({ state: 'detached' })
   await page.getByRole('alert').waitFor({ state: 'detached' })
   step('authoritative board removal withdraws the stale failure and retry callback')
+
+  // Start through the actual composer so the receipt cache is born in this same page and tab.
+  await context.close()
+  context = await browser.newContext({ viewport: { width: 1280, height: 800 } })
+  page = await context.newPage()
+  await page.goto(`${base}/#/sessions/new`, { waitUntil: 'domcontentloaded' })
+  await page.locator('.si-input:visible').fill('hello')
+  const [createdResponse] = await Promise.all([
+    page.waitForResponse((response) => new URL(response.url()).pathname === '/api/sessions' && response.request().method() === 'POST'),
+    page.locator('.si-input:visible').press('Enter'),
+  ])
+  const created = await createdResponse.json()
+  assert.equal(createdResponse.status(), 201, JSON.stringify(created))
+  const createdRow = page.locator(`.si-item[data-sid="${created.id}"]`)
+  await createdRow.waitFor({ state: 'visible', timeout: 15_000 })
+  await waitFor(async () => {
+    const session = await (await fetch(`http://127.0.0.1:${apiPort}/api/sessions/${created.id}`)).json()
+    return session.liveness === 'online'
+  }, 'fixture launcher online', 20_000)
+  const reply = 'Hello! What would you like to work on?'
+  const declaration = await fetch(`http://127.0.0.1:${apiPort}/api/session-runtime/${created.id}/state`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'asking', note: reply }),
+  })
+  assert.equal(declaration.ok, true)
+  await page.locator('.tl-chat:visible').getByText(reply, { exact: true }).waitFor({ state: 'visible', timeout: 15_000 })
+  await page.screenshot({ path: join(out, 'created-replied.png'), fullPage: true })
+  await createdRow.click({ button: 'right' })
+  await page.getByRole('menuitem', { name: /^close$/i }).click()
+  await page.getByRole('dialog').locator('.danger').click()
+  await createdRow.waitFor({ state: 'detached', timeout: 20_000 })
+  await page.locator('.tl-chat:visible [data-footer-state="archived"]').waitFor({ state: 'visible' })
+  const remainingSpinners = await page.locator('.tab-spinner').count()
+  const replyCopies = await page.locator('.tl-chat:visible').getByText(reply, { exact: true }).count()
+  step(`created→replied→closed in one page: tab spinners=${remainingSpinners}, reply copies=${replyCopies}`)
+  await page.screenshot({ path: join(out, 'created-closed.png'), fullPage: true })
+  assert.equal(remainingSpinners, 0, 'closed tab must not resurrect its creation receipt')
+  assert.equal(replyCopies, 1, 'archive is a terminal marker, not another authored reply')
+  const retained = await (await fetch(`http://127.0.0.1:${apiPort}/api/sessions/${created.id}`)).json()
+  assert.equal(retained.note, reply, 'record still retains the final reply')
+  assert.equal(retained.archived, true)
+  assert.equal(existsSync(created.path), false, 'close removed the actual fixture worktree')
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.locator('.tl-chat:visible [data-footer-state="archived"]').waitFor({ state: 'visible' })
+  assert.equal(await page.locator('.tl-chat:visible').getByText(reply, { exact: true }).count(), 1)
+  assert.equal(await page.locator('.tab-spinner').count(), 0)
+  step('reload retains one reply, archived state, and no startup spinner')
 } catch (error) {
   failure = error
   step(`failure: ${String(error?.message || error)}`)
@@ -297,6 +347,7 @@ try {
   await browser?.close().catch(() => {})
   await viteServer?.close().catch(() => {})
   await stop(backend)
+  try { execFileSync('tmux', ['-L', `spex-close-freshness-${process.pid}`, 'kill-server'], { stdio: 'ignore' }) } catch { /* fixture server already stopped */ }
   writeFileSync(join(out, 'timeline.json'), JSON.stringify({ v: 2, axis: 'time', events }, null, 2) + '\n')
   writeFileSync(join(out, 'result.json'), JSON.stringify({ ok: !failure, error: failure ? String(failure.stack || failure) : null, video: videoPath, backendLog }, null, 2) + '\n')
   rmSync(fixture, { recursive: true, force: true })
