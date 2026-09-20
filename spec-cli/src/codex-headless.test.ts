@@ -6,7 +6,7 @@ import { HARNESSES } from './harness.js'
 
 test('codex-headless composes Codex materialization and shared-runtime ownership without a TUI attach', () => {
   assert.deepEqual(HARNESSES.map((h) => h.id), [
-    'claude', 'codex', 'opencode', 'pi', 'zcode',
+    'claude', 'codex', 'opencode', 'pi', 'zcode', 'snow',
     'claude-headless', 'opencode-headless', 'pi-headless', 'codex-headless',
   ])
   const proj = process.cwd()

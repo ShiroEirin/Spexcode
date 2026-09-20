@@ -2851,7 +2851,12 @@ test('writeCodexTrust refuses to persist a config.toml that codex could not load
 
 test('every registered adapter reads its transcript through one reader; headless rows inherit their base', () => {
   const base = HARNESSES.filter((harness) => !harness.headless)
-  const headless = HARNESSES.filter((harness) => harness.headless && harness.id !== 'zcode')
+  // @@@ `base` is the resident adapters and `headless` their *-headless VARIANTS, whose whole point is that
+  // they inherit their base's reader. A native single-row headless adapter has no base to inherit and is not a
+  // variant, so it is excluded on its own id — zcode was already, and snow ([[snow-harness]], `headless: true`
+  // with no resident twin) is the same shape.
+  const nativeHeadless = new Set(['zcode', 'snow'])
+  const headless = HARNESSES.filter((harness) => harness.headless && !nativeHeadless.has(harness.id))
   assert.equal(base.length, 4)
   assert.equal(headless.length, 4)
   assert.equal(new Set(base.map((harness) => harness.transcript)).size, 4, 'four native shapes, four readers')
