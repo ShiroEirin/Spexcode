@@ -259,20 +259,23 @@ try {
     const actions = strip?.querySelector('.tabstrip-actions')
     const reservation = strip?.querySelector('.context-toggle-reservation')
     const toggle = document.querySelector('.context-toggle-slot .context-toggle')
+    const lastAction = [...strip.querySelectorAll('[data-action]')].at(-1)
     const rect = (el) => (el ? el.getBoundingClientRect().toJSON() : null)
-    return { actions: rect(actions), reservation: rect(reservation), toggle: rect(toggle), toggleVisibility: toggle ? getComputedStyle(toggle).visibility : null }
+    return { actions: rect(actions), reservation: rect(reservation), toggle: rect(toggle), lastAction: rect(lastAction) }
   })
   const specBand = await bandGeometry()
   await page.locator(`[role="tab"][data-tab-key="${sessionKey}"]:visible .tab-face`).click()
   const sessionSwitch = await waitFor(async () => await hash() === sessionKey, 'session tab route', 5_000).catch(() => false)
   const sessionBand = await bandGeometry()
+  await page.locator('.tabstrip').screenshot({ path: join(out, 'timeline-buttons.png') })
   await page.locator('[role="tab"][data-tab-key="#/spec/fixture"]:visible .tab-face').click()
   await waitFor(async () => await hash() === '#/spec/fixture', 'spec tab route', 5_000).catch(() => false)
-  scene('right-side action geometry stays fixed while switching document kinds', sessionSwitch
+  scene('only spec tabs reserve a context button; session actions reach the right edge', sessionSwitch
     && Math.abs((specBand.actions?.right || 0) - (sessionBand.actions?.right || 0)) <= 1
-    && (sessionBand.reservation?.width || 0) === (specBand.reservation?.width || 0)
-    && Math.abs((specBand.toggle?.right || 0) - (sessionBand.toggle?.right || 0)) <= 1
-    && sessionBand.toggleVisibility === 'hidden', { specBand, sessionBand })
+    && specBand.reservation?.width === 32 && specBand.toggle?.width === 28
+    && sessionBand.reservation === null && sessionBand.toggle === null
+    && sessionBand.lastAction && sessionBand.actions.right - sessionBand.lastAction.right <= 8,
+    { specBand, sessionBand })
 
   // 4 — split: the session tab MOVES into a second region, and a drag brings it home again
   await page.locator(`[role="tab"][data-tab-key="${sessionKey}"]:visible`).first().click({ button: 'right' })
