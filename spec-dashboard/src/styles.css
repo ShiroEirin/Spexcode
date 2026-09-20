@@ -1631,12 +1631,9 @@ body.is-resizing, body.is-resizing * { cursor: col-resize !important; user-selec
 /* close-confirm prompt: shares the rename modal chrome; the confirm button is the destructive (orange) verb. */
 .sess-confirm { display: flex; flex-direction: column; gap: 12px; padding: 4px 2px 2px; }
 .sess-confirm-msg { margin: 0; color: var(--ink); font-size: var(--type-control); line-height: var(--leading-ui); }
-.sess-close-progress { display: flex; align-items: flex-start; gap: 10px; padding: 7px 2px 5px; color: var(--blue); font-size: var(--type-control); line-height: var(--leading-ui); }
-.sess-close-progress.succeeded { color: var(--green); }
-.sess-close-progress strong { display: block; font-weight: var(--weight-semibold); }
-.sess-close-spinner { flex: none; margin-top: 1px; animation: si-attach-spin .8s linear infinite; }
-.sess-close-detail { margin: 4px 0 0; color: var(--muted); font-size: var(--type-meta); line-height: var(--leading-relaxed); }
-.sess-close-error { display: flex; align-items: flex-start; gap: 8px; color: var(--red); font-size: var(--type-control); line-height: var(--leading-ui); overflow-wrap: anywhere; }
+.sess-close-state { display: flex; align-items: center; gap: 4px; color: var(--blue); font-size: var(--type-meta); }
+.sess-close-state.failed { color: var(--red); }
+.sess-close-spinner { flex: none; animation: si-attach-spin .8s linear infinite; }
 .sess-rename-btn.danger { border-color: var(--orange); color: var(--orange); }
 .sess-rename-btn.danger:hover { background: var(--orange); color: var(--paper); }
 .sess-rename-btn.danger:disabled { opacity: .5; cursor: default; }

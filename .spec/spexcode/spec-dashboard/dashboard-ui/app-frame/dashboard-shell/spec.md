@@ -54,6 +54,9 @@ tree or cold-only route path that can hide the working set; mobile reflows the s
 responsive face. App owns the one global route subscription and passes the captured address into that mobile
 view; the mobile face never creates a second global route reader.
 
+[[session-close-feedback]] is mounted within the project board but outside routed documents and dock panels.
+Those presentation changes cannot dispose a pending close request or its non-modal feedback.
+
 **Backend reachability is one shell fact.** Every dashboard API read reports through the shared data transport.
 A network refusal or gateway 502/503/504 marks the whole live dashboard offline, even when a page still holds a
 last-good board. The frame renders one global offline banner with an explicit retry; a later reachable API

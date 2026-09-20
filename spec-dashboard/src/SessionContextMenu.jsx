@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ContextMenu, ContextMenuGroup, ContextMenuItem, ContextMenuSeparator, ContextMenuSubmenu } from './ContextMenu.jsx'
 import Modal from './Modal.jsx'
 import SessionCloseDialog from './SessionCloseDialog.jsx'
+import { useCloseSession, useSessionCloseState } from './SessionCloseProvider.jsx'
 import SessionAttach from './SessionAttach.jsx'
 import { apiFetch, loadSettings } from './data.js'
 import { openNewTab } from './tabs.js'
@@ -16,6 +17,8 @@ const SPEC_ROWS_MAX = 8
 
 export default function SessionContextMenu({ menu, closeRequest = null, onCloseRequestDone, onClose, onChanged, onLock, onError, onMultiSelect, onDetach }) {
   const t = useT()
+  const closeSession = useCloseSession()
+  const closeState = useSessionCloseState(menu?.session?.id)
   const [renaming, setRenaming] = useState(null)   // the session whose rename prompt is open | null
   const [closing, setClosing] = useState(null)     // the session whose close-confirm prompt is open | null
   const [quarantining, setQuarantining] = useState(null) // corrupt row whose opaque record needs witnessed quarantine
@@ -178,16 +181,7 @@ export default function SessionContextMenu({ menu, closeRequest = null, onCloseR
   const closingSession = closing || closeRequest
   const dismissClose = () => { setClosing(null); onCloseRequestDone?.() }
 
-  // The dialog owns the visible transaction state. The API call remains one close authority; this wrapper only
-  // translates a non-2xx response into the dialog's retryable failure state and refreshes the board after a
-  // successful commit.
-  const confirmClose = async () => {
-    const { id } = closingSession
-    const response = await apiFetch(`/api/sessions/${id}/close`, { method: 'POST' })
-    const body = await response.json()
-    if (!response.ok || body?.ok !== true) throw new Error(body?.error || `session close unconfirmed (HTTP ${response.status})`)
-    onChanged?.()
-  }
+  const confirmClose = () => { void closeSession(closingSession) }
 
   // The door lists the nodes this session is changing, capped so a wide session cannot push the menu's own
   // verbs off the screen. What the cap hides is SAID, not silently dropped, and `find on graph` below still
@@ -251,7 +245,7 @@ export default function SessionContextMenu({ menu, closeRequest = null, onCloseR
           </ContextMenuGroup>
           <ContextMenuSeparator />
           <ContextMenuGroup>
-            <ContextMenuItem icon="trash" danger onClick={startClose}>{t('sessionWindow.close')}</ContextMenuItem>
+            <ContextMenuItem icon="trash" danger disabled={closeState?.phase === 'pending'} onClick={startClose}>{t(closeState?.phase === 'pending' ? 'sessionWindow.closeWorking' : 'sessionWindow.close')}</ContextMenuItem>
           </ContextMenuGroup>
         </ContextMenu>
       )}
