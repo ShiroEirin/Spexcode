@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module'
+import { pathToFileURL } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
 
 // @@@ tsxBin - tsx's JS ENTRY (dist/cli.mjs), dev-or-published, run through `node` by the caller
@@ -17,9 +18,13 @@ export function tsxBin(pkgDir: string): string {
   }
 }
 
+// `node --import` takes a MODULE SPECIFIER, and on Windows a bare drive-letter path is parsed as the URL
+// scheme `c:` — the child dies with ERR_UNSUPPORTED_ESM_URL_SCHEME before any CLI code runs (the same
+// command with a file:// loader executes normally). The entry argument is unaffected: a plain path works
+// there. So the loader is the ONE place that must be a URL.
 function tsxLoader(pkgDir: string): string {
   try {
-    return createRequire(join(pkgDir, 'package.json')).resolve('tsx/esm')
+    return pathToFileURL(createRequire(join(pkgDir, 'package.json')).resolve('tsx/esm')).href
   } catch {
     throw new Error(`tsx runtime not found from ${pkgDir} — run \`npm install\` in the SpexCode package`)
   }
