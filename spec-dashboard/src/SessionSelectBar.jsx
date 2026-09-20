@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { apiFetch } from './data.js'
 import { IconButton } from './icons.jsx'
 import SessionCloseDialog from './SessionCloseDialog.jsx'
@@ -8,22 +8,28 @@ import { useT } from './i18n/index.jsx'
 // endpoint used by the single-row menu; this bar never invents a second delete operation.
 export default function SessionSelectBar({ ids, onCancel, onClosed }) {
   const t = useT()
-  const [confirming, setConfirming] = useState(false)
+  const [confirming, setConfirming] = useState(null)
+  const completed = useRef(new Set())
   const confirmClose = async () => {
-    const responses = await Promise.all(ids.map((id) => apiFetch(`/api/sessions/${id}/close`, { method: 'POST' }).then(async (response) => {
-      if (response.ok) return
-      const body = await response.json().catch(() => null)
-      throw new Error(body?.error || `session close refused (HTTP ${response.status})`)
-    })))
-    return responses
+    const results = await Promise.allSettled(confirming.filter((id) => !completed.current.has(id)).map(async (id) => {
+      const response = await apiFetch(`/api/sessions/${id}/close`, { method: 'POST' })
+      const body = await response.json()
+      if (!response.ok || body?.ok !== true) throw new Error(`${id}: ${body?.error || `session close unconfirmed (HTTP ${response.status})`}`)
+      completed.current.add(id)
+    }))
+    const failures = results.filter((result) => result.status === 'rejected')
+    if (failures.length) throw new Error(failures.map((result) => result.reason.message || String(result.reason)).join('\n'))
   }
   return <>
     <div className="si-selbar">
       <span className="si-selcount">{t('sessionSelect.selected', { n: ids.length })}</span>
       <IconButton icon="trash" size={14} className="si-selaction danger" label={t('sessionSelect.close')}
-        disabled={!ids.length} onClick={() => setConfirming(true)} />
+        disabled={!ids.length || !!confirming} onClick={() => { completed.current.clear(); setConfirming([...ids]) }} />
       <IconButton icon="x" size={14} className="si-selaction" label={t('common.cancel')} onClick={onCancel} />
     </div>
-    {confirming && <SessionCloseDialog count={ids.length} onConfirm={async () => { await confirmClose(); onClosed?.() }} onClose={() => setConfirming(false)} />}
+    {confirming && <SessionCloseDialog count={confirming.length} onConfirm={confirmClose} onClose={() => {
+      setConfirming(null)
+      if (completed.current.size) onClosed?.()
+    }} />}
   </>
 }

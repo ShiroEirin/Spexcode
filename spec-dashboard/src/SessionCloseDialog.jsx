@@ -6,39 +6,39 @@ import { useT } from './i18n/index.jsx'
 
 // Close is a long transaction, not a click. Keep the confirmation surface mounted until the request has
 // either been accepted or rejected, so the human never has to infer whether the destructive action landed.
-export default function SessionCloseDialog({ name, count = 1, onConfirm, onClose }) {
+export default function SessionCloseDialog({ name, count = null, onConfirm, onClose }) {
   const t = useT()
   const [phase, setPhase] = useState('confirming')
   const [error, setError] = useState('')
   const timerRef = useRef(null)
+  const inFlight = useRef(false)
 
   useEffect(() => () => { if (timerRef.current) window.clearTimeout(timerRef.current) }, [])
 
   const dismiss = () => {
-    if (phase === 'working') return
+    if (inFlight.current) return
     onClose?.()
   }
 
   const confirm = async () => {
-    if (phase === 'working') return
+    if (inFlight.current || phase === 'succeeded') return
+    inFlight.current = true
     setError('')
     setPhase('working')
     try {
-      await onConfirm?.()
+      await onConfirm()
       setPhase('succeeded')
       timerRef.current = window.setTimeout(() => onClose?.(), 900)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
       setPhase('failed')
+    } finally {
+      inFlight.current = false
     }
   }
 
-  const retry = () => {
-    setError('')
-    setPhase('confirming')
-  }
   useEscLayer(true, dismiss)
-  const title = count > 1
+  const title = count !== null
     ? t('sessionSelect.closeTitle', { n: count })
     : t('sessionWindow.closeTitle', { name })
 
@@ -47,7 +47,7 @@ export default function SessionCloseDialog({ name, count = 1, onConfirm, onClose
       closeLabel={t('common.close')} closeDisabled={phase === 'working'} onClose={dismiss} className="sess-rename-modal">
       {phase === 'confirming' && (
         <div className="sess-confirm">
-          <p className="sess-confirm-msg">{count > 1 ? t('sessionSelect.closeConfirm') : t('sessionWindow.closeConfirm')}</p>
+          <p className="sess-confirm-msg">{count !== null ? t('sessionSelect.closeConfirm') : t('sessionWindow.closeConfirm')}</p>
           <div className="sess-rename-actions">
             <button type="button" className="sess-rename-btn" onClick={dismiss}>{t('common.cancel')}</button>
             <button type="button" className="sess-rename-btn danger" onClick={confirm} autoFocus>
@@ -82,7 +82,7 @@ export default function SessionCloseDialog({ name, count = 1, onConfirm, onClose
           </div>
           <div className="sess-rename-actions">
             <button type="button" className="sess-rename-btn" onClick={dismiss}>{t('common.cancel')}</button>
-            <button type="button" className="sess-rename-btn danger" onClick={retry}>{t('sessionWindow.closeRetry')}</button>
+            <button type="button" className="sess-rename-btn danger" onClick={confirm}>{t('sessionWindow.closeRetry')}</button>
           </div>
         </div>
       )}

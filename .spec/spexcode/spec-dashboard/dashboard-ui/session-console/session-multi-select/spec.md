@@ -32,6 +32,12 @@ ellipsis, while close-selected is a danger-coloured trash icon and cancel is an 
 their localized tooltip and `aria-label`. Confirmation uses the same close endpoint as the single-row action and every
 request is reconciled by the board reload; graph marquee selection is unrelated and must not satisfy this contract.
 
+The shared close dialog ([[session-rename]]) freezes the selected ids at confirmation. It waits for every
+request to settle before offering retry; partial success is retained, and retry sends only ids whose close
+was not acknowledged. HTTP success alone is insufficient: each response must carry `ok: true`. Successful
+completion remains visible before selection mode exits. Dismissing a settled partial failure reconciles the
+board, while no request still in flight is mistaken for a failure or retried.
+
 The same panel owns row movement — the frame's navigator ([[dock-modes]]), so selection and movement are two
 gestures on one list rather than one page's privileges. A whole session row becomes a pointer drag after the
 shared six-pixel gesture threshold. The live source row dims, an inert projection follows the pointer at 75%

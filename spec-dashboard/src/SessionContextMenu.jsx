@@ -184,8 +184,8 @@ export default function SessionContextMenu({ menu, closeRequest = null, onCloseR
   const confirmClose = async () => {
     const { id } = closingSession
     const response = await apiFetch(`/api/sessions/${id}/close`, { method: 'POST' })
-    const body = await response.json().catch(() => null)
-    if (!response.ok || body?.ok === false) throw new Error(body?.error || `session close refused (HTTP ${response.status})`)
+    const body = await response.json()
+    if (!response.ok || body?.ok !== true) throw new Error(body?.error || `session close unconfirmed (HTTP ${response.status})`)
     onChanged?.()
   }
 
