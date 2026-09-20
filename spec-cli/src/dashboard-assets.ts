@@ -45,7 +45,8 @@ export function ensureDashboardArtifact(artifact: DashboardArtifact): string {
     if (!existsSync(join(root, 'src'))) throw error
     const script = artifact === 'dist' ? 'build' : artifact === 'dist-public' ? 'build:public' : 'build:public-single'
     console.log(`[dashboard] ${artifact} is not built — running npm run ${script} in ${PACKAGE}…`)
-    const result = spawnSync('npm', ['run', script], { cwd: root, stdio: 'inherit' })
+    // shell on win32: `npm` is npm.cmd there and a shell-less spawn answers ENOENT (no PATHEXT read).
+    const result = spawnSync('npm', ['run', script], { cwd: root, stdio: 'inherit', shell: process.platform === 'win32' })
     if (result.status === 0) return dashboardArtifactDir(artifact)
     throw new DashboardAssetError(`dashboard UI build failed for ${PACKAGE}. Repair it with: (cd ${root} && npm run ${script})`)
   }

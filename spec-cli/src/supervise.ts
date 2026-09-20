@@ -62,7 +62,8 @@ const watchRoots = workspaceRoot
 function buildWorkspace(): boolean {
   if (!workspaceRoot) return true
   console.log('[supervisor] building workspace artifacts')
-  const result = spawnSync('npm', ['run', 'build'], { cwd: workspaceRoot, stdio: 'inherit' })
+  // shell on win32: `npm` is npm.cmd there and a shell-less spawn answers ENOENT (no PATHEXT read).
+  const result = spawnSync('npm', ['run', 'build'], { cwd: workspaceRoot, stdio: 'inherit', shell: process.platform === 'win32' })
   if (result.status === 0) return true
   console.error('[supervisor] workspace build failed — keeping current backend')
   return false

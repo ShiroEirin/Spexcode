@@ -103,7 +103,10 @@ if (existsSync(sourceRoot)) {
     }
     try {
       if (sourceIsStale()) {
-        const build = spawnSync('npm', ['run', 'build'], { cwd: workspace, stdio: 'inherit' })
+        // shell: true — on Windows `npm` is npm.cmd, and a shell-less spawn answers ENOENT because
+        // execFile-style resolution never reads PATHEXT. The argv here is a fixed literal with no user
+        // input, so the shell adds no interpretation risk (unlike a payload-derived command line).
+        const build = spawnSync('npm', ['run', 'build'], { cwd: workspace, stdio: 'inherit', shell: process.platform === 'win32' })
         if (build.error || build.status !== 0 || !existsSync(cli)) {
           console.error('spex: source workspace build failed; fix it, then retry.')
           process.exit(build.status ?? 1)
