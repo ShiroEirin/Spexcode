@@ -135,6 +135,8 @@ export default {
     openInNewTab: '在新标签打开',
     list: '所有标签',
     menuLabel: '标签操作',
+    menuPin: '固定',
+    menuUnpin: '取消固定',
     menuClose: '关闭',
     menuCloseOthers: '关闭其他',
     menuSplitRight: '分屏到右侧',

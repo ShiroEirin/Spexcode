@@ -32,18 +32,17 @@ export const tabKey = (t) => {
   return routeHash(route.page, route.param, route.query)
 }
 
-// EVERY TAB IS ONE SHAPE: an address. Older releases persisted `pinned` / `held` / `preview` marks that made
-// some tabs immune to ordinary navigation, and a reload resurrected that immunity long after the reader had
-// forgotten how the tab arrived. The read boundary drops those marks and collapses duplicate identities, so
-// nothing a previous release wrote can still protect a tab. The document predicate is supplied by the view
-// registry so persisted routes that no longer belong in the workspace (bare boards, for example) are cleared
-// at the same read boundary as new routes.
+// EVERY TAB IS ONE SHAPE: an address with an optional layout pin. The read boundary drops every unknown mark
+// and collapses duplicate identities, while preserving only the explicit boolean `pinned` preference. The
+// document predicate is supplied by the view registry so persisted routes that no longer belong in the
+// workspace (bare boards, for example) are cleared at the same read boundary as new routes.
 export function normalizeTabs(raw, isDocument = () => true) {
   const unique = []
   const seen = new Set()
   for (const t of raw) {
     if (!isDocument(t.page, t.param ?? null)) continue
     const tab = { page: t.page, param: t.param ?? null, query: t.query ?? null }
+    if (t.pinned === true) tab.pinned = true
     if (tab.page === 'sessions' && tab.param && tab.param !== 'new' && typeof t.title === 'string' && t.title.trim()) {
       tab.title = t.title
     }
@@ -58,9 +57,9 @@ export function normalizeTabs(raw, isDocument = () => true) {
 // WHERE THE STRIP LANDS, given what it holds and what was asked for. An already-open address is activated
 // (its detail or face updated in place). A new address REPLACES the focused tab when that tab is of the same
 // kind (`activeKey` names it); otherwise it is APPENDED — because another kind is focused, because nothing in
-// the strip is focused yet (a cold deep link, a non-document route), or because the caller asked for
-// `append` (ctrl/⌘-click, "open in a new tab", session creation). No tab is immune: a tab that arrived by
-// append is replaced by the next plain same-kind navigation exactly like one that arrived by a plain click.
+// the strip is focused yet (a cold deep link, a non-document route), because the focused tab is pinned, or
+// because the caller asked for `append` (ctrl/⌘-click, "open in a new tab", session creation). A pinned tab
+// remains in its slot while ordinary same-kind navigation opens the new address beside it.
 export function placeTab(tabs, route, mode = 'slot', activeKey = null) {
   const original = { page: route.page, param: route.param ?? null, query: route.query ?? null }
   const normalized = tabRoute(original)
@@ -77,7 +76,7 @@ export function placeTab(tabs, route, mode = 'slot', activeKey = null) {
   }
   const entry = { page: original.page, param: original.param, query: original.query }
   const slot = mode === 'append' || activeKey == null ? -1
-    : tabs.findIndex((t) => tabKey(t) === activeKey && tabKind(t) === tabKind(normalized))
+    : tabs.findIndex((t) => tabKey(t) === activeKey && tabKind(t) === tabKind(normalized) && !t.pinned)
   if (slot < 0) return [...tabs, entry]
   return tabs.map((t, i) => (i === slot ? entry : t))
 }

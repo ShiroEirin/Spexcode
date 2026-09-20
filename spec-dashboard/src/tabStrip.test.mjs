@@ -24,7 +24,7 @@ const en = readFileSync(new URL('./i18n/en.js', import.meta.url), 'utf8')
 const zh = readFileSync(new URL('./i18n/zh.js', import.meta.url), 'utf8')
 
 test('tab right-click opens the shared context menu instead of closing silently', () => {
-  assert.match(source, /ContextMenuGroup[\s\S]*tabs\.menuClose[\s\S]*tabs\.menuCloseOthers[\s\S]*tabs\.menuSplitRight[\s\S]*tabs\.menuSplitDown/)
+  assert.match(source, /ContextMenuGroup[\s\S]*tabs\.menuPin[\s\S]*tabs\.menuClose[\s\S]*tabs\.menuCloseOthers[\s\S]*tabs\.menuSplitRight[\s\S]*tabs\.menuSplitDown/)
   assert.match(source, /onContextMenu=\{\(e\) => \{\s*if \(isClosing\) return\s*e\.preventDefault\(\)\s*setMenu\(\{ x: e\.clientX, y: e\.clientY, tab, key \}\)\s*\}\}/)
   // every tab gets the same tab menu; a session's lifecycle verbs stay on its row, never on the strip
   assert.doesNotMatch(source, /onSessionContextMenu/)
@@ -32,6 +32,7 @@ test('tab right-click opens the shared context menu instead of closing silently'
 })
 
 test('tab menu actions are explicit and use the existing workspace APIs', () => {
+  assert.match(source, /setPinned\(menu\.tab, !menu\.tab\.pinned\)/)
   assert.match(source, /close\(menu\.tab\)/)
   assert.match(source, /closeOthers\(menu\.tab\)/)
   assert.match(source, /setHeldSide\(dir === 'col' \? 'bottom' : 'right'\); split\(menu\.tab, dir\)/)
@@ -41,6 +42,11 @@ test('tab menu actions are explicit and use the existing workspace APIs', () => 
   // the move is refused when it would empty the strip, and the verb says so instead of doing nothing
   assert.match(source, /disabled=\{tabs\.length < 2\}/)
   assert.match(source, /useEscLayer\(!!menu/)
+})
+
+test('active tab styling keeps the flex minimum stable while switching tabs', () => {
+  assert.match(css, /\.tab\.on\s*\{[\s\S]*?min-width:\s*120px;/)
+  assert.doesNotMatch(css, /\.tab\.on\s*\{[^}]*min-width:\s*132px;/)
 })
 
 test('ordinary navigation names the focused tab so an inactive tab cannot be replaced', () => {
@@ -154,23 +160,25 @@ test('both dock switches speak the panel vocabulary, and each names the dock it 
   assert.doesNotMatch(sideBar, /<DockToggle|name="panel-left"/)   // the rail draws no switch of its own
   const contextToggle = shell.match(/function ContextToggle\([\s\S]*?\n}\n\nexport default function Shell/)
   assert.ok(contextToggle, 'Shell must keep a document-owned context toggle')
-  assert.match(contextToggle[0], /className=\{`context-toggle dock-head-act\$\{visible \? ' on' : ''\}`\}/)
+  assert.match(contextToggle[0], /className=\{`context-toggle dock-head-act\$\{visible \? ' on' : ''\}\$\{available \? '' : ' context-toggle-unavailable'\}`\}/)
   assert.match(contextToggle[0], /<Icon name=\{visible \? 'panel-right-close' : 'panel-right-open'\} size=\{14\} \/>/)
-  assert.match(contextToggle[0], /aria-pressed=\{visible\}/)
+  assert.match(contextToggle[0], /aria-pressed=\{available \? visible : undefined\}/)
+  assert.match(contextToggle[0], /aria-hidden=\{available \? undefined : 'true'\}/)
   assert.doesNotMatch(contextToggle[0], /panel-left|list-checks/)
   // EACH REGION ANSWERS CONTEXT FOR ITS OWN DOCUMENT ([[context-dock]]): one dock per region, drawn by the
   // region, never one shell-level dock that only the routed document can ever describe.
   assert.match(shell, /<ContextDock page=\{route\?\.page\} param=\{route\?\.param\} query=\{route\?\.query\} open=\{hasContext && contextOpen\} \/>/)
   // THE SLOT IS THE REGION'S, NOT THE BODY'S: it closes the region after the body, so its top-right corner is
   // the band's right end (the column the strip's reservation keeps free), never a spot on the document.
-  assert.match(shell, /<ContextDock [^\n]*\/>\n\s*<\/div>\n\s*\{\/\*[\s\S]*?\*\/\}\n\s*\{hasContext && <div className="context-toggle-slot"><ContextToggle visible=\{contextOpen\} onToggle=\{toggleContext\} \/><\/div>\}\n\s*<\/div>/)
-  // and the band reserves that column only while there is a toggle to paint in it
-  assert.match(shell, /const reservation = hasContext \? <span className="context-toggle-reservation" aria-hidden="true" \/> : null/)
+  assert.match(shell, /<ContextDock [^\n]*\/>\n\s*<\/div>\n\s*\{\/\*[\s\S]*?\*\/\}\n\s*<div className="context-toggle-slot"><ContextToggle available=\{hasContext\} visible=\{contextOpen\} onToggle=\{toggleContext\} \/><\/div>\n\s*<\/div>/)
+  // The band always reserves the shell control's column, so route switches cannot reflow the action cluster.
+  assert.match(shell, /const reservation = <span className="context-toggle-reservation" aria-hidden="true" \/>/)
   assert.match(shell, /trailing=\{reservation\}/)
   assert.match(css, /\.context-toggle-slot\s*\{[^}]*position:\s*absolute;[^}]*right:\s*var\(--space-2\);/s)
   assert.match(css, /\.context-toggle-reservation\s*\{[^}]*flex:\s*0 0 32px;[^}]*width:\s*32px;/s)
   assert.match(css, /\.dock-head-act\s*\{[^}]*width:\s*28px; height:\s*28px;[^}]*padding:\s*0;/s)
   assert.match(css, /\.si-pill\s*\{[^}]*height:\s*28px;/s)
+  assert.match(css, /\.context-toggle-unavailable\s*\{[^}]*visibility:\s*hidden;[^}]*pointer-events:\s*none;/s)
 })
 
 test('the new-session door is the navigator\'s own pill, and the dock head keeps no second copy', () => {
@@ -207,13 +215,15 @@ test('the new-tab gesture is ONE predicate every pointer row surface asks', () =
   }
 })
 
-test('asking for a new tab and writing its route are separable halves, and no tab is ever pinned', () => {
+test('asking for a new tab and writing its route stay separate from tab pinning', () => {
   assert.match(tabs, /export function markNewTab\(page, param = null, query = null\)/)
   assert.match(tabs, /export function openNewTab\(page, param = null, query = null\) \{\n  markNewTab\(page, param, query\)\n  navigate\(page, param, \{ query \}\)/)
   // the mark is consumed by the placement that appends; nothing about a tab records how it arrived
   assert.match(tabs, /const mode = appendKey === key \? 'append' : 'slot'/)
-  for (const [name, src] of [['tabs', tabs], ['TabStrip', source], ['Dock', dock], ['FileTree', fileTree], ['SessionForestPanel', forest]]) {
-    assert.doesNotMatch(src, /\.pinned|pinned:|pinTab|markTabHold|isHoldGesture|holdAnchor/, `${name} still speaks the pinned-tab vocabulary`)
+  assert.match(tabs, /setTabPinned/)
+  assert.match(source, /setPinned\(menu\.tab, !menu\.tab\.pinned\)/)
+  for (const [name, src] of [['Dock', dock], ['FileTree', fileTree], ['SessionForestPanel', forest]]) {
+    assert.doesNotMatch(src, /markTabHold|isHoldGesture|holdAnchor/, `${name} still owns a pin gesture`)
   }
   // the strip draws every tab the same way: no replaceable-slot face, no double-click promotion
   assert.doesNotMatch(source, /' slot'|onDoubleClick/)

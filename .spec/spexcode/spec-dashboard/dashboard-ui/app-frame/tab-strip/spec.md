@@ -43,10 +43,14 @@ navigation path, so the strip, deep links, and browser history agree. Session ba
 session tab; published resources are separate file-class tabs. The shell owns the strip's position in the
 frame and the document-actions slot at its right edge; documents do not render a second tab rail.
 
-Every tab is an ordinary tab. There is no pinned or preview state: a tab is an address in the working
-set, drawn the same way whether it arrived by a plain click, by ctrl/⌘-click, or by creating a session, and
-replaced the same way. A tab that could not be replaced was a tab whose history the reader had to remember;
-the strip does not ask that of anyone.
+Every tab is an address in the working set. A tab may be pinned from its tab context menu. Pinning is a
+project-local layout preference, persisted beside the tab address and shown by the tab face; it does not
+change the tab's identity, placement, close behaviour, drag behaviour, split behaviour, or the ability to
+focus an address already held elsewhere. Ordinary navigation that would replace the focused tab of the same
+kind instead appends a new tab when that focused tab is pinned, leaving the pinned address in place. Explicit
+new-tab gestures and navigation to an address already held in the workspace keep their existing semantics.
+Unpinning restores ordinary same-kind replacement. A persisted pin is read only as a boolean on a valid
+document tab, so invalid or duplicate entries still go through the normal layout read boundary.
 
 **THE WORKING SET IS A TREE OF GROUPS.** One group is the ordinary workspace and behaves exactly as one
 strip always did. Splitting one makes a pair; splitting again makes a grid, because the tree is only two

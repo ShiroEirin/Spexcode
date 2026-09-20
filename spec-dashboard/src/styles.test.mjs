@@ -394,7 +394,7 @@ test('the strip is one clipping row of cards on the band, never a wrapped or scr
   assert.match(css, /\.tab\s*\{[^}]*border-radius:\s*var\(--radius-tab\) var\(--radius-tab\) 0 0;[^}]*background:\s*transparent;/s)
   assert.doesNotMatch(css, /\.tab\s*\{[^}]*border-right:/s)
   // the active card: paper, outlined on its three free sides, open at the bottom into the page
-  assert.match(css, /\.tab\.on\s*\{[^}]*min-width:\s*132px;[^}]*background:\s*var\(--paper\);[^}]*box-shadow:\s*inset 1px 0 0 var\(--edge\), inset -1px 0 0 var\(--edge\), inset 0 1px 0 var\(--edge\);/s)
+  assert.match(css, /\.tab\.on\s*\{[\s\S]*?min-width:\s*120px;[^}]*background:\s*var\(--paper\);[^}]*box-shadow:\s*inset 1px 0 0 var\(--edge\), inset -1px 0 0 var\(--edge\), inset 0 1px 0 var\(--edge\);/s)
   assert.match(css, /\.tabstrip\s*\{\s*box-shadow:\s*inset 0 -1px 0 var\(--edge\);/)
   // inactive neighbours: a short rule between them, a wash on hover, no box
   assert.match(css, /\.tab:not\(\.on\) \+ \.tab:not\(\.on\)::before\s*\{[^}]*top:\s*25%;[^}]*height:\s*50%;[^}]*border-left:\s*1px solid var\(--edge\);/s)
