@@ -5,7 +5,7 @@ import { IconButton } from './icons.jsx'
 import { returnFocus } from './focus.js'
 import { useBackdropDismiss } from './backdropDismiss.js'
 
-export default function Modal({ title, closeLabel, onClose, className, children }) {
+export default function Modal({ title, closeLabel, onClose, closeDisabled = false, className, children }) {
   const backdropProps = useBackdropDismiss(onClose)
   // a modal returns the focus it took ([[focus-return]]): whichever way it closes — Esc, backdrop,
   // cancel, submit — unmount hands focus back to the ticket, else the surface's sink. Never <body>.
@@ -21,7 +21,7 @@ export default function Modal({ title, closeLabel, onClose, className, children 
       >
         <div className="legend-head">
           <span className="legend-title">{title}</span>
-          <IconButton icon="x" size={13} className="legend-close" label={closeLabel} onClick={onClose} />
+          <IconButton icon="x" size={13} className="legend-close" label={closeLabel} onClick={onClose} disabled={closeDisabled} />
         </div>
         <div className="legend-body">{children}</div>
       </div>
