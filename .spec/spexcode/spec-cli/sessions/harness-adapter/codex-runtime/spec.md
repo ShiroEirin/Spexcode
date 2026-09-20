@@ -259,9 +259,9 @@ that subtree: never how much history any one thread holds, and never how many th
 Both grow without bound on a long-lived host. A per-thread transcript read makes a long-lived session unmutatable
 against any fixed budget, and raising the budget only moves the threshold. A whole-collection census makes every
 close slower than the one before it, because each close adds a row to the archived collection the next close
-reads. So a record-backed mutation reads the paginated loaded-ID set, both exact target descendant collections,
-and scoped rows only: the target's own rows through the exact `cwd` its governed record binds, the rows of any
-descendant whose `cwd` differs through that `cwd`, and each subtree member's direct children through
+reads. So the normal record-backed mutation reads the paginated loaded-ID set, both exact target descendant
+collections, and scoped rows only: the target's own rows through the exact `cwd` its governed record binds, the
+rows of any descendant whose `cwd` differs through that `cwd`, and each subtree member's direct children through
 `parentThreadId`. Every `thread/list` row already carries its live turn state, its direct parent, and its `cwd`,
 so presence and ownership for every member are answered by reads the proof performs anyway. Turn IDENTITY is the
 separate question — only interrupt must name the turn it interrupts, so only interrupt pays a transcript read,
@@ -275,15 +275,23 @@ bounded number of times under the same generation fence, while a semantic owners
 answers with the whole collection. Every scoped read therefore checks each returned row against the predicate it
 asked for — the row's `cwd` equals the requested `cwd`, the row's `parentThreadId` equals the requested parent —
 and one violating row refuses the mutation and names the filter. A record that binds no worktree `cwd` refuses
-too, rather than widening its own scope. The whole-collection census survives only where no record exists to
-bind a `cwd` (quarantine, below).
+too, rather than widening its own scope. Codex 0.153.4 has the opposite protocol fault: a `cwd` filter can return
+an empty page while descendants remain present in both the ancestor and direct-parent reads and the native rows
+carry the exact bound cwd. Only for members missing from otherwise valid scoped reads, the proof may perform one
+whole-collection compatibility pair and recover an id only when it occurs in exactly one collection and that
+row's reported `cwd` exactly equals the scope already bound for that member. Extra rows authorize nothing; an
+out-of-scope response, a missing member, a moved member, or duplicate membership still refuses. Thus a healthy
+server keeps the subtree-bounded path, while a false-empty native filter costs the old host census instead of
+making an otherwise owned subtree permanently unclosable. Quarantine (below) still uses the whole host from the
+start because no record exists to bind a cwd.
 
 **Teardown.** Ordinary stop reads the target through its record's `cwd` and refuses descendants. Cold archive
 treats the native `ancestorThreadId` result as an ownership closure at all depths excluding the ancestor, and
 holds every fact about that closure to a second native witness before it may mutate. The target must occur in
-exactly one of the active and archived collections scoped to its record's `cwd`, on a row whose `cwd` is that
-binding. Every descendant must occur in exactly one collection scoped to its own `cwd`, and that assignment must
-equal the descendant collection that returned it. Every member's direct-parent chain must reach the target
+exactly one of the active and archived collections, on a row whose `cwd` is the record binding. Every descendant
+must occur in exactly one collection on a row matching its own reported `cwd`, and that assignment must equal the
+descendant collection that returned it; normally those rows come from the scoped reads, with the false-empty
+compatibility proof above as the only alternative. Every member's direct-parent chain must reach the target
 without a gap or a cycle, and the closure must equal the union of the subtree's direct-children reads: a child
 the closure lacks, a closure member no parent returned, or one id under two parents refuses. Every loaded
 member's turn presence comes from those same rows. It then archives the initially-active closure deepest-first

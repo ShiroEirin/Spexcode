@@ -1185,9 +1185,35 @@ async function codexColdPreflightOnce(threadId: string, scope: CodexProofScope, 
     for (const [id, parent] of [...targetRows.pair.active.parentById, ...targetRows.pair.archived.parentById])
       if (parent && subtreeSet.has(parent)) childrenByParent.get(parent)!.set(id, parent)
   }
-  const pairFor = (id: string): CodexCollectionPair | null =>
+  const scopedPairFor = (id: string): CodexCollectionPair | null =>
     targetCwd === null ? targetRows.pair : pairByCwd.get(id === threadId ? targetCwd : descendantCwd.get(id)!) ?? null
 
+  // Codex 0.153.4 can return an empty result for a valid cwd filter even while descendants remain present in
+  // both ancestorThreadId and parentThreadId reads. Recover only that false-empty shape through one
+  // whole-collection pair: the exact missing id still has to occur once and report the cwd already bound by the
+  // target record or descendant closure.
+  // A filter that returns an out-of-scope row was refused above, and a genuinely missing or moved row remains
+  // absent here, so this compatibility read does not turn a stale binding into mutation authority.
+  const missingScopedMembers = targetCwd === null ? [] : subtreeIds.filter((id) => {
+    const pair = scopedPairFor(id)
+    return pair && !pair.active.ids.includes(id) && !pair.archived.ids.includes(id)
+  })
+  const recoveredPairById = new Map<string, CodexCollectionPair>()
+  if (missingScopedMembers.length) {
+    const whole = await codexCollectionPair((archived) => codexThreadCollection(sock, { archived, sourceKinds: [] }))
+    if (!whole.ok) return { ok: false, reason: whole.error }
+    if (codexRuntimeGeneration(dir, endpoint) !== generation)
+      return { ok: false, reason: 'shared Codex app-server generation changed during false-empty cwd recovery' }
+    for (const id of missingScopedMembers) {
+      const expectedCwd = id === threadId ? targetCwd : descendantCwd.get(id)
+      const activeCwd = whole.pair.active.ids.includes(id) ? whole.pair.active.cwdById.get(id) : undefined
+      const archivedCwd = whole.pair.archived.ids.includes(id) ? whole.pair.archived.cwdById.get(id) : undefined
+      if ((activeCwd === expectedCwd) !== (archivedCwd === expectedCwd)) recoveredPairById.set(id, whole.pair)
+    }
+  }
+  const pairFor = (id: string): CodexCollectionPair | null => recoveredPairById.get(id) ?? scopedPairFor(id)
+
+  const activeMembers = new Set<string>()
   const archivedMembers = new Set<string>()
   const statusById = new Map<string, CodexThreadStatus>()
   for (const id of subtreeIds) {
@@ -1204,8 +1230,9 @@ async function codexColdPreflightOnce(threadId: string, scope: CodexProofScope, 
       if (inActive !== expectedActive)
         return { ok: false, reason: `Codex subtree member ${id} changed collection assignment during ownership census` }
     }
-    // The cwd binding needs no check of its own here: a scoped read already refused any row outside its cwd, so a
-    // target found through the record's scope IS bound to the record's worktree.
+    // The selected pair already proved this member's cwd: either the scoped read rejected every outside row, or
+    // the compatibility recovery admitted this exact id only after its whole-collection row matched the binding.
+    if (inActive) activeMembers.add(id)
     if (inArchived) archivedMembers.add(id)
     statusById.set(id, (inActive ? pair.active : pair.archived).statusById.get(id) ?? 'unknown')
   }
@@ -1255,8 +1282,8 @@ async function codexColdPreflightOnce(threadId: string, scope: CodexProofScope, 
   }
   const activeIds = [...activeDescendants.ids]
     .sort((left, right) => (depthById.get(right) ?? 0) - (depthById.get(left) ?? 0))
-    .concat(targetInActive ? [threadId] : [])
-  const archivedIds = [...archivedDescendants.ids, ...(targetInArchived ? [threadId] : [])]
+    .concat(activeMembers.has(threadId) ? [threadId] : [])
+  const archivedIds = [...archivedDescendants.ids, ...(archivedMembers.has(threadId) ? [threadId] : [])]
   const parentEdges = descendantIds.map((id) => [id, parentById.get(id)!] as const)
   const memberCwd = targetCwd === null ? [] : subtreeIds.map((id) => [id, id === threadId ? targetCwd : descendantCwd.get(id)!] as const)
   const receipt = makeCodexColdPlan({ threadId, generation, endpoint, targetCwd, memberCwd, guard, descendantIds, parentEdges, subtreeIds, activeIds, archivedIds })

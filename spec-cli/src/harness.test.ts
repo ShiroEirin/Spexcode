@@ -6,7 +6,7 @@ import { platform, tmpdir } from 'node:os'
 import { createServer } from 'node:net'
 import { execFileSync } from 'node:child_process'
 import { assertRvSockPath, HARNESSES, claudeHarness, opencodeHarness, piHarness, zcodeHarness, claudeHeadlessHarness, opencodeHeadlessHarness, piHeadlessHarness, writeManagedBlock, removeManagedBlock, writeManagedJsonHooks, removeManagedJsonHooks, sharedShimHasHostContent, GENERATED_MARK, launcherList, resolveLauncher, defaultLauncher, launcherDefault, rendezvousListening, rvSock, legacyRvSock, scopedRvSock, stampRvSock, deliverViaRendezvous, deliverViaClaudeRendezvous } from './harness.js'
-import { activeTurnIdFromThread, codexAppServerSock, codexAppServerPid, codexAppServerReceipt, codexSharedRuntimeProbe, codexBinary, codexHandshakeMessages, codexInjectMessage, codexLoadedReferenceIds, codexThreadList, codexTurn, codexTurnFailureObserver, codexGenerationIdentityObserver, codexObservedActiveTurnId, CODEX_THREAD_SOURCE_KINDS, CODEX_TURN_OBSERVER_SUBSCRIBE_MS, codexHarness, codexHeadlessHarness, codexLaunchCommand, codexLauncherThreadPolicy, codexStartThread, codexStartThreadParams, paneTreeRunsCodex, codexRolloutExists, writeCodexTrust } from './codex-harness.js'
+import { activeTurnIdFromThread, codexAppServerSock, codexAppServerPid, codexAppServerReceipt, codexSharedRuntimeProbe, codexBinary, codexHandshakeMessages, codexInjectMessage, codexLoadedReferenceIds, codexThreadList, codexTurn, codexTurnFailureObserver, codexObservedActiveTurnId, CODEX_THREAD_SOURCE_KINDS, CODEX_TURN_OBSERVER_SUBSCRIBE_MS, codexHarness, codexHeadlessHarness, codexLaunchCommand, codexLauncherThreadPolicy, codexStartThread, codexStartThreadParams, paneTreeRunsCodex, codexRolloutExists, writeCodexTrust } from './codex-harness.js'
 import { shQuote } from './sh.js'
 import { runtimeRoot, sessionArtifactPath } from '@spexcode/spec-core'
 import { processStartToken, verifyDetachedRuntime, writeDetachedRuntimeReceipt } from '@spexcode/spec-core'
@@ -929,6 +929,21 @@ test('Codex cold proof refuses a target split across the active and archived col
     answer: (params, rows) => params.cwd === FIXTURE_CWD && params.archived === true
       ? [...rows, { id: 'target', parentThreadId: null, cwd: FIXTURE_CWD, status: { type: 'idle' } }] : rows,
   }, /subtree member target occurs in both active and archived native collections/)
+})
+
+test('Codex cold proof recovers a false-empty cwd filter through exact whole-collection rows', async () => {
+  await withNativeThreads([{ id: 'target', loaded: true }, { id: 'child', parent: 'target', loaded: true }], {
+    // Field-reproduced on macmini with Codex 0.153.4: ancestorThreadId and parentThreadId both return the
+    // child, while cwd returns an empty page even though the row and record carry the identical cwd bytes.
+    answer: (params, rows) => typeof params.cwd === 'string' ? [] : rows,
+  }, async ({ mutations, lists }) => {
+    const rec = subtreeRec('target')
+    const preflight = await codexHarness.coldPreflight?.(rec)
+    if (!preflight?.ok) throw new Error(`false-empty cwd recovery refused: ${preflight && !preflight.ok ? preflight.reason : 'no adapter'}`)
+    assert.deepEqual(await codexHarness.coldRuntime?.(rec, preflight.receipt), { ok: true })
+    assert.deepEqual(mutations, ['archive:child', 'archive:target'])
+    assert.ok(lists.some((params) => !isScopedList(params)), 'the compatibility recovery reads one whole collection pair')
+  })
 })
 
 test('Codex cold proof refuses a cwd filter the native server did not honor', async () => {
