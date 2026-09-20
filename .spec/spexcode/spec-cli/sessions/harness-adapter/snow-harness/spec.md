@@ -2,7 +2,7 @@
 title: snow-harness
 status: active
 hue: 205
-desc: The Snow CLI adapter — a first-class Harness row whose shim is a DIRECTORY of per-hook-type files, dispatched through one node bridge that translates Snow's payload and exit-code protocol. Its gates were silently dead until the bridge announced the right harness id, ran in the worktree, and the payload stopped being mistaken for the identity.
+desc: The Snow CLI adapter — a first-class Harness row whose shim is a DIRECTORY of per-hook-type files, dispatched through one node bridge that translates Snow's payload and exit-code protocol. Its gates were silently dead until the bridge announced the right harness id, ran in the worktree, the payload stopped being mistaken for the identity, and the timeout stopped being written in the wrong unit.
 code:
   - spec-cli/src/snow-harness.ts
 related:
@@ -77,7 +77,7 @@ drift, so the bridge adapts exactly two edges and runs the SAME dispatcher:
 a quoted `node <bridge> <hookType>` with NO environment prefix — `VAR=value cmd` is POSIX-shell syntax and
 Snow executes hook commands through the platform shell, where it is just an argument.
 
-## three faults that made the gates silently dead
+## four faults that made the gates silently dead
 
 Each of these alone makes the spec-first gate a no-op, and none of them reported anything. They are the
 reason this node exists rather than a one-line registry entry.
@@ -103,6 +103,15 @@ so the artifact would compare unequal to itself). It is that the command names a
 installation** — stable across processes, and provably ours. Un-landing then removes each stamped file and
 drops the directory only when it is empty, so a hand-made hooks folder survives.
 
+**The timeout is milliseconds, and Claude spells it in seconds.** Snow reads this field as milliseconds
+(`hooksConfig.ts:40`) and runs the command under `action.timeout || this.defaultTimeout`, where the default
+is 5000. The value here was copied from Claude's hook shape, where the same field counts SECONDS, so `30`
+asked for a thirty-millisecond budget. The gate is not instant — it is node plus bash plus git plus a spec
+lookup, measured at ~2 s on a warm host and up to ~8 s cold — so it was killed before it could print a
+single byte, and a governed edit went through with no block and no message. The number is now a named
+constant (`SNOW_HOOK_TIMEOUT_MS = 30_000`, the Claude default written in Snow's unit) so the unit cannot
+drift back with the value, and the unit is asserted in the unit test.
+
 ## the identity line
 
 `snow` with `SNOW_SESSION_ID` is one row of the adapter-neutral `HarnessIdentity` registry
@@ -124,4 +133,6 @@ The adapter merges on BEHAVIOR, not on artifact inspection: the generated hook f
 dispatch, and the gate must be proven to block with its governor and pass on retry. The unit test drives the
 real bridge against a stub dispatcher — payload translation, the exit-code contract, and fail-open on every
 non-decision — and the end-to-end proof is a materialize round trip on a real worktree (init → deselect →
-idempotent → restore), plus the gate firing on a governed file.
+idempotent → restore), plus the gate firing on a governed file. The timeout is proven the same way: the
+generated command is run under both budgets against a real governed file, and only the correct unit is
+allowed to reach the block.

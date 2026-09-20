@@ -36,6 +36,18 @@ import { posixPath } from './sh.js'
 const SNOW_HOOK_TYPES = ['onSessionStart', 'onUserMessage', 'beforeToolCall', 'afterToolCall', 'onStop'] as const
 
 /**
+ * The hook timeout, in Snow's unit — MILLISECONDS.
+ *
+ * Snow reads this field as milliseconds (`hooksConfig.ts:40` "超时时间（毫秒）") and runs the command with
+ * `action.timeout || this.defaultTimeout`, where the default is 5000. Claude's hook contract spells the
+ * same field in SECONDS, so the Claude-shaped `30` that used to sit in this file was read as thirty
+ * milliseconds: bash had not finished starting before Snow killed it, every gate died on the timeout
+ * path, and a governed edit sailed straight through. The value below is the Claude default (30 s)
+ * written in Snow's unit.
+ */
+export const SNOW_HOOK_TIMEOUT_MS = 30_000
+
+/**
  * The `.snow/hooks/<hookType>.json` body for one hook type.
  *
  * Snow's record is `{ "<hookType>": [{description, hooks:[{type,command,timeout,enabled}]}] }` — an array
@@ -47,7 +59,7 @@ export function snowHookFile(hookType: string, command: string, description: str
     [hookType]: [
       {
         description,
-        hooks: [{ type: 'command', command, timeout: 30, enabled: true }],
+        hooks: [{ type: 'command', command, timeout: SNOW_HOOK_TIMEOUT_MS, enabled: true }],
       },
     ],
   }, null, 2) + '\n'

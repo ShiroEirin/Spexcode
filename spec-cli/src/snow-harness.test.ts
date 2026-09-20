@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 import {
   snowHookFile, snowHookCommand, SNOW_EVENT_MAP, buildSnowHooks, snowHookType, snowHookTypes, snowPaths,
+  SNOW_HOOK_TIMEOUT_MS,
 } from './snow-harness.js'
 import { snowHarness } from './harness.js'
 
@@ -27,9 +28,24 @@ test('snowHookFile: the file name IS the hook type, and the record is {hookType:
   assert.deepEqual(Object.keys(parsed), ['beforeToolCall'], 'exactly one type per file — the name is the discovery key')
   assert.equal(parsed.beforeToolCall[0].description, 'the gate')
   assert.deepEqual(parsed.beforeToolCall[0].hooks, [
-    { type: 'command', command: '"node" "bridge.mjs" beforeToolCall', timeout: 30, enabled: true },
+    { type: 'command', command: '"node" "bridge.mjs" beforeToolCall', timeout: SNOW_HOOK_TIMEOUT_MS, enabled: true },
   ])
   assert.ok(body.endsWith('\n'), 'a trailing newline so the file is a clean text artifact')
+})
+
+// @@@ bug #52 - the timeout unit. Snow reads the field as MILLISECONDS (`hooksConfig.ts:40`), while Claude's
+// hook contract spells the same field in SECONDS. Copying Claude's `30` across therefore asked for a
+// thirty-millisecond budget: the command was killed before bash finished starting, every gate died on the
+// timeout path, and a governed edit went through untouched. A missing/zero field is not a safe fallback
+// either — Snow substitutes its own 5000 ms default, which is short for a cold bash + git invocation.
+test('snowHookFile: the timeout is milliseconds, never the seconds-shaped value Claude uses (bug #52)', () => {
+  const body = snowHookFile('beforeToolCall', 'cmd', 'd')
+  const hook = (JSON.parse(body) as Record<string, Array<{ hooks: Array<{ timeout: number }> }>>)
+    .beforeToolCall[0].hooks[0]
+  assert.equal(hook.timeout, SNOW_HOOK_TIMEOUT_MS)
+  assert.ok(hook.timeout >= 1000, 'a sub-second budget kills bash before it can answer — that was the bug')
+  assert.ok(hook.timeout >= 5000, "and it must clear Snow's own 5000 ms default, or the field buys nothing")
+  assert.equal(hook.timeout, 30_000, 'the Claude default of 30 s, written in the unit Snow reads')
 })
 
 test('snowHookCommand: no env prefix, both paths quoted, the hook type last, and posix separators throughout', () => {
@@ -248,7 +264,7 @@ test('deselect: hook files under the installation hook dir are swept; a hand-mad
   // ours: names a hook entry under THIS installation (`<PKG>/hooks`) — stable across processes, unlike the
   // generated line, whose node path differs per shell on a version-manager host
   writeFileSync(join(hooksDir, 'beforeToolCall.json'), JSON.stringify({
-    beforeToolCall: [{ description: 'x', hooks: [{ type: 'command', command: `"node" "${toPosix(join(HOOKS_DIR, 'snow-bridge.mjs'))}" beforeToolCall`, timeout: 30, enabled: true }] }],
+    beforeToolCall: [{ description: 'x', hooks: [{ type: 'command', command: `"node" "${toPosix(join(HOOKS_DIR, 'snow-bridge.mjs'))}" beforeToolCall`, timeout: SNOW_HOOK_TIMEOUT_MS, enabled: true }] }],
   }, null, 2))
   // theirs: a hand-made hook folder the user owns — no reference to our installation
   writeFileSync(join(hooksDir, 'my-own.json'), JSON.stringify({ beforeToolCall: [{ hooks: [{ type: 'command', command: 'echo hi' }] }] }))
