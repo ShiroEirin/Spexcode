@@ -415,7 +415,7 @@ writeTrust(proj, cmdFor): readonly string[]      // 信任写入（Snow 可能 n
 
 | # | 判定 | 状态 | 依据 |
 | --- | --- | --- | --- |
-| 1 | 测试失败数 = 0（或仅剩已记录的平台跳过） | 🟡 接近 | 逐文件串行实测：19 个「平台限制」已逐条记录理由（tmux 缺失 15 / POSIX 信号 1 / 无权限位 1 / 路径分隔符 1 / CRLF 源码正则 1）；7 个已修复转绿；**剩 7 个测试待定性**（session-public-projection 3 / sessions-hot 3 / session-transcript 1），本小姐**不声称**它们是平台问题 |
+| 1 | 测试失败数 = 0（或仅剩已记录的平台跳过） | ❌ **未达成** | 逐文件串行实测：**19 例平台限制**已逐条记录理由（tmux 缺失 15 / POSIX 信号 1 / 无权限位 1 / 路径分隔符 1 / CRLF 源码正则 1）；**7 例已修复转绿**；**3 例平台语义差异**已定死（`sessions-hot` — process-host 走 start-token 见证，fixture 只写 agent.pid）；**余 4 例根因未定**（`session-transcript` 1 例 409≠200；`session-public-projection` 3 例 `resources.owners` 缺行），**单跑稳定复现**，本小姐**不归类**为平台限制 |
 | 2 | bug #22 修复 + 回归测试 | ✅ | `codex-harness.ts` TOML 转义，测试在 `harness.test.ts` |
 | 3 | `TEMP/SPEX-WINDOWS-VERIFY.md` 存在 + 核心链路全绿 | ✅ | 7222 字节；CLI / hook / dashboard 三链路已实测 |
 | 4 | `spex init --harness snow` + `materialize` 直产 `.snow/` | ✅ | investflow 端到端通过 |
@@ -436,11 +436,14 @@ writeTrust(proj, cmdFor): readonly string[]      // 信任写入（Snow 可能 n
 | **#56** | `scripts/test-home.mjs` | 测试隔离漏了 Snow 注入的 `SNOW_SESSION_ID`/`SNOW_CWD`/`SNOW_PLATFORM` → fixture 读到宿主会话身份 |
 | **#57/#58** | `uninstall.test.ts` | Codex trust fixture 手写未转义路径、且不走 `mainCheckout` → strip 永不匹配 |
 | **#60** | `spec-cli/src/tsx-bin.ts` | `node --import <loader>` 的 loader 在 Windows 上必须是 `file://` URL，裸盘符被解析成 scheme `c:` → **仪表板「添加项目」与 session materialize 在 Windows 上完全不可用** |
+| **#61** | `spec-cli/src/session-liveness.ts`（测试侧） | `agentAlive()` 在 process-host（Windows）下走 **start-token 见证**而非 `process.kill(pid,0)`；`sessions-hot` fixture 只写 `agent.pid` 从未写启动令牌 → 视为 dead。**平台语义差异**，非产品缺陷 |
+| **#62/#63** | `session-transcript.api.test.ts` / `session-public-projection.api.test.ts` | **根因未定**（4 例）。已排除：并发争用（单跑仍红）、store 路径编码（测试手写正则与产品 `encodeProject` 字面相同）、kill-0 语义（实测正确）。**如实留白，勿当结论** |
 
 ### 未解决（如实留白，勿当结论）
 
 - **bug #59**：`commit-gate.test.ts` 单跑挂起 >50 分钟（CPU 仅 29s）。现场停在 `env .git/hooks/post-checkout`。两个候选假设（coreutils `env` 抢先命中；post-checkout 里的 `spex internal refresh-footprint` 走全局 link 落到本仓 396 节点）**都未证实** —— 本小姐的最小复现实验两个 `env.exe` 都正常。
-- **§6 判定的 7 个待定性测试**（见上表第 1 项）。
+- **§6 判定第 1 项未达成**：4 个测试（`session-transcript` 1 + `session-public-projection` 3）根因**未定**，单跑稳定复现。本小姐已排除并发、路径编码、kill-0 语义三条候选，但没能定死真正原因 —— 如实留白，不编结论。
+- **bug #59**：`commit-gate.test.ts` 挂起（见上）。
 
 
 ## 7. 交付物
