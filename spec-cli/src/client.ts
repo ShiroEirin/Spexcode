@@ -3,10 +3,10 @@ import { platform } from 'node:os'
 import { randomUUID } from 'node:crypto'
 import { repoRoot } from '@spexcode/spec-core'
 import { resourceBudgets, type ResourceReport } from './host-resources.js'
-import { envSessionId, listSessionIds, readPublicRecordEntry } from '@spexcode/spec-core'
+import { envSessionId, listSessionIds, parseSessionLifecycle, parseSessionProposal, readPublicRecordEntry } from '@spexcode/spec-core'
 import { cockpitReview, type CockpitReview } from './cockpit.js'
 import { configuredSessionApplication } from './session-application.js'
-import { apiBaseInfo, assertProjectMatch, displayStatusForProposal, drainSession, optionArgv, toSession, type DisplayStatus, type Session, type DispatchResult } from './sessions.js'
+import { apiBaseInfo, assertProjectMatch, canonicalRecordProjection, displayStatusForProposal, drainSession, optionArgv, toSession, type DisplayStatus, type Session, type DispatchResult } from './sessions.js'
 import { resolveSession, type Resolved } from './session-selectors.js'
 import { fromRaw } from './session-record.js'
 import { resolveMachinePeer } from './machine-peer.js'
@@ -158,19 +158,30 @@ export function localCachedSessions(includeArchived = false): Session[] {
       continue
     }
     if (entry.kind === 'ok') {
-      const rec = fromRaw(entry.raw)
+      let rec = fromRaw(entry.raw)
       if (!rec.governed) continue
+      if (entry.liveness !== 'offline') {
+        try {
+          const state = application.readState(id)
+          if (!state) throw new Error(`session ${id} has no canonical application state`)
+          rec = canonicalRecordProjection(rec, state)
+        }
+        catch (error) { rows.push(corruptCachedSession(id, error instanceof Error ? error.message : String(error))); continue }
+      }
       rows.push(toSession(rec, cachedStatus(rec), 'unknown'))
       continue
     }
     const state = application.readState(id)
     if (!state) continue
-    const lifecycle = state.status as Session['lifecycle']
-    const status = state.status === 'archived'
+    let lifecycle: Session['lifecycle']
+    let proposal: Session['proposal']
+    try { lifecycle = parseSessionLifecycle(state.status); proposal = parseSessionProposal(state.proposal) }
+    catch (error) { rows.push(corruptCachedSession(id, error instanceof Error ? error.message : String(error))); continue }
+    const status = lifecycle === 'archived'
       ? 'offline'
-      : state.status === 'awaiting'
-      ? displayStatusForProposal(state.proposal as Session['proposal'])
-      : state.status as DisplayStatus
+      : lifecycle === 'awaiting'
+      ? displayStatusForProposal(proposal)
+      : lifecycle === 'active' ? 'working' : lifecycle
     rows.push({
       id,
       branch: null,
@@ -183,7 +194,7 @@ export function localCachedSessions(includeArchived = false): Session[] {
       capabilities: { headless: false },
       launcher: null,
       lifecycle,
-      proposal: state.proposal as Session['proposal'],
+      proposal,
       merges: 0,
       status,
       liveness: 'unknown',

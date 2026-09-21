@@ -16,15 +16,15 @@ import { mkdtempSync, mkdirSync, writeFileSync, utimesSync, rmSync } from 'node:
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { hotSignature, parseLivePanes, needsCodexProcScan, TMUX_PANE_FORMAT } from './session-liveness.js'
+import { agentAlive, hotLivenessRecordEligible, hotSignature, parseLivePanes, needsCodexProcScan, registerHotLivenessCandidate, TMUX_PANE_FORMAT } from './session-liveness.js'
 import { sessionStoreDir, sessionArtifactPath } from '@spexcode/spec-core'
 
 // The 100ms hot tier is a launch-registered-pid death detector with a permanent pid-reuse latch, plus the
 // single-tmux-call warm parser and the legacy ps-scan gate. See [[state]] (liveness) + the birth registration.
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
-// hotSignature refreshes its id list at most once/second, so a brand-new session dir may take up to ~1s to
-// enter the fingerprint. Poll until it appears (or give up) — the LATCH mechanics below then run within 1s.
+// A launch/receipt registration enters the ownership set immediately; startup recovery is the only full roster
+// seed. Poll until the explicit registration appears (or give up) — the LATCH mechanics below then run at once.
 async function hotUntil(idSub: string): Promise<string> {
   const deadline = Date.now() + 1400
   for (;;) {
@@ -60,6 +60,7 @@ test('hot registry: alive pid → 1, ESRCH → 0 and LATCHED (pid-reuse guard), 
 
     // (1) ALIVE — our own live process pid answers kill-0.
     writePid(id, process.pid)
+    registerHotLivenessCandidate(id)
     let sig = await hotUntil(`${id}:1`)
     assert.match(sig, new RegExp(`(^|,)${id}:1(,|\\|)`), `alive → 1 (got ${sig})`)
     assert.ok(sig.includes(`|${id}`) || sig.endsWith(`|${id}`), 'the id set is folded into the fingerprint')
@@ -102,6 +103,35 @@ test('hot registry: a session with NO agent.pid is skipped (pre-registration →
     if (prevHome === undefined) delete process.env.SPEXCODE_HOME
     else process.env.SPEXCODE_HOME = prevHome
     sweepTemp(home)
+  }
+})
+
+test('hot candidates require active owned runtime, never archived history', () => {
+  const base = { governed: true, stopped: false, archived: false, status: 'active' as const }
+  assert.equal(hotLivenessRecordEligible(base, true), true)
+  assert.equal(hotLivenessRecordEligible({ ...base, archived: true }, true), false)
+  assert.equal(hotLivenessRecordEligible({ ...base, stopped: true }, true), false)
+  assert.equal(hotLivenessRecordEligible({ ...base, status: 'queued' as const }, true), false)
+  assert.equal(hotLivenessRecordEligible(base, false), false)
+})
+
+test('warm evidence keeps a dead non-hot pane latch until pid rewrite', async () => {
+  const prevHome = process.env.SPEXCODE_HOME
+  const home = mkdtempSync(join(tmpdir(), 'spex-hot-warm-latch-'))
+  process.env.SPEXCODE_HOME = home
+  const id = `warm-latch-${process.pid}`
+  try {
+    mkdirSync(sessionStoreDir(id), { recursive: true })
+    writePid(id, deadPid())
+    assert.equal(agentAlive(id), false)
+    // This id has no active owned receipt and is therefore absent from the hot candidate set. Warm evidence must
+    // not make its ESRCH latch disappear merely because hotSignature() ran.
+    await hotSignature()
+    assert.equal(agentAlive(id), false)
+  } finally {
+    if (prevHome === undefined) delete process.env.SPEXCODE_HOME
+    else process.env.SPEXCODE_HOME = prevHome
+    rmSync(home, { recursive: true, force: true })
   }
 })
 

@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { displayStatusForProposal, launcherCmd } from './sessions.js'
-import { liveness, type LiveSnap } from './session-liveness.js'
+import { liveness, publishLiveSnapshot, recentLiveSnapshot, type LiveSnap } from './session-liveness.js'
 import type { SessRec } from './session-record.js'
 
 // Pins the session-stability contract the mass-restore incident violated:
@@ -32,6 +32,14 @@ test('probe FAILURE reads unknown, never a false offline (board honesty under lo
   assert.equal(liveness(r, snap({ probeFailed: true })), 'unknown')
   // a genuinely-empty successful probe (tmux up, no windows) IS authoritative → offline (past boot grace).
   assert.equal(liveness(r, snap({ probeFailed: false })), 'offline')
+})
+
+test('recent live evidence is reusable only inside its bounded warm window', async () => {
+  const value = snap({ probeFailed: true })
+  publishLiveSnapshot(value)
+  assert.equal(recentLiveSnapshot(100), value)
+  await new Promise((resolve) => setTimeout(resolve, 10))
+  assert.equal(recentLiveSnapshot(1), null)
 })
 
 test('claude-headless liveness follows its exact session home', () => {

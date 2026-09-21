@@ -25,7 +25,8 @@ related:
 
 The session subsystem's features — lifecycle state, launch, dispatch, comms, the live graph, selectors,
 the spec-pointer — all compose one shared session layer, with record I/O in `session-record.ts` and the remaining
-plumbing in `sessions.ts`. It is shared substrate with no single
+plumbing in `sessions.ts`. [[session-state-model]] owns the product vocabulary independently of the
+adopter-neutral application's status strings. It is shared substrate with no single
 feature as its owner, so per-feature drift on it fanned the same change across a dozen nodes. Give it a
 foundation owner: the features govern their own surfaces and REFERENCE this module via `related:`.
 
@@ -40,6 +41,17 @@ auto-discovery, see [[harness-delivery]]), the shared resolution of a raw `surfa
 the prompt that [[launch]] or [[dispatch]] delivers, and the launch queue's drain loop.
 Lifecycle writes have one typed entry point, `markState`; the retired `markError` convenience export is not part of
 the module surface, so callers name the state transition they are making instead of adding a second error mechanism.
+The launch queue isolates known per-record integrity failures rather than letting one unreadable envelope abort
+the fleet pass. Such a row stays corrupt/unknown and is never a launch candidate; it conservatively reserves one
+capacity slot because an unreadable envelope cannot prove its runtime absent. Per-session unknown liveness is
+also reserved, independent of a successful global host snapshot. Pending resume transactions also
+reserve capacity even while their frozen public projection is offline. Diagnostics name each excluded record and
+are emitted once per unchanged failure, rearming when the record recovers. Unclassified I/O or global runtime-probe
+failure still fails or pauses the pass loudly; per-record isolation is not permission to overlaunch or hide faults.
+The drainer's input is the working projection plus only those archived rows whose public projection is a pending
+resume fence; settled archive history never enters queue admission. Capacity is derived from the current pass's
+typed read result, while the process-local diagnostic deduplicator is logging-only. This keeps both the work set and
+the policy source bounded by runnable or in-flight work rather than by retained history.
 Creation authority is checked before any fresh-project canonical store is initialized: rejected, abandoned, fenced,
 or ambiguous requests leave no SQLite, migration marker, or fence behind. Only a successfully admitted fresh create
 may initialize the empty canonical store; an existing legacy store is opened only through the one-time importer.
@@ -190,11 +202,21 @@ The shared layer also reconciles each executing governed record (`status: active
 native turn-failure subscription. Waiting states (`asking`, `awaiting`, and `parked`) have no native turn and do
 not hold an observer. It owns subscription lifetime across backend replacement and record stop/archive/retirement,
 admits native subscriptions one at a time during reconciliation so a backend restart cannot fan out expensive
-resume handshakes, with bounded backoff after a transport disconnect, but no
-product protocol: subscription and failure mapping remain adapter work ([[harness-adapter]]). Every reported
+resume handshakes, with bounded backoff after a transport disconnect. The supervisor performs one full roster
+reconciliation at startup and again only when a source cannot name its affected sessions; lifecycle, topology,
+store, and session-database events enqueue their exact subject ids, and ordinary ticks reconcile only those dirty
+ids plus observers whose retry deadline has arrived. Duplicate wakes coalesce by id, and a full reconciliation
+clears the dirty set before it returns. This keeps the observer contract event-driven without changing which
+records are eligible or how failures are recorded. There is no product protocol: subscription and failure mapping
+remain adapter work ([[harness-adapter]]). Every reported
 failure reaches one record-locked compare-and-set that changes only a live, undeclared `active` record to `error`.
 A declaration that landed first is authoritative, so a late process close, delayed native completion, or
 restart reconciliation cannot overwrite it.
+
+The same active/runtime boundary governs hot liveness: a retained archive row is history, not a runtime candidate.
+Only a canonical active/starting record with an owned leaf receipt or adapter runtime binding enters the fast
+probe set; stop, queue, archive, unbound, and hazard rows are handled by their lifecycle/repair paths. Close's
+cold proof is the authority that permits archive publication, so liveness never becomes a second cleanup protocol.
 
 The record's existing `name` is the one human display override: CLI creation may set it once with `--name`, and
 rename later replaces or clears that same field. It affects only the shared label/title projection;

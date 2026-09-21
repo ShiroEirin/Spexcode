@@ -142,7 +142,12 @@ After a successful `close`, the lifecycle path performs one best-effort read-onl
 If the sweep finds a still-resident session-owned or owner-record-absent process, close reports each PID, its
 identifying command and recorded worktree path, and tells the operator to inspect and handle it through its owning
 harness/runtime. A sweep failure is itself an advisory warning and never changes a successful close into a failure;
-the report has no signal or cleanup route.
+the report has no signal or cleanup route. This close residue observation reuses the same process ownership
+inventory as the full report, but it is an identity-only read: it does not wait for the CPU sample window, read
+PSS, calculate budget/reclaim projections, or probe unrelated shared runtimes. It runs after the close transition
+and its record/candidate locks have been released, and it is invalidated when the same session has resumed with a
+different current archive fact. The full CPU/PSS/shared-runtime report remains the monitor and explicit resources
+API surface, not a prerequisite for a lifecycle response.
 This classification survives parent death and reparenting because it uses the process's retained project/session
 identity, not a live parent edge. A process that has cleared those identity variables, or never carried them, is
 outside this session-specific guarantee and remains unattributed rather than being guessed from command text or path.
@@ -164,7 +169,9 @@ visible, counted, and protective. An unhealthy/unknown probe reports an unknown 
 The existing stop transition asks the adapter-owned target-scoped mutation proof before touching tmux or a leaf.
 That proof hard-gates the shared PID/start/detached-receipt/socket generation, uses the lightweight loaded-ID census, and
 reads only the exact target thread when it is loaded; full per-reference report projection is read-only evidence,
-not mutation authority. The mutation scope is exact: a target leaf with a strict session-leaf receipt binding the
+not mutation authority. The guard hands the adapter the governed record's worktree path as an opaque scope binding
+and nothing else: what that binding addresses in the native runtime, and what a record that binds none must do,
+are the adapter's to decide ([[codex-runtime]] scopes its own-target read to it and refuses without one). The mutation scope is exact: a target leaf with a strict session-leaf receipt binding the
 registered PID/start identity may be stopped even when unrelated sibling or unowned loaded references are slow or unresponsive;
 their loaded IDs remain protective against any shared app-server/control-plane teardown, which this path never
 performs. An unhealthy loaded-ID census, unknown exact target read, target active turn or descendant, or unproven

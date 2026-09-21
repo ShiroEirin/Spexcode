@@ -6,11 +6,11 @@ import { sessionTitle } from './sessions.js'
 export const STATUS_GLYPH: Record<DisplayStatus, string> = {
   working: '\u25cf', idle: '\u25cb', offline: '\u23fb', starting: '\u25d4', review: '\u25c6', done: '\u2713',
   'close-pending': '\u2715', parked: '\u29d6', error: '\u2717', asking: '\u2370', queued: '\u25cc', unknown: '\u2047',
-  corrupt: '\u26a0', retired: '\u2691',
+  corrupt: '\u26a0', retired: '\u2691', created: '\u25cc', archived: '\u25a4',
 }
 const ANSI: Record<DisplayStatus, string> = {
   working: '33', idle: '90', offline: '90', starting: '36', review: '35', done: '34', 'close-pending': '31', parked: '36', error: '31', asking: '93', queued: '90', unknown: '93',
-  corrupt: '31', retired: '90',
+  corrupt: '31', retired: '90', created: '90', archived: '90',
 }
 
 // @@@ display width - the table aligns by TERMINAL CELLS, not code units. CJK/fullwidth glyphs render

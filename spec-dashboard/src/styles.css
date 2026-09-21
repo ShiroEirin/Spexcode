@@ -725,7 +725,9 @@ body.is-resizing .ft-resize::after, body.is-resizing .ctx-resize::after, body.is
   content: ''; position: absolute; left: 0; top: 25%; height: 50%; border-left: 1px solid var(--edge);
 }
 .tab.on {
-  min-width: 132px; background: var(--paper); color: var(--ink2); overflow: visible; z-index: 1;   /* visible: its shoulders lie outside the box; above its neighbours so they cover the next tab's edge */
+  /* Active state must not change the flex minimum: doing so briefly reallocates width to clipped neighbours
+     on every click, producing a visible stretch-and-snap. The close target already reserves its own slot. */
+  min-width: 120px; background: var(--paper); color: var(--ink2); overflow: visible; z-index: 1;   /* visible: its shoulders lie outside the box; above its neighbours so they cover the next tab's edge */
   box-shadow: inset 1px 0 0 var(--edge), inset -1px 0 0 var(--edge), inset 0 1px 0 var(--edge);
 }
 /* THE SHOULDERS. An 8px box outside each lower corner, painted by one radial gradient centred on the box's
@@ -775,6 +777,7 @@ body.is-resizing .ft-resize::after, body.is-resizing .ctx-resize::after, body.is
 }
 .tab-label { width: max-content; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tab-kind-icon { flex: 0 0 13px; }
+.tab-pin { flex: 0 0 12px; color: var(--blue); }
 .tab-dot { flex: 0 0 6px; width: 6px; height: 6px; border-radius: 2px; }
 .tab-spinner { flex: 0 0 auto; color: var(--blue); animation: tab-spin .9s linear infinite; font-style: normal; }
 @keyframes tab-spin { to { transform: rotate(360deg); } }
@@ -1628,6 +1631,9 @@ body.is-resizing, body.is-resizing * { cursor: col-resize !important; user-selec
 /* close-confirm prompt: shares the rename modal chrome; the confirm button is the destructive (orange) verb. */
 .sess-confirm { display: flex; flex-direction: column; gap: 12px; padding: 4px 2px 2px; }
 .sess-confirm-msg { margin: 0; color: var(--ink); font-size: var(--type-control); line-height: var(--leading-ui); }
+.sess-close-state { display: flex; align-items: center; gap: 4px; color: var(--blue); font-size: var(--type-meta); }
+.sess-close-state.failed { color: var(--red); }
+.sess-close-spinner { flex: none; animation: si-attach-spin .8s linear infinite; }
 .sess-rename-btn.danger { border-color: var(--orange); color: var(--orange); }
 .sess-rename-btn.danger:hover { background: var(--orange); color: var(--paper); }
 .sess-rename-btn.danger:disabled { opacity: .5; cursor: default; }

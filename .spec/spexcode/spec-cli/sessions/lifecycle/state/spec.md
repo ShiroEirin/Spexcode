@@ -41,8 +41,11 @@ They carry distinct faces, so the board never reads "stuck, needs me" as "fine, 
 reverse — and a still-going `parked` agent is never mistaken for one with something to act on.
 
 **Lifecycle and liveness are two orthogonal axes; neither overrides the other.** A session carries two
-independent facts, computed independently (the human's `archived` close projection is orthogonal to BOTH and
-owned by [[archive]] — it never reads as a status and never rewrites one):
+independent facts, computed independently. [[session-state-model]] distinguishes the open work-state domain
+from the human-owned `archived` terminal lifecycle. [[archive]] owns that terminal transition and its close
+metadata; it is not an agent declaration and cannot be inferred from runtime liveness.
+Application registration `created` is likewise a non-declaration state: a protocol address exists, not a
+proof that a worker has launched. Both boundary states remain explicit in the complete lifecycle and history.
 
 - **lifecycle** — *what the work needs*, **authored by the agent** (`active`/`idle`/`awaiting`/`parked`/
   `error`/`asking`/`queued`), never inferred — the `status` value above.

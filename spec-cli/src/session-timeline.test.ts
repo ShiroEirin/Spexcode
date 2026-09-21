@@ -85,6 +85,17 @@ test('recordStatus is a canonical write and rejects unknown ids', () => {
   recordStatus(ID, 'asking', null, 'needs input')
   assert.equal(app().readState(ID)?.status, 'asking')
   assert.throws(() => recordStatus('missing-session', 'error', null, 'gone'), /unknown canonical session/)
+  assert.throws(() => recordStatus(ID, 'archived' as any, null, 'not a close'), /invalid work-state declaration/)
+})
+
+test('historical display status events normalize explicitly while malformed state history fails loudly', () => {
+  freshHome()
+  transition('review')
+  assert.deepEqual(timelineEvents(ID).filter((event) => event.kind === 'status').at(-1), {
+    ts: new Date(app().readEvents(ID).at(-1)!.occurredAtMs).toISOString(), kind: 'status', status: 'awaiting', proposal: 'merge', note: null,
+  })
+  transition('launching')
+  assert.throws(() => timelineEvents(ID), /invalid session lifecycle/)
 })
 
 test('watch relations and delivery debt live in the canonical topology and queue', async () => {
@@ -176,6 +187,7 @@ test('timeline display maps lifecycle and proposal once', () => {
   assert.equal(timelineDisplay({ status: 'awaiting', proposal: 'close' }), 'close-pending')
   assert.equal(timelineDisplay({ status: 'awaiting', proposal: 'nothing' }), 'done')
   assert.equal(timelineDisplay({ status: 'error', proposal: null }), 'error')
+  assert.equal(timelineDisplay({ status: 'archived', proposal: null }), 'archived')
 })
 
 test('note reply hint is explicit', () => {

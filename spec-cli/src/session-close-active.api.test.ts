@@ -82,9 +82,11 @@ async function runCli(args: string[], cwd: string, env: NodeJS.ProcessEnv): Prom
   return { code, stdout, stderr }
 }
 
-type CodexFixtureThread = { id: string; presence: 'unknown' | 'idle' | 'active'; archived: boolean; loaded: boolean; parentThreadId?: string }
+// `cwd` is the worktree the thread was started in: the real app-server records it on every row, and the cold
+// proof reads the target's own rows through it ([[codex-runtime]]).
+type CodexFixtureThread = { id: string; cwd: string; presence: 'unknown' | 'idle' | 'active'; archived: boolean; loaded: boolean; parentThreadId?: string }
 
-function codexRpcFixture(threads: Map<string, CodexFixtureThread>): net.Server {
+function codexRpcFixture(threads: Map<string, CodexFixtureThread>, options: { falseEmptyCwd: boolean }): net.Server {
   return net.createServer((socket) => {
     let buffer = Buffer.alloc(0)
     let upgraded = false
@@ -96,15 +98,22 @@ function codexRpcFixture(threads: Map<string, CodexFixtureThread>): net.Server {
       socket.write(Buffer.concat([header, payload]))
     }
     const status = (presence: CodexFixtureThread['presence']) => ({ type: presence === 'unknown' ? 'notLoaded' : presence })
-    const list = (archived: boolean, ancestorThreadId?: unknown) => [...threads.values()]
-      .filter((thread) => thread.archived === archived && (!ancestorThreadId || thread.parentThreadId === ancestorThreadId))
-      .map((thread) => ({ id: thread.id, ...(thread.parentThreadId ? { parentThreadId: thread.parentThreadId } : {}), status: status(thread.presence) }))
-    const handle = (message: { id?: number; method?: string; params?: { archived?: boolean; ancestorThreadId?: string; threadId?: string } }) => {
+    // Filters apply as the real server applies them. This fixture's trees are one level deep, so the ancestor
+    // closure and the direct children of a thread are the same rows.
+    const list = (params: { archived?: boolean; ancestorThreadId?: string; parentThreadId?: string; cwd?: string } = {}) => options.falseEmptyCwd && params.cwd
+      ? []
+      : [...threads.values()]
+      .filter((thread) => thread.archived === (params.archived === true))
+      .filter((thread) => !params.ancestorThreadId || thread.parentThreadId === params.ancestorThreadId)
+      .filter((thread) => !params.parentThreadId || thread.parentThreadId === params.parentThreadId)
+      .filter((thread) => !params.cwd || thread.cwd === params.cwd)
+      .map((thread) => ({ id: thread.id, cwd: thread.cwd, ...(thread.parentThreadId ? { parentThreadId: thread.parentThreadId } : {}), status: status(thread.presence) }))
+    const handle = (message: { id?: number; method?: string; params?: { archived?: boolean; ancestorThreadId?: string; parentThreadId?: string; cwd?: string; threadId?: string } }) => {
       if (message.method === 'initialize') return send({ id: message.id, result: {} })
       if (message.method === 'initialized') return
       if (message.method === 'thread/loaded/list') return send({ id: message.id, result: { data: [...threads.values()].filter((thread) => thread.loaded).map((thread) => ({ id: thread.id })), nextCursor: null } })
       if (message.method === 'thread/turns/list') return send({ id: message.id, result: { data: [], nextCursor: null } })
-      if (message.method === 'thread/list') return send({ id: message.id, result: { data: list(message.params?.archived === true, message.params?.ancestorThreadId), nextCursor: null } })
+      if (message.method === 'thread/list') return send({ id: message.id, result: { data: list(message.params), nextCursor: null } })
       if (message.method === 'thread/archive') {
         const thread = threads.get(message.params?.threadId || '')
         if (!thread) return send({ id: message.id, error: { message: 'unknown fixture thread' } })
@@ -160,7 +169,8 @@ test('close refuses active native turns and missing evidence while retaining rec
   process.env.SPEXCODE_CODEX_SOCKET_DIR = socketDir
   process.env.SPEX_SESSION_DATABASE_PATH = join(home, 'sessions.sqlite')
   const threads = new Map<string, CodexFixtureThread>()
-  const server = codexRpcFixture(threads)
+  const options = { falseEmptyCwd: false }
+  const server = codexRpcFixture(threads, options)
   let owner: ReturnType<typeof spawnDetachedRuntime> | null = null
   let backend: ChildProcess | null = null
   try {
@@ -186,6 +196,7 @@ test('close refuses active native turns and missing evidence while retaining rec
       args: ['-e', 'setInterval(() => {}, 1000)'],
     })
     const application = initializeFreshSessionApplication()
+    const worktreeOf = new Map<string, string>()
     const writeRecord = (id: string, threadId: string) => {
       const dir = join(sessions, id)
       const worktree = join(fixture, `${id}-worktree`)
@@ -199,22 +210,29 @@ test('close refuses active native turns and missing evidence while retaining rec
         stopped: false, archived: false, cold_proof: '', adapter_recovery: '', launcher: 'codex', launch_cmd: 'codex', launch_owner: '',
       }, null, 2) + '\n')
       application.createSession({ sessionId: id, status: 'awaiting', proposal: 'nothing' })
+      worktreeOf.set(id, worktree)
       return join(dir, 'runtime.json')
     }
     const settledId = 'rollout-settled-close'
     const settledThread = 'rollout-settled-thread'
     const settledRecord = writeRecord(settledId, settledThread)
-    threads.set(settledThread, { id: settledThread, presence: 'unknown', archived: false, loaded: true })
+    threads.set(settledThread, { id: settledThread, cwd: worktreeOf.get(settledId)!, presence: 'unknown', archived: false, loaded: true })
     const activeId = 'rollout-active-close'
     const activeThread = 'rollout-active-thread'
     const activeChild = 'rollout-active-child'
     const activeRecord = writeRecord(activeId, activeThread)
-    threads.set(activeThread, { id: activeThread, presence: 'idle', archived: false, loaded: true })
-    threads.set(activeChild, { id: activeChild, presence: 'active', archived: false, loaded: true, parentThreadId: activeThread })
+    threads.set(activeThread, { id: activeThread, cwd: worktreeOf.get(activeId)!, presence: 'idle', archived: false, loaded: true })
+    threads.set(activeChild, { id: activeChild, cwd: worktreeOf.get(activeId)!, presence: 'active', archived: false, loaded: true, parentThreadId: activeThread })
+    const falseEmptyId = 'false-empty-cwd-close'
+    const falseEmptyThread = 'false-empty-cwd-thread'
+    const falseEmptyChild = 'false-empty-cwd-child'
+    const falseEmptyRecord = writeRecord(falseEmptyId, falseEmptyThread)
+    threads.set(falseEmptyThread, { id: falseEmptyThread, cwd: worktreeOf.get(falseEmptyId)!, presence: 'idle', archived: false, loaded: true })
+    threads.set(falseEmptyChild, { id: falseEmptyChild, cwd: worktreeOf.get(falseEmptyId)!, presence: 'idle', archived: false, loaded: true, parentThreadId: falseEmptyThread })
     const missingId = 'rollout-missing-close'
     const missingThread = 'rollout-missing-thread'
     const missingRecord = writeRecord(missingId, missingThread)
-    threads.set(missingThread, { id: missingThread, presence: 'unknown', archived: false, loaded: true })
+    threads.set(missingThread, { id: missingThread, cwd: worktreeOf.get(missingId)!, presence: 'unknown', archived: false, loaded: true })
     const port = await freePort()
     const env: NodeJS.ProcessEnv = {
       ...process.env,
@@ -243,6 +261,15 @@ test('close refuses active native turns and missing evidence while retaining rec
     const settled = await runCli(['session', 'close', settledId, '--api', base], project, env)
     assert.equal(settled.code, 0, `${settled.stdout}\n${settled.stderr}`)
     assert.equal(existsSync(settledRecord), true, 'soft close retains the public record after a terminal rollout tail')
+
+    options.falseEmptyCwd = true
+    const falseEmpty = await runCli(['session', 'close', falseEmptyId, '--api', base], project, env)
+    options.falseEmptyCwd = false
+    assert.equal(falseEmpty.code, 0, `${falseEmpty.stdout}\n${falseEmpty.stderr}`)
+    assert.equal(JSON.parse(readFileSync(falseEmptyRecord, 'utf8')).archived, true, 'the real close publishes its retained archived record')
+    assert.equal(existsSync(worktreeOf.get(falseEmptyId)!), false, 'the real close removes the worktree after native cold proof')
+    assert.equal(threads.get(falseEmptyThread)?.archived, true)
+    assert.equal(threads.get(falseEmptyChild)?.archived, true)
 
     const activeBefore = readFileSync(activeRecord, 'utf8')
     const active = await runCli(['session', 'close', activeId, '--api', base], project, env)

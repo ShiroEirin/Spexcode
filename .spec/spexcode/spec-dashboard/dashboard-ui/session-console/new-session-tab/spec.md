@@ -63,7 +63,8 @@ harness glyph + name, the selected row marked), and beneath each name the profil
 **in full, as inert read-only text** (selectable for copying, but not a control — nothing in the card is
 clickable except the row select itself; no chevron buttons, no edit surface: config files remain the
 sole place a `cmd` is written). Selecting a row closes the pop;
-a backdrop click or Esc closes it too. Seeded interactive launchers keep the picker present in an initialized
+a backdrop click or Esc closes it too; its backdrop follows [[backdrop-dismiss]], so selecting the picker's
+read-only command text and releasing outside cannot close it. Seeded interactive launchers keep the picker present in an initialized
 project, and configured dashboard-visible profiles add more names; profiles for external adapters remain backend-only
 and do not appear in this picker or its autocomplete. The launcher pick is
 **remembered** (per-browser), honors the backend's configured default when there is no remembered valid pick,

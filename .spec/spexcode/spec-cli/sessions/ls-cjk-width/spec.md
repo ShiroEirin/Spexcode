@@ -39,3 +39,5 @@ so the width fix is invisible until a wide glyph appears.
 prompt-derived title is [[session-label]]'s contract, and this node only owns how any derived string
 is fitted into a column. Ambiguous-width code points (e.g. `×`) count one cell, matching common
 terminal wcwidth behaviour.
+The glyph/colour registry also covers registration `created` and the human-owned `archived` event that a timeline follower observes;
+closed row liveness still displays offline. Terminal lifecycle and runtime display are not interchangeable.

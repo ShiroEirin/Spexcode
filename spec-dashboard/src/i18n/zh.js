@@ -24,6 +24,7 @@ export default {
     error: '错误',
     asking: '待答',
     queued: '排队中',
+    created: '已创建',
     unknown: '未知',
     corrupt: '损坏',
     retired: '已退役',
@@ -134,6 +135,8 @@ export default {
     openInNewTab: '在新标签打开',
     list: '所有标签',
     menuLabel: '标签操作',
+    menuPin: '固定',
+    menuUnpin: '取消固定',
     menuClose: '关闭',
     menuCloseOthers: '关闭其他',
     menuSplitRight: '分屏到右侧',
@@ -567,6 +570,7 @@ export default {
       tabPrevious: '选择上一个页签',
       tabSplit: '将当前页签送入分屏',
       commandBox: '开关会话 Command Box',
+      focusComposer: '聚焦输入框',
     },
     explorer: {
       menu: '打开当前资源管理器行的右键菜单',
@@ -624,7 +628,11 @@ export default {
     quarantineRestore: '恢复已隔离记录',
     close: '关闭',
     closeTitle: '关闭“{name}”？',
-    closeConfirm: '这将关闭会话并删除其工作树。任何未提交的更改都会丢失。',
+    closeConfirm: '这将关闭会话并移除工作树。历史记录和未提交的更改会归档，可在恢复会话时找回。',
+    closeWorking: '正在关闭…',
+    closeSucceeded: '关闭已确认',
+    closeFailed: '关闭失败',
+    closeRetry: '重试关闭',
     renameTitle: '重命名“{name}”',
     renamePlaceholder: '显示名称（留空以重置）',
     // 接入弹窗（[[attach-menu]]）：提供两条可复制的接入命令——`spex session attach` 官方动词，以及原始 `tmux -L … attach` 兜底。
@@ -639,7 +647,7 @@ export default {
     selected: ({ n }) => `已选择 ${n} 个`,
     close: '关闭所选会话',
     closeTitle: ({ n }) => `关闭所选的 ${n} 个会话？`,
-    closeConfirm: '这将关闭所选会话并删除其工作树。任何未提交的更改都会丢失。',
+    closeConfirm: '这将关闭所选会话并移除工作树。历史记录和未提交的更改会归档，可在恢复会话时找回。',
   },
 
   lockHint: {

@@ -6,6 +6,7 @@ desc: The selected session's document tools menu gives it a human name — a per
 code:
   - spec-dashboard/src/SessionContextMenu.jsx#SessionContextMenu
 related:
+  - spec-dashboard/src/SessionCloseDialog.jsx
   - spec-dashboard/src/SessionInterface.jsx
   - spec-dashboard/src/Dock.jsx
   - spec-dashboard/src/styles.css
@@ -99,24 +100,25 @@ but behind a **confirm prompt** — a right-click is easy to mis-aim and the rem
 the typed command (whose deliberate keystrokes ARE the confirmation) it asks first (the confirm is the shared
 modal, its commit button styled as the destructive verb). Like the rename prompt, the confirm **titles itself
 with the session's headline** — the same label its card shows ([[session-activity]]), not the stable rename
-handle — so the human reads the very words they right-clicked and never has to map a different name onto the row. Confirming
-**dismisses the prompt at once** and fires the close in the **background**: worktree + branch removal is
-seconds of real work (a `git worktree remove` plus killing the agent + tmux), and the human must never sit
-watching a frozen, disabled dialog wait it out — the same fire-and-forget the New Session launch already uses
-([[session-console]]). A successful close invalidates the session graph before its 200 response and pushes
-the changed session units to connected boards, so the row leaves every surface when the removal lands even
-if the best-effort store/worktree watchers are unavailable; the patrol is recovery, never the normal close
-acknowledgement. Cancelling does nothing. The menu carries only the
-decisive **close**, never the soft `/stop` — stopping-to-resume is a Command Box verb on a live session.
+handle — so the human reads the very words they right-clicked and never has to map a different name onto the row.
+Confirming hands the target to [[session-close-feedback]] and dismisses immediately. The page owns the pending
+request, the row shows its progress, and non-modal notices carry completion or failure. Users can continue
+working elsewhere while it runs. This is not a second lifecycle state or cleanup authority. A successful
+close invalidates the session graph before its 200 response and pushes the changed session units to connected
+boards, so the row leaves every surface when the removal lands even if the best-effort store/worktree watchers
+are unavailable; the patrol is recovery, never the normal close acknowledgement. Cancelling does nothing. The
+menu carries only the decisive **close**, never the soft `/stop` — stopping-to-resume is a Command Box verb on a
+live session.
 
 Both lifecycle confirms open with their destructive commit button focused, so a plain **Enter** confirms the
-visible archive or close action. Escape, Cancel, and a backdrop click remain cancellation paths; Enter does
-not weaken the preceding right-click confirmation boundary.
+visible archive or close action. Before submission, Escape, Cancel, and a backdrop click remain cancellation
+paths; after submission the confirmation is gone and acknowledgement lives outside it. Enter does not weaken the preceding
+right-click confirmation boundary.
 
 **The close confirm has TWO openers and one body.** The menu's own item is the first; a session row dropped
 on the dock's archive door is the second ([[dock-modes]]). The removal is byte-for-byte the same removal, so
 it is one prompt reached two ways rather than two prompts for one destruction — two dialogs would be two
-places for the wording, the destructive styling and the fire-and-forget semantics to drift apart. The second
+places for the wording, the destructive styling and the acknowledgement semantics to drift apart. The second
 opener is owned by its caller rather than by this menu, so dismissing hands the request back instead of only
 clearing state here; that is what keeps a cancelled drop from leaving a dead request behind it. A drag is a
 more deliberate gesture than a right-click, which is a reason to trust the AIM, never a reason to skip the

@@ -21,6 +21,11 @@ buttons. Each registration has a document route key, a stable action id, an icon
 callback. The state context changes as documents register or dispose, while the API context remains stable so
 registrants do not loop when a neighbouring document changes.
 
+Action registration follows the document handover before browser paint. Switching between ready documents
+must not paint an intermediate empty action set; equal action sets keep their band width throughout the
+switch. The arriving document owns the callbacks and availability from the first painted frame. An empty
+set is valid only when the arriving document actually has no actions, not while its registration catches up.
+
 A BAND filters by the address ITS REGION is showing — every group's strip asks for the actions at its own
 showing document ([[tab-layout]]) — so a document keeps its own controls wherever the workspace draws it,
 and a document that is not being drawn contributes nothing. A document lives in exactly one region

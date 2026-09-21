@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { ContextMenu, ContextMenuGroup, ContextMenuItem, ContextMenuSeparator, ContextMenuSubmenu } from './ContextMenu.jsx'
 import Modal from './Modal.jsx'
+import SessionCloseDialog from './SessionCloseDialog.jsx'
+import { useCloseSession, useSessionCloseState } from './SessionCloseProvider.jsx'
 import SessionAttach from './SessionAttach.jsx'
 import { apiFetch, loadSettings } from './data.js'
 import { openNewTab } from './tabs.js'
@@ -15,6 +17,8 @@ const SPEC_ROWS_MAX = 8
 
 export default function SessionContextMenu({ menu, closeRequest = null, onCloseRequestDone, onClose, onChanged, onLock, onError, onMultiSelect, onDetach }) {
   const t = useT()
+  const closeSession = useCloseSession()
+  const closeState = useSessionCloseState(menu?.session?.id)
   const [renaming, setRenaming] = useState(null)   // the session whose rename prompt is open | null
   const [closing, setClosing] = useState(null)     // the session whose close-confirm prompt is open | null
   const [quarantining, setQuarantining] = useState(null) // corrupt row whose opaque record needs witnessed quarantine
@@ -54,7 +58,6 @@ export default function SessionContextMenu({ menu, closeRequest = null, onCloseR
   // press closes the topmost one, never the session panel behind it (the old bespoke window listener raced it).
   useEscLayer(!!menu, onClose)
   useEscLayer(!!renaming, () => setRenaming(null))
-  useEscLayer(!!closing, () => setClosing(null))
   useEscLayer(!!quarantining, () => setQuarantining(null))
   // attach's own Esc layer lives inside SessionAttach (it owns the modal); nothing to peel here.
 
@@ -178,22 +181,7 @@ export default function SessionContextMenu({ menu, closeRequest = null, onCloseR
   const closingSession = closing || closeRequest
   const dismissClose = () => { setClosing(null); onCloseRequestDone?.() }
 
-  // confirmed close: dismiss the confirm AT ONCE and fire the worktree removal in the BACKGROUND — it's
-  // seconds of real work (git worktree remove + killing the agent/tmux), and (like New Session's launch)
-  // the human must never watch a frozen, disabled dialog wait it out. The board reload when it lands drops
-  // the row off every surface; the next poll reconciles a failure. No busy-guard: the prompt is already gone.
-  const confirmClose = () => {
-    const { id } = closingSession
-    dismissClose()
-    apiFetch(`/api/sessions/${id}/close`, { method: 'POST' })
-      .then(async (response) => {
-        const body = await response.json().catch(() => null)
-        if (!response.ok || body?.ok === false)
-          onError?.(body?.error || `session close refused (HTTP ${response.status})`)
-      })
-      .catch((error) => onError?.(error instanceof Error ? error.message : String(error)))
-      .finally(() => onChanged?.())
-  }
+  const confirmClose = () => { void closeSession(closingSession) }
 
   // The door lists the nodes this session is changing, capped so a wide session cannot push the menu's own
   // verbs off the screen. What the cap hides is SAID, not silently dropped, and `find on graph` below still
@@ -257,7 +245,7 @@ export default function SessionContextMenu({ menu, closeRequest = null, onCloseR
           </ContextMenuGroup>
           <ContextMenuSeparator />
           <ContextMenuGroup>
-            <ContextMenuItem icon="trash" danger onClick={startClose}>{t('sessionWindow.close')}</ContextMenuItem>
+            <ContextMenuItem icon="trash" danger disabled={closeState?.phase === 'pending'} onClick={startClose}>{t(closeState?.phase === 'pending' ? 'sessionWindow.closeWorking' : 'sessionWindow.close')}</ContextMenuItem>
           </ContextMenuGroup>
         </ContextMenu>
       )}
@@ -283,22 +271,7 @@ export default function SessionContextMenu({ menu, closeRequest = null, onCloseR
           </form>
         </Modal>
       )}
-      {closingSession && (
-        <Modal
-          title={t('sessionWindow.closeTitle', { name: sessionHeadline(closingSession) })}
-          closeLabel={t('common.close')}
-          className="sess-rename-modal"
-          onClose={dismissClose}
-        >
-          <div className="sess-confirm">
-            <p className="sess-confirm-msg">{t('sessionWindow.closeConfirm')}</p>
-            <div className="sess-rename-actions">
-              <button type="button" className="sess-rename-btn" onClick={dismissClose}>{t('common.cancel')}</button>
-              <button type="button" className="sess-rename-btn danger" onClick={confirmClose} autoFocus>{t('sessionWindow.close')}</button>
-            </div>
-          </div>
-        </Modal>
-      )}
+      {closingSession && <SessionCloseDialog name={sessionHeadline(closingSession)} onConfirm={confirmClose} onClose={dismissClose} />}
       {quarantining && (
         <Modal
           title={t('sessionWindow.quarantineTitle')}

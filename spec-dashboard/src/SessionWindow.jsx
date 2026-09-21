@@ -7,6 +7,7 @@ import { useT } from './i18n/index.jsx'
 import { Icon } from './icons.jsx'
 import SessionPicker from './SessionPicker.jsx'
 import { useEscLayer } from './escStack.js'
+import { useSessionCloseState } from './SessionCloseProvider.jsx'
 
 // [[session-row]]: ONE session row, drawn the same on every surface that lists sessions — the dock's
 // projection, the console, the phone. The module owns the row's face, its tree lead and fold control, and
@@ -113,6 +114,7 @@ export function useFold() {
 // avatar so a session cross-references its node avatars; the console sidebar and the phone drop it
 // (redundant next to the headline). `lead` is the optional nesting fold gutter.
 export function SessionRow({ s, locked, showAvatar = true, lead = null }) {
+  const close = useSessionCloseState(s.id)
   const t = useT()
   const ops = opSummary(s.ops)
   const display = sessionDisplayState(s)
@@ -133,7 +135,12 @@ export function SessionRow({ s, locked, showAvatar = true, lead = null }) {
           aria-label={s.note ? `${statusWord} · ${s.note}` : statusWord}>{display.glyph}</span>
         {ops && <span className="sess-ops">{ops}</span>}
       </span>
-      <span className="sess-id" data-tip={headline}>{headline}</span>
+      <span className="sess-id" data-tip={headline}>{headline}
+        {close && <span className={`sess-close-state ${close.phase}`} role="status" data-tip={close.error || t('sessionWindow.closeWorking')}>
+          <Icon name={close.phase === 'pending' ? 'loader' : 'triangle-alert'} size={13} className={close.phase === 'pending' ? 'sess-close-spinner' : undefined} />
+          <span>{t(close.phase === 'pending' ? 'sessionWindow.closeWorking' : 'sessionWindow.closeFailed')}</span>
+        </span>}
+      </span>
       {s.archiveHazard && <span className="sess-hazard" data-tip={s.archiveHazard} aria-label={s.archiveHazard}><Icon name="issue-opened" size={13} /></span>}
       {locked && <span className="sess-lock" data-tip={t('sessionWindow.lockedTitle')}><LockGlyph /></span>}
     </>

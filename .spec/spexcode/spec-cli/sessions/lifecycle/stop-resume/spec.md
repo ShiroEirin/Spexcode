@@ -37,7 +37,8 @@ relaunch binds the runtime again, which is what hands over the messages owed whi
 that does not become ready restores the stopped record and releases that binding again) and
 clears `stopped` as it restores the runtime and settles the **resting** lifecycle under the SAME active-only
 guard `idle` uses — a resumed agent that was `active` (working), or was prepared as `queued` before this explicit
-launch, is now just sitting at its prompt → `idle`; a successful readiness publication can never retain `queued`
+launch, or crossed the human-owned `archived` terminal state, is now just sitting at its prompt → `idle`;
+[[session-state-model]] owns this exhaustive transition. A successful readiness publication can never retain `queued`
 alongside a live runtime. Waiting declarations survive the resume untouched
 (`awaiting` and **its proposal**, `asking`, `parked`), while a terminal `error` is cleared with its failure note
 so the newly running conversation is not presented as failed. resume deliberately does NOT
@@ -47,24 +48,44 @@ So resume never itself makes the agent work; the `merge` dispatch, which resumes
 so the dispatch hits a live one, then sends the merge prompt — and THAT prompt is what flips the lifecycle to
 `active` (and clears the now-obsolete proposal) through mark-active.
 
+For Codex, "the same conversation" is the stable SpexCode session address, not an immutable native thread id:
+the TUI may rewind by forking a successor thread while the session is waiting, and the adapter rebinds that
+successor before later resume or delivery reads. Resume never invents a successor from a title, cwd, or rollout
+ordering; it uses only the exact binding the rebind transaction committed.
+
 Launch handoff is not proof that resume restored liveness. The resolved harness adapter supplies a bounded
-readiness fence. Resume persists an internal launch-readiness-pending fence while every public record, list,
+readiness fence. Resume persists an internal launch-readiness-pending fence BEFORE its first runtime metadata
+mutation, adapter restore, or launch. That fence is the durable beginning of one restore transaction, not a
+late snapshot taken after launch succeeded. Every public record, list,
 API, graph, resources, settings, and timeline projection remains the exact pre-resume stopped/offline state. After the adapter
 revalidates the same runtime, target reference, and unique governed owner across that durable boundary, one
 final record write clears the pending fence and publishes `stopped:false` plus the real resting lifecycle
-transition exactly once. False, throw, timeout, or stale-pending recovery retains/restores the exact original
-lifecycle, proposal, and note with no transition event, leaving an offline session that can be retried. Thus
+transition exactly once. False, throw, or timeout restores the exact original only after the runtime is proven
+offline; a live or ambiguous candidate keeps its pending fence and a loud retryable refusal rather than hiding
+it as a clean cold archive. Reentry into an interrupted pending transaction never starts by stopping or launching.
+It re-proves the existing candidate's physical liveness, exact native identity, unique owner, and adapter readiness.
+A live ready candidate reaches the SAME final publication path without restarting; a proven-offline one restores
+the original and asks for an explicit retry; unknown/starting readiness keeps the fence unchanged, even with force.
+A newer canonical declaration remains authoritative and cannot be overwritten from the frozen original.
+No failed or offline stale recovery emits a lifecycle event. Thus
 no stale readiness sample or transient `active` to `idle` candidate can become public online state. The frozen
 lifecycle and proposal must be members of their closed semantic enums before any public projection accepts the
 fence; an unknown string is corrupt/unknown on every surface. A valid pending row always carries offline
 liveness and an offline compact display without running live reconciliation, including defensive readings of
 an `active`/`idle`, `stopped:false` original while candidate runtime is already live.
 
+The existing human `stop` is also the cancellation entry for an interrupted pending transaction. It uses
+the SAME exact leaf/shared-runtime teardown proofs, never a second process terminator. An open canonical
+session becomes stopped/open with its latest declaration preserved; a still-archived canonical session must
+also complete the ordinary cold proof before its original close metadata can be restored. Only successful
+teardown clears the fence. `close` refuses a pending resume and names resume revalidation or `stop` cancellation,
+so a changed close cannot silently supersede a live candidate or strand it with no legal recovery operation.
+
 **The resume guard — restore-on-alive must be impossible.** Relaunch is a *kill-then-respawn*, so it destroys
 a running agent's in-flight work the instant the agent is actually alive. That was the incident's kill-shot:
 the board lied (a live worker read `offline`), the human hit relaunch, and live claude processes died mid-task.
 So resume re-derives the agent's liveness **freshly** (the same listener-verified probe above, not a possibly-
-stale board reading) and **REFUSES LOUD** rather than relaunch a live agent — the API answers `409` and the
+stale board reading), ignoring stopped/archive filing markers, and **REFUSES LOUD** rather than relaunch a live agent — the API answers `409` and the
 dashboard's relaunch panel shows the refusal, never a silent no-op. You steer a live agent by **messaging** it,
 not by restoring it. Death must be **proven**: an `unknown` probe (the tmux timeout that starts under load)
 also refuses, since a live worker can't be ruled out. A **`force`** escape exists for a genuinely wedged-but-
@@ -72,6 +93,8 @@ alive process (the one case where a deliberate kill is the repair). Only a **con
 `force`) is relaunched. The `merge` dispatch is the sole non-guarded caller: it merely needs a *live* agent to
 send the merge prompt to, so an already-`online` one is a satisfied no-op (never a refusal) and only a
 confirmed-offline one is relaunched — the guard protects the human relaunch, not the internal ensure-live.
+That online no-op retains the current declaration instead of publishing idle; starting/unknown never publishes
+a lifecycle transition without readiness, even for ensure-live.
 Contrast **`close`**, the other human-only terminal verb: it proves the same exact cold stop, commits the complete
 worktree (including untracked files) into `refs/spex-archive/<id>`, then removes only the worktree while retaining
 branch, record, transcript, and conversation identity. An unreadable record proves no owner, so close quarantines

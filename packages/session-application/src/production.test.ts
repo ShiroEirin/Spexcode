@@ -6,13 +6,93 @@ import test from 'node:test'
 
 import { RuntimeBindingError } from '@spexcode/session-runtime'
 
-import { openProjectSessionApplication } from './production.js'
+import { openProjectSessionApplication, SESSION_CHANGE } from './production.js'
 
 const identity = (nativeSessionId: string, nativeStartToken: string) => ({
   namespace: 'spex-governed',
   runtimeKind: 'fixture',
   nativeSessionId,
   nativeStartToken,
+})
+
+test('post-commit reports affected session ids and a change mask without changing recipient wakes', () => {
+  const root = mkdtempSync(join(tmpdir(), 'session-application-change-report-'))
+  const commits: Array<{ recipients: string[]; subjectSessionIds: string[]; changeMask: number }> = []
+  const app = openProjectSessionApplication({
+    databasePath: join(root, 'sessions.sqlite'),
+    locality: () => {},
+    onCommitted: change => commits.push({
+      recipients: [...change.recipients],
+      subjectSessionIds: [...change.subjectSessionIds],
+      changeMask: change.changeMask,
+    }),
+  })
+  try {
+    app.createSession({ sessionId: 'parent' })
+    app.createSession({ sessionId: 'child', parentSessionId: 'parent' })
+    app.transitionSession('child', { status: 'active' })
+    app.notifyRecipients('child', { kind: 'fixture.notice.v1', body: Buffer.from('notice') })
+    app.attachAndNotify('parent', 'child', 'watch', { kind: 'fixture.watch.v1', body: Buffer.from('watch') })
+
+    assert.deepEqual(commits[0], {
+      recipients: [],
+      subjectSessionIds: ['parent'],
+      changeMask: SESSION_CHANGE.state,
+    })
+    assert.deepEqual(commits[1], {
+      recipients: [],
+      subjectSessionIds: ['child', 'parent'],
+      changeMask: SESSION_CHANGE.state | SESSION_CHANGE.topology,
+    })
+    assert.deepEqual(commits[2], {
+      recipients: ['parent'],
+      subjectSessionIds: ['child', 'parent'],
+      changeMask: SESSION_CHANGE.state,
+    })
+    assert.deepEqual(commits[3], {
+      recipients: ['parent'],
+      subjectSessionIds: ['child'],
+      changeMask: SESSION_CHANGE.delivery,
+    })
+    assert.deepEqual(commits[4], {
+      recipients: ['parent'],
+      subjectSessionIds: ['parent', 'child'],
+      changeMask: SESSION_CHANGE.topology | SESSION_CHANGE.delivery,
+    })
+  } finally {
+    app.close()
+  }
+})
+
+test('session event watermark returns only subjects appended after the prior cursor', () => {
+  const root = mkdtempSync(join(tmpdir(), 'session-application-change-watermark-'))
+  const app = openProjectSessionApplication({ databasePath: join(root, 'sessions.sqlite'), locality: () => {} })
+  try {
+    assert.throws(() => app.readChangedSessionIdsSince(-1), /watermark must be a non-negative safe integer/)
+    app.createSession({ sessionId: 'first' })
+    const first = app.readChangedSessionIdsSince(0)
+    assert.ok(first.watermark > 0)
+    assert.ok(Number.isSafeInteger(first.dataVersion))
+    assert.deepEqual(first.subjectSessionIds, ['first'])
+    assert.deepEqual(first.recipientSessionIds, [])
+
+    app.createSession({ sessionId: 'watcher' })
+    app.attachAndNotify('watcher', 'first', 'watch', { kind: 'fixture.watch.v1', body: Buffer.from('watch') })
+    app.createSession({ sessionId: 'second' })
+    app.transitionSession('first', { status: 'active' })
+    const second = app.readChangedSessionIdsSince(first.watermark)
+    assert.ok(second.watermark > first.watermark)
+    assert.deepEqual(second.subjectSessionIds, ['watcher', 'second', 'first'])
+    assert.deepEqual(second.recipientSessionIds, ['watcher'])
+
+    const settled = app.readChangedSessionIdsSince(second.watermark)
+    assert.equal(settled.watermark, second.watermark)
+    assert.equal(settled.dataVersion, second.dataVersion)
+    assert.deepEqual(settled.subjectSessionIds, [])
+    assert.deepEqual(settled.recipientSessionIds, [])
+  } finally {
+    app.close()
+  }
 })
 
 test('production composition runs the parent/child state, event, replay, publish, and binding fence story', () => {

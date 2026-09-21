@@ -143,6 +143,10 @@ function ensureBridge(id: string, viewer: Viewer, subscription: Subscription, co
   let proc: ChildProcessWithoutNullStreams | undefined
   try {
     proc = spawn(process.execPath, [HELPER, id, String(cols), String(rows)], {
+      // The helper and its tmux client read nothing relative to a directory, so they stand on the one no session
+      // close, project removal or deployment can take away. tmux consults a client's cwd only for a client with
+      // no session; this one attaches, so the pane keeps the directory its session was launched with.
+      cwd: '/',
       stdio: ['pipe', 'pipe', 'pipe'],
       env: process.env,
     })

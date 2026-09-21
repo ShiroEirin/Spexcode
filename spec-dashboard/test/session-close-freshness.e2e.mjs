@@ -10,7 +10,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 const here = dirname(fileURLToPath(import.meta.url))
 const root = resolve(here, '..', '..')
 const cliRoot = join(root, 'spec-cli')
-const dashboardRoot = join(root, 'spec-dashboard')
+const dashboardRoot = resolve(process.env.DASHBOARD_ROOT || join(root, 'spec-dashboard'))
 const sharedRoot = resolve(root, '..', '..')
 const dependencyRoot = existsSync(join(root, 'node_modules', 'tsx', 'dist', 'cli.mjs')) ? root : sharedRoot
 const dependencyModules = join(dependencyRoot, 'node_modules')
@@ -90,21 +90,31 @@ try {
   mkdirSync(recordDir, { recursive: true })
   writeFileSync(join(recordDir, 'session.json'), JSON.stringify({
     session_id: sessionId, governed: true, worktree_path: worktree, branch,
-    title: 'close freshness target', name: '', parent: '', status: 'launch-queued', proposal: '',
+    title: 'close freshness target', name: '', parent: '', status: 'awaiting', proposal: '',
     merges: 0, note: '', sortkey: '', createdAt: Date.now(), harness: 'claude', harness_session_id: '',
-    stopped: false, archived: false, cold_proof: '', adapter_recovery: '', launcher: 'fixture', launch_cmd: 'true',
+    stopped: true, archived: false, cold_proof: '', adapter_recovery: '', launcher: 'fixture', launch_cmd: 'true',
     launch_owner: 'http://fixture.invalid', create_request_id: '', create_payload_hash: '', launch_readiness_pending: null,
   }, null, 2) + '\n')
 
   const apiPort = await freePort()
   const uiPort = await freePort()
   const base = `http://127.0.0.1:${uiPort}`
+  const fixtureEnv = {
+    ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('SPEXCODE_') && !key.startsWith('SPEX_SESSION_'))),
+    SPEXCODE_HOME: home,
+    SPEX_SESSION_DATABASE_PATH: join(home, 'sessions.sqlite'),
+  }
+  execFileSync(process.execPath, ['--import', import.meta.resolve('tsx'), '--input-type=module', '-e',
+    `import { configuredSessionApplication } from ${JSON.stringify(pathToFileURL(join(cliRoot, 'src/session-application.ts')).href)};
+     const app = configuredSessionApplication();
+     app.close();`], { cwd: project, env: fixtureEnv })
   backend = spawn(process.execPath, ['--import', import.meta.resolve('tsx'), join(cliRoot, 'src', 'index.ts')], {
     cwd: project,
     env: {
-      ...process.env,
+      ...fixtureEnv,
       PORT: String(apiPort),
       SPEXCODE_HOME: home,
+      SPEX_SESSION_DATABASE_PATH: join(home, 'sessions.sqlite'),
       SPEXCODE_TMUX: `spex-close-freshness-${process.pid}`,
       SPEXCODE_DISABLE_WATCHERS: 'store,worktrees,refs',
       SPEXCODE_BOARD_DEBUG: '1',
@@ -115,6 +125,8 @@ try {
   backend.stdout.on('data', (chunk) => { backendLog += String(chunk) })
   backend.stderr.on('data', (chunk) => { backendLog += String(chunk) })
   await waitFor(() => fetch(`http://127.0.0.1:${apiPort}/health`).then((r) => r.ok).catch(() => false), 'isolated backend')
+  const initialGraph = await (await fetch(`http://127.0.0.1:${apiPort}/api/graph`)).json()
+  assert.ok(initialGraph.sessions?.some((row) => row.id === sessionId), `fixture session missing: ${JSON.stringify(initialGraph.sessions)}`)
 
   const { createServer } = await import(pathToFileURL(join(dependencyModules, 'vite', 'dist', 'node', 'index.js')).href)
   const react = (await import(pathToFileURL(join(dependencyModules, '@vitejs', 'plugin-react', 'dist', 'index.js')).href)).default
@@ -153,18 +165,50 @@ try {
 
   await row.click({ button: 'right' })
   await page.getByRole('menuitem', { name: /^close$/i }).click()
-  const confirm = page.getByRole('dialog', { name: /close/i })
+  const confirm = page.getByRole('dialog')
   await confirm.waitFor({ state: 'visible' })
   await page.screenshot({ path: join(out, 'close-confirm.png'), fullPage: true })
+  let releaseClose
+  const closeGate = new Promise((resolveGate) => { releaseClose = resolveGate })
+  let closeRequests = 0
+  await page.route(`**/api/sessions/${sessionId}/close`, async (route) => {
+    closeRequests += 1
+    await closeGate
+    await route.continue()
+  })
+  const clickAt = Date.now()
+  await confirm.locator('.danger').evaluate((button) => { button.click(); button.click() })
+  await confirm.waitFor({ state: 'detached', timeout: 1_000 })
+  await row.locator('.sess-close-spinner').waitFor({ state: 'visible', timeout: 1_000 })
+  step(`dialog released and row feedback visible in ${Date.now() - clickAt}ms`)
+  await waitFor(() => closeRequests === 1, 'single close request')
+  await row.click({ button: 'right' })
+  assert.equal(await page.getByRole('menuitem', { name: 'closing…' }).isDisabled(), true)
+  await page.keyboard.press('Escape')
+  await page.locator('.si-pill.new').click()
+  const composer = page.locator('.composer-textarea:visible').first()
+  await composer.fill('keep working while another session closes')
+  assert.equal(await composer.inputValue(), 'keep working while another session closes')
+  await page.locator('.si-list .dock-toggle').click()
+  await page.locator('.si-list').waitFor({ state: 'detached' })
+  await page.locator('.dock-toggle:visible').first().click()
+  await row.locator('.sess-close-spinner').waitFor({ state: 'visible' })
+  await page.locator('.si-list').evaluate((element) => Promise.allSettled(element.getAnimations().map((animation) => animation.finished)))
+  assert.equal(closeRequests, 1, 'dock remount must not replay the request')
+  await page.screenshot({ path: join(out, 'working.png'), fullPage: true })
+  await row.click()
   const [response] = await Promise.all([
     page.waitForResponse((r) => new URL(r.url()).pathname === `/api/sessions/${sessionId}/close` && r.request().method() === 'POST'),
-    page.keyboard.press('Enter'),
+    Promise.resolve().then(releaseClose),
   ])
   assert.equal(response.ok(), true, 'close response must succeed before freshness is measured')
+  assert.equal((await response.json()).ok, true)
   const responseAt = Date.now()
   step('close response received')
   await row.waitFor({ state: 'detached', timeout: 2_000 })
   const removedInMs = Date.now() - responseAt
+  await page.locator('.tn-notice.success').filter({ hasText: 'close confirmed' }).waitFor({ state: 'visible' })
+  await page.screenshot({ path: join(out, 'succeeded.png'), fullPage: true })
   assert.ok(removedInMs <= 2_000, `closed row took ${removedInMs}ms to leave the live dashboard`)
   assert.equal(page.url().split('#')[1], `/sessions/${sessionId}`, 'closing the selected session must keep its routed document')
   const tabTitle = page.locator('.tab-label').filter({ hasText: 'close freshness target' })
@@ -176,6 +220,72 @@ try {
   assert.ok(browserErrors.every((message) => /404 \(Not Found\)/.test(message)), `unexpected browser errors: ${browserErrors.join('\n')}`)
   await page.screenshot({ path: join(out, 'after-close.png'), fullPage: true })
   step(`row removed from dashboard in ${removedInMs}ms`)
+
+  // Use controlled responses through the full dashboard to exercise otherwise nondeterministic races.
+  await context.close()
+  context = await browser.newContext({ viewport: { width: 1280, height: 800 } })
+  await context.addInitScript(() => { window.EventSource = class { constructor() { throw new Error('fixture disables SSE') } } })
+  page = await context.newPage()
+  const batchIds = ['batch-close-a', 'batch-close-b']
+  const graph = structuredClone(initialGraph)
+  graph.sessions = batchIds.map((id) => ({ ...initialGraph.sessions[0], id, title: id, parent: '' }))
+  await page.route('**/api/graph*', (route) => route.fulfill({ json: graph }))
+  const requests = []
+  let releaseSibling
+  const siblingGate = new Promise((resolveGate) => { releaseSibling = resolveGate })
+  await page.route('**/api/sessions/*/close', async (route) => {
+    const id = route.request().url().split('/').at(-2)
+    requests.push(id)
+    if (id === batchIds[1]) await siblingGate
+    const refused = id === batchIds[0] && requests.filter((value) => value === id).length === 1
+    await route.fulfill({ status: refused ? 409 : 200, json: refused ? { ok: false, error: 'active turn fixture' } : { ok: true } })
+  })
+  await page.goto(`${base}/#/sessions`, { waitUntil: 'domcontentloaded' })
+  await page.locator(`.si-item[data-sid="${batchIds[0]}"]`).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'select…' }).click()
+  await page.locator(`.si-item[data-sid="${batchIds[1]}"]`).click()
+  await page.locator('.si-selbar .danger').click()
+  await page.getByRole('dialog').locator('.danger').click()
+  await waitFor(() => requests.length === 2, 'both batch requests')
+  await page.getByRole('dialog').waitFor({ state: 'detached' })
+  assert.equal(await page.locator('.si-selbar').count(), 0, 'submission releases selection mode immediately')
+  await page.getByRole('alert').waitFor({ state: 'visible' })
+  assert.match(await page.getByRole('alert').innerText(), /active turn fixture/)
+  assert.equal(await page.locator('.sess-close-spinner').count(), 1, 'one failure must not hide the pending sibling')
+  await page.screenshot({ path: join(out, 'partial-failure.png'), fullPage: true })
+  await page.locator(`.si-item[data-sid="${batchIds[1]}"]`).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'select…' }).click()
+  await page.locator('.si-selbar .danger').click()
+  await page.getByRole('dialog').locator('.danger').click()
+  assert.equal(requests.length, 2, 'bulk confirmation must deduplicate an already pending target')
+  await page.getByRole('alert').click()
+  await page.locator('.tn-notice.success').filter({ hasText: batchIds[0] }).waitFor({ state: 'visible' })
+  assert.deepEqual(requests, [batchIds[0], batchIds[1], batchIds[0]], 'retry must not close successful siblings again')
+  assert.equal(await page.getByRole('alert').count(), 0, 'retry withdraws the preceding error notification')
+  releaseSibling()
+  await page.locator('.tn-notice.success').filter({ hasText: batchIds[1] }).waitFor({ state: 'visible' })
+  await page.screenshot({ path: join(out, 'batch-succeeded.png'), fullPage: true })
+  step('batch releases UI immediately; independent failure, selective retry, and pending sibling settlement passed')
+  await page.unroute('**/api/sessions/*/close')
+  await page.route('**/api/sessions/*/close', (route) => route.fulfill({ json: {} }))
+  await page.locator(`.si-item[data-sid="${batchIds[0]}"]`).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'select…' }).click()
+  await page.locator('.si-selbar .danger').click()
+  assert.equal(await page.getByRole('dialog').getAttribute('aria-label'), 'close 1 selected session?')
+  await page.getByRole('dialog').locator('.danger').click()
+  await page.getByRole('alert').waitFor({ state: 'visible' })
+  assert.match(await page.getByRole('alert').innerText(), /unconfirmed/)
+  assert.equal(await page.getByRole('dialog').count(), 0)
+  step('single-selection title and HTTP 200 without acknowledgement rejection passed')
+  graph.sessions = graph.sessions.filter((session) => session.id !== batchIds[0])
+  await page.unroute('**/api/sessions/*/close')
+  await page.route('**/api/sessions/*/close', (route) => route.fulfill({ json: { ok: true } }))
+  await page.locator(`.si-item[data-sid="${batchIds[1]}"]`).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: /^close$/i }).click()
+  await page.getByRole('dialog').locator('.danger').click()
+  await page.locator(`.si-item[data-sid="${batchIds[0]}"]`).waitFor({ state: 'detached' })
+  await page.getByRole('alert').waitFor({ state: 'detached' })
+  step('authoritative board removal withdraws the stale failure and retry callback')
 } catch (error) {
   failure = error
   step(`failure: ${String(error?.message || error)}`)

@@ -43,6 +43,16 @@ test('plain navigation never replaces an inactive tab of the same kind', () => {
   assert.deepEqual(keys(tabs), ['#/sessions/s1', '#/spec/node', '#/sessions/s3'])
 })
 
+test('plain same-kind navigation appends beside a pinned focused tab', () => {
+  const pinned = { ...file('a'), pinned: true }
+  const tabs = placeTab([pinned], file('b'), 'slot', tabKey(pinned))
+  assert.deepEqual(tabs, [pinned, file('b')])
+  // An already-held address still focuses its existing tab instead of creating a duplicate.
+  assert.equal(placeTab(tabs, file('a'), 'slot', tabKey(file('b'))), tabs)
+  // Removing the preference restores ordinary focused-slot replacement.
+  assert.deepEqual(placeTab([file('a')], file('b'), 'slot', tabKey(file('a'))), [file('b')])
+})
+
 test('with no focused tab, a new address is appended — never a guess at which tab to evict', () => {
   const tabs = [session('s1'), file('a')]
   // a cold deep link, or a navigation from a non-document route (the graph, the launch page)
@@ -104,7 +114,7 @@ test('base session surfaces share identity while resources are separate file-cla
   assert.deepEqual(placeTab(withResource, next, 'slot', tabKey(resource)), [base, next])
 })
 
-test('persisted marks from older releases are dropped, and duplicates collapse to one tab', () => {
+test('persisted layout marks keep pin state while dropping unknown marks and duplicates', () => {
   const tabs = normalizeTabs([
     { page: 'sessions', param: 's1', query: { surface: 'terminal' }, pinned: false },
     { page: 'sessions', param: 's1', query: { surface: 'diff' }, pinned: true, held: true },
@@ -116,9 +126,9 @@ test('persisted marks from older releases are dropped, and duplicates collapse t
     { page: 'sessions', param: 's1', query: { surface: 'terminal' } },
     { page: 'file', param: 'a', query: null },
     { page: 'file', param: 'b', query: null },
-    { page: 'sessions', param: 's1', query: { surface: 'resource:s1:file:README.md' } },
+    { page: 'sessions', param: 's1', query: { surface: 'resource:s1:file:README.md' }, pinned: true },
   ])
-  assert.ok(tabs.every((tab) => !('pinned' in tab) && !('held' in tab) && !('preview' in tab)))
+  assert.ok(tabs.every((tab) => !('held' in tab) && !('preview' in tab)))
 })
 
 test('session tab titles are presentation metadata that survive the persisted tab normalization', () => {

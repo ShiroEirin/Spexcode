@@ -1,4 +1,4 @@
-import { Suspense, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import SideBar from './SideBar.jsx'
 import DockToggle from './DockToggle.jsx'
 import TooltipLayer from './Tooltip.jsx'
@@ -129,7 +129,8 @@ function ViewPool({ group, override = null, inactive = false }) {
   const address = routeHash(page, param, query)
   const seq = useRef(0)
   const [pool, setPool] = useState(() => [{ key, address, page, param, query, seq: 0 }])
-  useEffect(() => {
+  // The band already names the arriving address; hand it to the pane before either can paint.
+  useLayoutEffect(() => {
     setPool((prev) => {
       const stamp = ++seq.current
       const held = prev.find((entry) => entry.key === key)
@@ -471,10 +472,8 @@ function DocumentRegion({ group, single, specs, sessions, dock, foldable, inacti
     if (single) { try { localStorage.setItem('spexcode.ctxOpen', next ? '1' : '0') } catch { /* private mode */ } }
     return next
   }), [single])
-  useEffect(() => registerContextToggle(single ? toggleContext : null), [single, toggleContext])
   const hasContext = route?.page === 'spec'
-  // the band keeps the toggle's column free only while there is a toggle to paint there; a document without
-  // context leaves the band's right end to its own actions instead of a blank the width of nothing.
+  useEffect(() => registerContextToggle(single && hasContext ? toggleContext : null), [single, hasContext, toggleContext])
   const reservation = hasContext ? <span className="context-toggle-reservation" aria-hidden="true" /> : null
   // the fold switch stands at the strip's left edge only while the sidebar it folds is closed, and only in
   // the group that stands against that sidebar — the first one.

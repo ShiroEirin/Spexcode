@@ -9,6 +9,8 @@ const workspace = readFileSync(new URL('./workspace.jsx', import.meta.url), 'utf
 const reviewShell = readFileSync(new URL('./ReviewShell.jsx', import.meta.url), 'utf8')
 const escStack = readFileSync(new URL('./escStack.js', import.meta.url), 'utf8')
 const service = readFileSync(new URL('./KeyboardService.jsx', import.meta.url), 'utf8')
+const focus = readFileSync(new URL('./focus.js', import.meta.url), 'utf8')
+const composer = readFileSync(new URL('./Composer.jsx', import.meta.url), 'utf8')
 const keymap = readFileSync(new URL('./keymap.js', import.meta.url), 'utf8')
 const publicAbout = readFileSync(new URL('./PublicGraphAbout.jsx', import.meta.url), 'utf8')
 const evidence = readFileSync(new URL('./Evidence.jsx', import.meta.url), 'utf8')
@@ -38,6 +40,21 @@ test('global dismissal surfaces register with the shared Escape stack', () => {
     assert.match(source, /useEscLayer\(/)
     assert.doesNotMatch(source, /addEventListener\(['"]keydown/)
   }
+})
+
+test('Shift+Escape focuses the shared visible composer through the global service', () => {
+  const action = ACT.find((entry) => entry.id === 'shell.focusComposer')
+  assert.deepEqual(action?.keys, ['Shift+Escape'])
+  assert.equal(action?.rebind, false)
+  assert.match(service, /firesEvent\('shell\.focusComposer', event\)/)
+  assert.match(service, /focusComposer\(\)/)
+  assert.match(focus, /export function focusComposer\(\)/)
+  assert.match(focus, /querySelectorAll\('\[data-composer-focus\]'\)/)
+  assert.match(composer, /data-composer-focus/)
+})
+
+test('the Escape layer only consumes unmodified Escape', () => {
+  assert.match(escStack, /event\.shiftKey \|\| event\.altKey \|\| event\.ctrlKey \|\| event\.metaKey/)
 })
 
 test('typing guard reaches graph and shared list/player owners', () => {

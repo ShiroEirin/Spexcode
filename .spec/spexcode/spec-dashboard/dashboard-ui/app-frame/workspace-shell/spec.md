@@ -156,6 +156,9 @@ entries whose document key is the active route. Switching tabs therefore replace
 projection; a document that registers nothing leaves the slot empty. Registration and state are split like the
 status bar, the registry API is identity-stable, and disposing a registration removes it immediately.
 
+This atomic handover does not require placeholder controls: a document without context has no trailing
+context reservation. Its visible actions reach the band's normal right padding.
+
 Every action supplies an accessible label and may supply an availability state. An unavailable action remains
 visible when the document owns that capability, is disabled rather than hidden, and uses its exact disabled
 reason as the tooltip. The slot owns no document content, route parsing, or action semantics; it only invokes
@@ -198,6 +201,10 @@ document unmounted it and returning ran its whole boot again — which is what *
 the strip's usual working set) and shows one: the rest are `display:none`, not unmounted, exactly as the
 session console has always kept its terminals ([[session-console]]'s warm layers). Only exceeding the bound
 unmounts anything, and then it is the least recently shown.
+
+The pool updates a reused pane's address before browser paint, together with its document-action registration.
+The band and pane must not paint different addresses during a switch. In particular, two sessions sharing
+one console mount must not briefly lose their action buttons while that console receives its next address.
 
 Three properties make that safe rather than merely fast:
 

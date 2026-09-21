@@ -25,6 +25,7 @@ export default {
     error: 'error',
     asking: 'asking',
     queued: 'queued',
+    created: 'created',
     unknown: 'unknown',
     corrupt: 'corrupt',
     retired: 'retired',
@@ -138,6 +139,8 @@ export default {
     openInNewTab: 'Open in a new tab',
     list: 'Open tabs',
     menuLabel: 'tab actions',
+    menuPin: 'Pin',
+    menuUnpin: 'Unpin',
     menuClose: 'Close',
     menuCloseOthers: 'Close others',
     menuSplitRight: 'Split right',
@@ -575,6 +578,7 @@ export default {
       tabPrevious: 'select previous tab',
       tabSplit: 'send active tab to split pane',
       commandBox: 'toggle the session Command Box',
+      focusComposer: 'focus the composer',
     },
     explorer: {
       menu: 'open the row menu for the focused explorer row',
@@ -632,7 +636,11 @@ export default {
     quarantineRestore: 'restore quarantined record',
     close: 'close',
     closeTitle: 'close “{name}”?',
-    closeConfirm: 'This closes the session and removes its worktree. Any uncommitted changes are lost.',
+    closeConfirm: 'This closes the session and removes its worktree. Its history and uncommitted changes are archived for restore.',
+    closeWorking: 'closing…',
+    closeSucceeded: 'close confirmed',
+    closeFailed: 'close failed',
+    closeRetry: 'retry close',
     renameTitle: 'rename “{name}”',
     renamePlaceholder: 'display name (blank to reset)',
     // attach modal ([[attach-menu]]): offers two copyable attach commands — the blessed `spex session attach`
@@ -648,7 +656,7 @@ export default {
     selected: ({ n }) => `${n} selected`,
     close: 'close selected',
     closeTitle: ({ n }) => `close ${n} selected session${n === 1 ? '' : 's'}?`,
-    closeConfirm: 'This closes the selected sessions and removes their worktrees. Any uncommitted changes are lost.',
+    closeConfirm: 'This closes the selected sessions and removes their worktrees. Their history and uncommitted changes are archived for restore.',
   },
 
   // top-of-screen banner shown while a session owns the graph (locked). It names the grip and tells

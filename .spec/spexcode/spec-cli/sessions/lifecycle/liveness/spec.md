@@ -28,6 +28,17 @@ the boot window's two edges and push them in through `markLaunched`/`clearLaunch
 and clearing a session's leaf artifacts drops its latched death through `forgetAgentPid` — verbs, not mutable
 module state, so no caller can corrupt the pid-reuse guard by hand.
 
+The hot tier does not derive its candidates from the durable session roster. A backend start performs one bounded
+recovery pass over records that are canonical `active`/starting and still own a runtime binding or a valid leaf
+receipt; launch/bind adds a candidate, while stop, close, archive, and a state/database event remove or re-evaluate
+one exact id. A candidate is therefore a runtime-ownership fact, not the existence of `agent.pid` in retained
+history. Archived, stopped, queued, unbound, and hazard rows stay out of the hot tier; hazards use the close/repair
+and warm evidence paths. The 100ms tier only checks the current owned-candidate set, so retained archive records do
+not create a polling cost. The pid-reuse latch is shared with warm evidence for pane-visible non-candidates and is
+removed only when the pid artifact disappears or explicit leaf cleanup forgets it; hot eligibility must never prune
+that latch. A missed candidate event is repaired by the bounded recovery/patrol path, never by making every
+historical row a hot candidate.
+
 **Derivation.** Most interactive adapters derive that answer from process/transport probes. Headless adapters deliberately
   derive it from their runtime owner: a Claude-headless or other leaf-backed controller is online only when its
   registered controller process is alive (the tmux pane or its fallback shell is not the session), while Codex-headless
@@ -47,6 +58,12 @@ module state, so no caller can corrupt the pid-reuse guard by hand.
   `agent.pid`. For every interactive adapter, the session-owned pane/leaf remains a necessary online witness:
   stale record fields or a thread still addressable through a project-shared control plane cannot make a row
   with no target pane and no target leaf read `online`/`working`; it converges to `offline`.
+
+  The warm tier is the evidence owner for project-wide snapshots. It publishes the completed snapshot for a
+  bounded 1.25-second reuse window so a lifecycle-only row projection does not spawn a second tmux census for the
+  same warm interval. The cache carries the full tri-state result, including `probeFailed` and `unproven`; reuse
+  never turns an unknown reading into offline. A missing or expired snapshot falls back to one fresh warm probe,
+  while the warm poll remains the only recurring owner of that evidence.
 
   **Board honesty under load — the probe can fail, and a failed probe is not a death.** The tmux snapshot is
   one bounded call; under heavy load it can time out — a timed-out probe means we **cannot tell** who is alive,

@@ -36,6 +36,14 @@ const PARENT_WATCH_RELATION = 'watch:parent'
 const MANUAL_WATCH_RELATION = 'watch:manual'
 const compositions = new Map<string, ProductionSessionApplication>()
 
+/** Additive post-commit facts; consumers can select the work implied by one commit without re-enumerating all sessions. */
+export const SESSION_CHANGE = Object.freeze({
+  state: 1 << 0,
+  topology: 1 << 1,
+  delivery: 1 << 2,
+} as const)
+export type SessionChangeMask = number
+
 export interface LocalityPrecondition {
   (databasePath: string): void
 }
@@ -62,6 +70,17 @@ export interface SessionStateChange {
   reason: string | null
 }
 
+export interface ChangedSessionIds {
+  /** The append-only session-event rowid to use as the next watermark. */
+  watermark: number
+  /** SQLite's connection-local data version observed under the same write transaction barrier. */
+  dataVersion: number
+  /** Distinct event subjects appended after the requested watermark. */
+  subjectSessionIds: string[]
+  /** Watcher recipients currently attached to those subjects, resolved inside the same read barrier. */
+  recipientSessionIds: string[]
+}
+
 export interface NativeRuntimeIdentity {
   namespace: string
   runtimeKind: string
@@ -74,7 +93,7 @@ export interface ProjectSessionApplicationOptions {
   databasePath: string
   locality: LocalityPrecondition
   now?: () => number
-  onCommitted?: (result: Pick<CommittedSessionChange, 'recipients'>) => void
+  onCommitted?: (result: Pick<CommittedSessionChange, 'recipients' | 'subjectSessionIds' | 'changeMask'>) => void
   /** Runtime binding is the event that makes an existing canonical delivery debt drainable. */
   onRuntimeBound?: (sessionId: string) => void
 }
@@ -106,6 +125,10 @@ export interface CommittedSessionChange {
   edge: TopologyEdge | null
   recipients: string[]
   messages: Message[]
+  /** Session rows whose state or topology may have changed in this transaction. */
+  subjectSessionIds: string[]
+  /** Bitwise OR of SESSION_CHANGE flags describing the durable effects. */
+  changeMask: SessionChangeMask
 }
 
 export interface WatchEvent {
@@ -147,6 +170,7 @@ export interface ProductionSessionApplication extends SessionApplication {
   /** The protocol address row itself — present for every registered session, governed or not; null means never initialized. */
   readAddress(sessionId: string): SessionAddress | null
   readEvents(sessionId: string, afterSequence?: number): readonly SessionEvent[]
+  readChangedSessionIdsSince(watermark: number): ChangedSessionIds
   readWatchEvents(watcherSessionIds: readonly string[], limit?: number): readonly WatchEvent[]
   readFollowCursor(watcherSessionId: string, subjectSessionId: string): number | null
   advanceFollowCursor(watcherSessionId: string, subjectSessionId: string, eventSequence: number): void
@@ -188,6 +212,9 @@ const requirePath = (databasePath: string): void => {
 const requireId = (value: string, field: string): void => {
   if (typeof value !== 'string' || !SESSION_ID.test(value)) throw new TypeError(`${field} must be a valid protocol session id`)
 }
+
+const uniqueSessionIds = (...ids: readonly (string | null | undefined)[]): string[] =>
+  [...new Set(ids.filter((id): id is string => id !== null && id !== undefined))]
 
 const requireStatus = (value: string): void => {
   if (typeof value !== 'string' || !STATUS.test(value)) throw new TypeError('session status has an invalid grammar')
@@ -254,7 +281,7 @@ export function openProjectSessionApplication(options: ProjectSessionApplication
     }
   }
 
-  const notifyCommitted = (result: Pick<CommittedSessionChange, 'recipients'>): void => {
+  const notifyCommitted = (result: Pick<CommittedSessionChange, 'recipients' | 'subjectSessionIds' | 'changeMask'>): void => {
     options.onCommitted?.(result)
   }
 
@@ -292,7 +319,11 @@ export function openProjectSessionApplication(options: ProjectSessionApplication
         }))
         return { edge: null, recipients, messages }
       })
-      notifyCommitted(result)
+      notifyCommitted({
+        ...result,
+        subjectSessionIds: [subjectSessionId],
+        changeMask: SESSION_CHANGE.delivery,
+      })
       return result
     },
 
@@ -306,7 +337,11 @@ export function openProjectSessionApplication(options: ProjectSessionApplication
         }))
         return { edge, recipients, messages }
       })
-      notifyCommitted(result)
+      notifyCommitted({
+        ...result,
+        subjectSessionIds: uniqueSessionIds(fromSessionId, subjectSessionId),
+        changeMask: SESSION_CHANGE.topology | SESSION_CHANGE.delivery,
+      })
       return result
     },
 
@@ -378,6 +413,8 @@ export function openProjectSessionApplication(options: ProjectSessionApplication
         edge: created.edge,
         recipients: created.recipients,
         messages: created.messages,
+        subjectSessionIds: uniqueSessionIds(input.sessionId, parentSessionId),
+        changeMask: SESSION_CHANGE.state | (created.edge ? SESSION_CHANGE.topology : 0),
       }
       notifyCommitted(result)
       return created.state
@@ -456,6 +493,8 @@ export function openProjectSessionApplication(options: ProjectSessionApplication
           edge,
           recipients,
           messages,
+          subjectSessionIds: uniqueSessionIds(sessionId, current.parentSessionId, parentSessionId),
+          changeMask: SESSION_CHANGE.state | (parentSessionId === current.parentSessionId ? 0 : SESSION_CHANGE.topology),
         }
       })
       notifyCommitted(result)
@@ -619,6 +658,36 @@ export function openProjectSessionApplication(options: ProjectSessionApplication
     readEvents(sessionId, afterSequence) {
       requireId(sessionId, 'sessionId')
       return events.read(sessionId, afterSequence === undefined ? undefined : { afterSequence })
+    },
+
+    readChangedSessionIdsSince(watermark) {
+      if (!Number.isSafeInteger(watermark) || watermark < 0) {
+        throw new TypeError('session event watermark must be a non-negative safe integer')
+      }
+      return protocol.withTransaction(tx => {
+        // session_events is append-only and uses SQLite's implicit rowid, giving separate processes a
+        // database-local commit cursor without adding a migration. The event table never deletes or updates
+        // rows, so a caller can safely retain the returned watermark between watcher notifications.
+        const rows = tx.query(
+          `SELECT rowid, subject_session_id FROM session_events
+             WHERE rowid>? AND event_type=? ORDER BY rowid`,
+          watermark,
+          STATE_EVENT,
+        ) as Array<{ rowid: number | bigint; subject_session_id: string }>
+        const latest = tx.query('SELECT COALESCE(MAX(rowid), 0) AS watermark FROM session_events')[0]?.watermark ?? 0
+        const nextWatermark = Number(latest)
+        if (!Number.isSafeInteger(nextWatermark) || nextWatermark < watermark) {
+          throw new Error('session event watermark is outside the safe integer range')
+        }
+        const subjectSessionIds = [...new Set(rows.map(row => String(row.subject_session_id)))]
+        const recipientSessionIds = [...new Set(subjectSessionIds.flatMap(subject => topology.recipients(subject, tx)))]
+        return {
+          watermark: nextWatermark,
+          dataVersion: Number(tx.query('PRAGMA data_version')[0]?.data_version),
+          subjectSessionIds,
+          recipientSessionIds,
+        }
+      })
     },
 
     readWatchEvents(watcherSessionIds, limit = 1000) {

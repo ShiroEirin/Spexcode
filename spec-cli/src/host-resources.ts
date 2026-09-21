@@ -144,7 +144,16 @@ const pageKiB = () => {
   catch { pageKiBCache = 4 }
   return pageKiBCache
 }
-const procSnapshot = (procRoot = '/proc', withDetails = true): Map<number, Proc> => {
+type ProcSnapshotOptions = {
+  command: boolean
+  env: boolean
+  pss: boolean
+}
+
+const FULL_PROC_SNAPSHOT: ProcSnapshotOptions = { command: true, env: true, pss: true }
+const LEAN_PROC_SNAPSHOT: ProcSnapshotOptions = { command: false, env: false, pss: false }
+
+const procSnapshot = (procRoot = '/proc', options: ProcSnapshotOptions = FULL_PROC_SNAPSHOT): Map<number, Proc> => {
   const out = new Map<number, Proc>()
   let dirs: string[]
   try { dirs = readdirSync(procRoot).filter((name) => /^\d+$/.test(name)) } catch { return out }
@@ -152,7 +161,7 @@ const procSnapshot = (procRoot = '/proc', withDetails = true): Map<number, Proc>
     const pid = Number(name)
     try {
       const stat = parseProcStat(readFileSync(join(procRoot, name, 'stat'), 'utf8'))
-      const command = withDetails
+      const command = options.command
         ? readFileSync(join(procRoot, name, 'comm'), 'utf8').trim()
         : ''
       out.set(pid, {
@@ -161,14 +170,40 @@ const procSnapshot = (procRoot = '/proc', withDetails = true): Map<number, Proc>
         ticks: stat.ticks,
         startToken: stat.startToken,
         rssKiB: stat.rssPages * pageKiB(),
-        pssKiB: withDetails ? readPss(join(procRoot, name, 'smaps_rollup')) : null,
+        pssKiB: options.pss ? readPss(join(procRoot, name, 'smaps_rollup')) : null,
         cpuPercent: 0,
         command,
-        env: withDetails ? readSelectedEnv(join(procRoot, name, 'environ')) : {},
+        env: options.env ? readSelectedEnv(join(procRoot, name, 'environ')) : {},
       })
     } catch { /* process exited or is unreadable during the snapshot */ }
   }
   return out
+}
+
+export type SessionResidue = {
+  pid: number
+  startToken: string
+  command: string
+}
+
+// Close needs one fresh ownership observation, not a budget report. Keep this path on the same inventory
+// and adapter ownership rules as the full report, but do not sample CPU, read PSS, or probe every shared
+// runtime. The full report remains the monitor/API surface; this function answers only "is this closed target
+// still carrying an attributable process?".
+export function collectSessionResidues(ids: readonly string[]): Map<string, SessionResidue[]> {
+  const residues = new Map(ids.map((id) => [id, [] as SessionResidue[]]))
+  if (platform() !== 'linux' || !ids.length) return residues
+  const wanted = new Set(ids)
+  const inventory = buildInventory(procSnapshot('/proc', { command: true, env: true, pss: false }))
+  for (const [pid, owner] of inventory.ownership) {
+    const id = owner.startsWith('session:') ? owner.slice('session:'.length)
+      : owner.startsWith('orphan:session:') ? owner.slice('orphan:session:'.length) : null
+    if (!id || !wanted.has(id)) continue
+    const proc = inventory.procs.get(pid)
+    if (!proc) continue
+    residues.get(id)!.push({ pid: proc.pid, startToken: proc.startToken, command: proc.command })
+  }
+  return residues
 }
 
 const totalCpuTicks = (procRoot = '/proc'): number => {
@@ -524,7 +559,8 @@ const sessionStopBlocker = async (
       if (!identityBefore.ok)
         return `${descriptor.label} PID ${pid} has no matching live detached process-boundary record: ${identityBefore.reason}`
       let guard
-      try { guard = await descriptor.mutationGuard(targetThread, opts) }
+      // The record's worktree scopes the adapter's own-target read; a cold receipt, when present, carries its scope.
+      try { guard = await descriptor.mutationGuard(targetThread, { ...opts, targetCwd: targetRecord?.worktree_path ?? null }) }
       catch (error) { return `${descriptor.label} target-scoped mutation guard failed: ${(error as Error).message}` }
       const identityAfter = verifyDetachedRuntime(pid, descriptor.receiptFile)
       if (!identityAfter.ok || detachedRuntimeGenerationToken(identityAfter.identity) !== detachedRuntimeGenerationToken(identityBefore.identity))
@@ -626,7 +662,7 @@ export async function collectResourceReport(opts: { procRoot?: string; persist?:
   const hostBefore = hostCpuSnapshot(procRoot)
   const cpuBefore = hostBefore?.total ?? totalCpuTicks(procRoot)
   await sleep(budgets.sampleMs)
-  const second = procSnapshot(procRoot, false)
+  const second = procSnapshot(procRoot, LEAN_PROC_SNAPSHOT)
   const hostAfter = hostCpuSnapshot(procRoot)
   const cpuAfter = hostAfter?.total ?? totalCpuTicks(procRoot)
   const totalDelta = Math.max(1, cpuAfter - cpuBefore)

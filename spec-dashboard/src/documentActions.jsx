@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 // [[document-actions]]: the shell owns registration, while each document owns its action data. The API and
 // state contexts stay separate for the same reason as StatusBar: an action changing must not invalidate the
@@ -51,7 +51,8 @@ export function useDocumentAction(document, item) {
   const id = item?.id
   const stableOnClick = useMemo(() => (...args) => latest.current?.onClick?.(...args), [document, id])
   const key = renderKey({ document, ...item })
-  useEffect(() => {
+  // A route change must not paint the band before its new document has registered its controls.
+  useLayoutEffect(() => {
     if (!api || !document || !id) return undefined
     api.register({ ...latest.current, document, onClick: stableOnClick })
     return () => api.dispose(document, id)

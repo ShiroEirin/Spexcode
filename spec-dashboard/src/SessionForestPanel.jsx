@@ -150,10 +150,6 @@ export default function SessionForestPanel({ sessions = [], activeId, archiveAct
     else next.add(id)
     return next
   })
-  const bulkClosed = () => {
-    exitSelect()
-    reload?.()
-  }
   const draggedItem = drag ? forest.find((item) => item.type === 'row' && item.s.id === drag.id) : null
   const rootDrop = !!drag?.parent
 
@@ -164,7 +160,7 @@ export default function SessionForestPanel({ sessions = [], activeId, archiveAct
         onMouseDownCapture={inertChromePress}
         aria-hidden={closing ? 'true' : undefined}>
       {selecting ? (
-        <SessionSelectBar ids={[...picked]} onCancel={exitSelect} onClosed={bulkClosed} onError={onError} />
+        <SessionSelectBar sessions={sessions.filter((session) => picked.has(session.id))} onCancel={exitSelect} />
       ) : (
         <div className="si-toprow">
           {/* The three doors share the sidebar row grammar: New carries one short word (its full name is the

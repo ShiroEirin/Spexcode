@@ -63,12 +63,24 @@ archive index. Records closed before this field
 existed project `closedAt: null`; consumers identify their time as unknown rather than borrowing creation time,
 manual sort order, timeline reads, or filesystem metadata.
 
+The close result ends after the archived record, canonical lifecycle, sender-delivery revocation, and worktree
+trash enqueue have committed and their transition/record/candidate locks have been released. The post-close
+residue observation is a best-effort diagnostic scheduled after that boundary; it is not part of close success,
+does not hold a lifecycle lock, and must not wait for CPU-budget sampling or unrelated shared-runtime probes. The
+observer rechecks the same `closedAt` archive fact before and after its ownership read, so a fast resume is not
+reported as residue from the older close.
+
 **Resume is the inverse.** For a closed row whose worktree is absent, resume creates the recorded branch at the
 recorded path. If the archive ref exists, its diff against the branch tip is applied to the new worktree so all
 tracked edits, deletions, and untracked files return as uncommitted state. A legacy `archived: true` row without
 an archive ref is still readable and resumable from its retained branch; it simply has no extra dirty delta to
 restore. Only then does the normal adapter launch/readiness fence run. Any restore or launch failure keeps the
-record archived and the worktree available for a bounded retry.
+record archived and the worktree available for a bounded retry only when runtime absence is proven. An existing
+live or ambiguous restore candidate remains fenced for explicit recovery; it cannot claim the old cold proof.
+The human-owned terminal marker is part of [[session-state-model]]'s complete lifecycle domain, and successful
+resume always leaves that terminal state through the model's explicit recovery transition.
+Close does not race a durable pending restore: it requires that restore to be revalidated or explicitly
+cancelled through the ordinary stop/cold ownership proof first.
 
 **Compatibility.** Existing records with `archived: true`, `coldProof`, or `archiveHazard` remain valid input.
 They project as closed/offline when their target is not live, regardless of whether the old cold proof is present;

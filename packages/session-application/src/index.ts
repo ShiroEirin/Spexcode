@@ -89,7 +89,7 @@ export function openSessionApplication(
   }
 }
 
-export { openProjectSessionApplication } from './production.js'
+export { openProjectSessionApplication, SESSION_CHANGE } from './production.js'
 export { DatabasePathError, resolveDatabasePath } from './storage-path.js'
 export type { ResolveDatabasePathOptions, StorageEnvironment } from './storage-path.js'
 export { LocalityError, requireLocalDatabasePath } from './storage-locality.js'
@@ -97,6 +97,7 @@ export type { LocalityRefusalCode } from './storage-locality.js'
 export { jsonMigrationFencePath, legacyResidueExists, migrateJsonSessionRecords, MIGRATED_MESSAGE_EVENT, MIGRATED_STATE_EVENT } from './migration.js'
 export type {
   CommittedSessionChange,
+  ChangedSessionIds,
   ConversationMessageInput,
   CreateSessionInput,
   LocalityPrecondition,
@@ -105,6 +106,7 @@ export type {
   ProjectSessionApplicationOptions,
   SessionState,
   SessionStateChange,
+  SessionChangeMask,
   TransitionSessionInput,
   WatchEvent,
 } from './production.js'
