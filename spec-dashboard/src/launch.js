@@ -3,7 +3,15 @@ import { loadPlugins, loadSettings } from './data.js'
 import { apiUrl } from './project.js'
 
 const pendingSessions = new Map()
+const creating = new Set()
 export const pendingSessionFor = (id) => pendingSessions.get(id) || null
+
+export function observeSessionProjection(sessions) {
+  for (const { id } of sessions) {
+    pendingSessions.delete(id)
+    for (const observed of creating) observed.add(id)
+  }
+}
 
 // The dashboard's ONE session-launch CLIENT path, shared by every face that can start a worker — the desktop
 // console's New Session tab (SessionInterface.jsx) and the phone's composer (MobileApp.jsx). Launcher state,
@@ -18,6 +26,10 @@ export const pendingSessionFor = (id) => pendingSessions.get(id) || null
 // recoverable without changing the prompt body contract. Returns the created session projection when the
 // backend publishes one, so the caller can open the document as soon as creation is acknowledged.
 export async function createSession(prompt, launcher, options = {}) {
+  // The board can arrive before the POST body, even before a subsequent close. Remember observations only
+  // for this in-flight request, so its late receipt cannot resurrect an already authoritative session.
+  const observed = new Set()
+  creating.add(observed)
   try {
     const requestKey = globalThis.crypto?.randomUUID?.() || `session-create-${Date.now()}-${Math.random().toString(16).slice(2)}`
     const initialReplyVia = options && typeof options === 'object' && options.initialReplyVia === 'note' ? 'note' : undefined
@@ -28,13 +40,15 @@ export async function createSession(prompt, launcher, options = {}) {
     const body = await res.json().catch(() => null)
     const result = { ok: res.ok, error: body?.error }
     if (body?.id) {
-      pendingSessions.set(body.id, body)
+      if (!observed.has(body.id)) pendingSessions.set(body.id, body)
       result.id = body.id
       result.session = body
     }
     return result
   } catch {
     return { ok: false }
+  } finally {
+    creating.delete(observed)
   }
 }
 
