@@ -2,7 +2,7 @@
 title: platform-support
 status: active
 hue: 330
-desc: SpexCode's supported runtime is POSIX — Linux, macOS, or Windows via WSL2. Native Windows now runs the read-only tool AND the hook plane, both measured end to end; what stays gated is the session runtime, whose live-terminal bridge rides tmux control mode and has no native analog. A host missing a load-bearing primitive is detected and fails loudly toward that primitive instead of crashing cryptically.
+desc: SpexCode's supported runtime is POSIX — Linux, macOS, or Windows via WSL2. Native Windows now runs the read-only tool, the hook plane AND headless sessions, all measured end to end; what stays gated is the INTERACTIVE half of the session runtime, whose live-terminal bridge rides tmux control mode and has no native analog. A host missing a load-bearing primitive degrades to the capability it still has and names what it lost, instead of crashing cryptically.
 code:
   - spec-cli/src/runtime-guard.ts#assertSessionRuntime
 related:
@@ -19,9 +19,11 @@ related:
 
 SpexCode's supported runtime is **POSIX**: Linux, macOS, or Windows **via WSL2**. WSL2 remains the
 recommended Windows path — it is a real Linux kernel, so nothing below has to be true. But native Windows is
-no longer *deferred*: the read-only half **and the hook plane** both run there, measured on real hardware, and
-the test suite runs natively. What is still gated is the **session runtime**, and the gate is unchanged in
-shape: it keys on the missing *primitive*, not on the OS name.
+no longer *deferred*: the read-only half, **the hook plane**, and **headless sessions** all run there,
+measured on real hardware, and the test suite runs natively. The gate has not disappeared — it moved DOWN a
+level, and that distinction is load-bearing: it no longer walls a subsystem, it selects which adapters a host
+can carry. It keys on the *primitive* (a host with no tmux has no attachable terminal), not on the OS name,
+so it reads identically on a bare POSIX box and on native Windows.
 
 ## what runs on native Windows (measured, not inferred)
 
@@ -32,7 +34,12 @@ shape: it keys on the missing *primitive*, not on the OS name.
   under the Git-for-Windows `bash.exe` that SpexCode already requires. The spec-first gate blocks a governed
   access and names its governor; spec-of-file annotates a mutation; a governed retry passes (the sentinel is
   one-shot). Verified end to end on a real worktree, under both the `claude` and `snow` shims.
-- **The dashboard.** `spex serve` publishes the static page and its API on a native host.
+- **The dashboard.** `spex serve` publishes the static page and its API on a native host. It stays up on a
+  tmux-less host: the session runtime selects **process-host**, prints one line saying so, and serves on.
+- **Headless sessions.** `spex session new --launcher <headless adapter>` **succeeds** on a tmux-less host —
+  measured with `snow`, which is `headless: true` and `ownsRendezvous: false`. The session is created, it
+  appears in `session ls`, and its hooks and gates work. What a headless adapter does not get is a terminal
+  anyone may attach to; that is the next section.
 - **Build and typecheck.** `npm run build` and `npm run typecheck` both exit 0.
 - **The test suite.** It runs natively, in batches, and the failures that remain are platform skips carrying
   written reasons — not silently disabled tests.
@@ -59,17 +66,33 @@ a real defect the moment a Windows user hits it:
   storm became a window storm. `windowsHide` is applied at one choke point rather than at hundreds of call
   sites.
 
-## what stays gated: the session runtime
+## what stays gated: the INTERACTIVE session, not the session runtime
 
-The gate is on the **primitive**, not the OS: `spex serve` — the entry to the session runtime — checks for
-tmux and, when it is absent, prints ONE actionable line and exits before any cryptic downstream failure. A
-session-lifecycle command refuses by name (`launcher 'claude' uses claude, which requires an attachable tmux
-host`) rather than half-starting. The read-only CLI is never walled.
+The gate separates two things the old wording ran together, and the code already implements the split — this
+node was the straggler:
 
-- **The deciding gap — the live-terminal bridge rides tmux control mode.** The browser Sessions console
-  ([[session-console]]) streams over `tmux -CC`, tmux's structured control-mode protocol. No native
-  multiplexer is confirmed to speak it, so a native port must **rewrite that live streaming** — poll
-  capture-pane, or attach another way. That rewrite, not a config swap, is the real cost.
+- **Headless adapters are accepted.** A host without tmux runs **process-host**, and process-host carries every
+  adapter that does not need an attachable terminal. `spex session new --launcher snow` succeeding on a
+  tmux-less native-Windows host is the measured proof, not a reading of a flag.
+- **A launcher that needs a terminal is refused by name**, not half-started: `launcher 'claude' uses claude,
+  which requires an attachable tmux host; process-host offers headless adapters only`. The refusal names the
+  launcher and the reason, so the user repairs the CHOICE rather than guessing at a missing subsystem.
+- **Nothing is walled wholesale.** `spex serve` starts, `session ls` answers (falling back to the local store
+  when no backend is up), and the read-only CLI was never in scope.
+
+**Honest gap in the code, recorded rather than papered over.** `assertSessionRuntime` short-circuits on the
+tmux-less path with a warning and a `return`, so the `EX_UNAVAILABLE` (69) exit beneath it is unreachable, and
+`sessionRuntimeBlock` is consulted only where `hasTmux()` is true — where it always returns null. Both are
+phase-1 remains: they were written when the loud refusal *was* the sole non-tmux outcome, and the process-host
+landing (which added the early return) superseded them without deleting them. Treating them as live would be
+describing a gate the product does not have.
+
+- **The deciding gap is the live-terminal bridge, and it gates ONE adapter class.** The browser Sessions
+  console ([[session-console]]) streams over `tmux -CC`, tmux's structured control-mode protocol, so an
+  attachable TUI needs a host that speaks it. No native multiplexer is confirmed to, so serving an interactive
+  session natively means **rewriting that live streaming** — poll capture-pane, or attach another way. That
+  rewrite, not a config swap, is the real cost — and it is a cost the headless path does not pay, because a
+  headless adapter never opens a pane to attach to.
 - **Two lesser costs a mux swap does not pay.** The hand-written bash launchers and hooks still want
   git-bash on PATH (or a Node rewrite), and the filesystem-path AF_UNIX rendezvous socket becomes a Windows
   named pipe — an adaptation, not a wall.
@@ -99,9 +122,10 @@ Two mechanisms keep the contract honest at the boundary rather than only in pros
 - **The launcher stays cross-platform** so the read-only commands reach a Windows user at all: it runs the
   package's compiled JavaScript through `node`, never a shell shim or TypeScript loader. That keeps `spex init`
   independent of a platform-specific build-chain executable.
-- **The session runtime is gated.** See above: one actionable line, a distinct exit code, before any cryptic
-  downstream failure. The gate keys on the missing **primitive**, not on the OS name, so it is honest
-  for both; and it is narrow — only the session-launch path is walled, never the read-only CLI.
+- **The session runtime degrades by capability.** See above: a tmux-less host selects process-host with one
+  line saying so, carries every headless adapter, and refuses an attachable-terminal launcher by name. The gate
+  keys on the missing **primitive**, not the OS name, so it is honest for both; and it never walls a subsystem —
+  it selects which adapters a host can carry.
 
 This is the same shape as [[merge-tooling-resilience]]: the single launcher entry degrades an expected
 adverse condition — there a mid-merge tree, here a missing runtime primitive — into one legible line and a
