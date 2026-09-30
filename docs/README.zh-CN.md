@@ -1,165 +1,170 @@
 <div align="center">
 
-<img src="banner.png" alt="SpexCode" width="720">
+<img src="banner.png" alt="SpexCode — Specs govern. Agents build." width="720">
 
 <p>
   <a href="https://www.npmjs.com/package/spexcode"><img alt="npm" src="https://img.shields.io/npm/v/spexcode?logo=npm&logoColor=white&color=cb3837"></a>
   <img alt="license: MIT" src="https://img.shields.io/badge/license-MIT-2f81f7">
-  <img alt="node &ge; 22" src="https://img.shields.io/badge/node-%E2%89%A5%2022-3fb950?logo=nodedotjs&logoColor=white">
-  <a href="https://spexcode.net"><img alt="docs" src="https://img.shields.io/badge/docs-spexcode.net-8957e5"></a>
+  <img alt="Node.js 22 或更高" src="https://img.shields.io/badge/node-%E2%89%A5%2022-3fb950?logo=nodedotjs&logoColor=white">
+  <a href="https://spexcode.net"><img alt="文档" src="https://img.shields.io/badge/docs-spexcode.net-8957e5"></a>
 </p>
 
-<p>
-  <img alt="Linux" src="https://img.shields.io/badge/Linux-supported-success?logo=linux&logoColor=white">
-  <img alt="macOS" src="https://img.shields.io/badge/macOS-supported-success?logo=apple&logoColor=white">
-  <img alt="Windows: via WSL2" src="https://img.shields.io/badge/Windows-WSL2-success">
-  <img alt="database: git" src="https://img.shields.io/badge/database-git-f05032?logo=git&logoColor=white">
-</p>
+[English](../README.md) · 中文
 
 </div>
 
-面向 coding agent 的 spec 驱动编排。SpexCode 在你的 git 仓库里维护一棵带版本的 spec 树,把每个 spec 和它管辖的代码链接起来,并运行一个会话管理器,把 coding agent 派进相互隔离的 worktree。你负责 review 和 merge,工具负责让意图和实现不漂移。
+SpexCode 是一个基于 git 的 spec 树和 coding agent 会话管理器。
 
-[English](../README.md) | 中文 · 文档:[spexcode.net](https://spexcode.net) · License: MIT
+天下苦「spec 漂移」久矣。agent 改代码的速度，远快于有人去更新「这段代码是干什么的」那份说明，而 spec 什么时候不再描述系统，没有任何东西会提醒你。在 SpexCode 里，每个 spec 写明自己管辖哪个文件或函数。之后的 commit 改了这段代码却没动 spec，SpexCode 会指出是哪个 spec、哪个 commit。装了钩子以后，改到被锚定的函数的提交会被拦下，直到有人更新 spec，或写明它为什么仍然成立。
 
-| 特性 | 说明 |
-|---|---|
-| **可计算的 spec–code drift** | 每个 spec 锁定它管辖的文件,可以精确到函数。代码是否脱开 spec 单独动了,由 commit 和行区间算出来,在任何机器上结果一致:文件级是提醒,被锚定的函数被改动则直接阻断。 |
-| **session 与 worktree 管理** | 每个任务在自己的 worktree 和分支里跑,互不相干的任务并行。session 有层级结构:一个 session 可以派发并监管自己的 worker,worker 之上有主管,主管之上还可以有主管。worker 只提议,你只在合并时 review 一次。 |
-| **可分享的 URL** | spec 节点、session、live 终端,dashboard 上每个视图都有稳定地址,发给同事就能看。两个人可以盯着同一块 session 看板。 |
-| **模块化分层** | 三个可拆的层:spec↔code 数据资产(L0)、session 基座(L1)、dashboard(L2)。按需取用,L0 和 L1 就是为你自己的软件工厂准备的积木。 |
-| **跨 harness 支持** | Claude Code、Codex、OpenCode、pi,交互式或 headless 都行。一份物化出来的工作流契约服务所有 harness,新增一个 harness 只是一条配置。 |
+session 让每个 agent 在自己的分支和 worktree 里工作，每次改动交回来时，commit 里都写着它碰过哪些 spec。
 
-## 模型
+一个 spec 节点就是 `.spec/` 下的一个 `spec.md`。它的 `code:` 字段写明实现在哪：
 
-一个 spec 节点就是 `.spec/` 下的一个目录,里面有一个 `spec.md`:frontmatter 写明它管辖的那一个文件(`code:`,还可以用 `path#symbol` 锚定到具体函数)和它引用的文件(`related:`),然后是一段正文,描述系统这一部分当前应该做什么。节点可以嵌套,这棵树对应你对项目的理解方式,而不是文件布局。正文可以分成两个部分:很短的 **raw source**,由人签字认可;**expanded spec** 是 agent 对这个意图的详细展开,自由迭代,但必须始终和 raw source 一致。
-
-<img src="readme-model.svg" alt="一个 spec 节点管辖一个文件,锚定到函数级;引用的文件走 related;git 是唯一的数据库">
-
-git 是唯一的数据库:节点的版本就是碰过它 `spec.md` 的那些 commit。一次改动就是一个 commit,同时更新 spec 和它所解释的代码。代码要是单独动了,linter 会看见:
-
-<img src="readme-drift-flow.svg" alt="一次真实的 drift:spec 与代码在同一个 commit 里提交,六天纯代码提交之后一次重命名命中了锚定函数,该提交被指出并阻断">
-
-这个检查只比对 git 的朴素事实:spec 上一版之后来了哪些 commit,有没有触及锚定单元的行区间。它判断不了新行为是好是坏,只能判断 spec 已经描述不了代码。图里那个 commit 在同一次重命名里更新了另外七个 spec,漏掉了这一个。这类遗漏是正常工作的一部分,也正是机械检查能够发现的。
-
-## 软件的 heuristic learning 视角
-
-spec 和 commit 组成一个优化循环。spec 是损失函数:写下你要什么,也是由人签字的那一半。commit 是优化器。agent 通过产品的真实表面证明改动,再把证据作为 session 文件交给 reviewer。drift 是唯一的陈旧信号,修 bug 要在 review 前证明真实产品已经正常工作。
-
-<div align="center"><img src="readme-loop.zh.svg" alt="spec/code 优化循环" width="560"></div>
-
-没有人靠盯着权重读神经网络,在两次合并闸门之间,你也不用盯着 agent 的 diff。注意力放在 spec 和产品证明这两端,diff 只在合并时读一次。
-
-## 快速开始
-
-需要 Node ≥ 22 和 git。
-
-```sh
-npm i -g spexcode                              # 安装 `spex` 命令
-cd your-repo
-spex init --harness claude,codex,opencode,pi,zcode,snow,claude-headless,opencode-headless,pi-headless,codex-headless   # 创建 .spec/、安装 git 钩子、物化 agent 契约
+```yaml
+---
+title: Webhook security
+code:
+  - src/ingest/webhookVerifier.ts#verifyWebhook
+---
+Only a push signed with the configured SHA-256 secret may change a release stream.
 ```
 
-引入到这里就完成了。示例列出了全部内建 harness,不用的删掉就行,`--harness` 必填,接受任意一个 id 或逗号分隔的子集。只想要 spec 这份资产、不想往任何 agent 里写东西,就用 `--harness none`:只引入 L0,不往任何 agent 的配置里写一个字节。只想要一个 spec 架子、连 git 钩子也不要,就用 `spex init --pure`:只写 `.spec/spexcode.json` 和根节点 spec,别的一概不动;以后再跑 `spex init --harness …` 会原样接管这棵树。`spex init` 是增量的:在任何现有 git 仓库上都能跑,绝不替换属于你的文件——harness 把钩子读在你自己的配置文件里时(`.claude/settings.json`、`.codex/hooks.json`),只有 SpexCode 自己的条目会被合进去,`spex uninstall` 时再原样摘走;和你已有的 skill/agent 同名时会跳过并报出来,不会覆盖。加上 `--title "你的项目名"`,这个名字会落到读者能看到它的两个地方:根节点自己的目录和 `spec.md`,以及 dashboard 的标题——不加的话,图谱顶上那个节点就叫 `project`,页面则以检出目录命名,而那个目录往往是 `repo` 或 `tmp`。它只做三件事。它创建根节点 `.spec/<名字>/spec.md` 和一份初始的 `.spec/spexcode.json`,安装 git 钩子,再把工作流规则**物化**进你的 agent 本来就会读的文件(`CLAUDE.md`、`AGENTS.md`):改动代码之前先读管辖它的 spec,spec 和代码在同一个 commit 里提交,只提出合并提议、不执行合并。任何打开这个仓库的 agent 都会自己发现这套工作流。
+绑定就这一行。版本、漂移和历史都在每次读取时从 git 算出来，此外不存任何东西。
 
-需要看板(图谱、session)时,再启动运行时:
+## 从你正在用的 agent 开始
 
-```sh
-npm i -g @spexcode/spec-dashboard # 只需一次:UI 和 spex serve 需要的服务端运行时
-spex serve       # 本项目的后端,打印它的 URL
-spex dashboard   # 本机唯一的 gateway,所有项目共用一个 URL
-```
-
-dashboard 是单独的包,所以只写作的安装既不带前端构建产物,也不带服务端运行时(HTTP 服务和原生 PTY 模块)。一台机器起一个 `spex dashboard` 就够了:所有在跑的项目都会出现在它下面,`/projects` 页面直接在浏览器里管理它们。剩下的步骤见 [Getting started](https://spexcode.net/getting-started/)。
-
-## 从你的 agent 里开始,什么都不用装
-
-要最快看出一棵 spec 树值不值,就让你的 agent 画一棵出来。**atlas** 这个 skill 以插件形式发布给会装插件的
-agent,它通过 `npx` 调用 SpexCode——本机不用装任何东西,也不用配置。
-
-**Claude Code**
+装 CLI 之前，可以先在 Claude Code 或 Codex 里试。**atlas** 插件会读整个仓库，写出第一版 spec 树，检查每张图，最后交回一个能直接打开的页面。
 
 ```sh
+# Claude Code
 claude plugin marketplace add shuxueshuxue/spexcode-plugins
 claude plugin install atlas@spexcode
-```
-
-**Codex**
-
-```sh
+# Codex
 codex plugin marketplace add shuxueshuxue/spexcode-plugins
 codex plugin add atlas@spexcode
 ```
 
-然后在任何一个仓库里,给 agent 一句话:
+然后在任意仓库里运行 `/atlas`。
 
-> 给这个项目画一套规格图,我要那个能直接打开看的网页。
+插件第一次引入用的是 `spex init --pure`：只有 git 里的 `.spec/` 纯文件，不装钩子，不改 agent 配置。以后要用 session 层，再用下面的 CLI 加上。
 
-它会把仓库读成一棵 spec 树,用 `spex init --pure --title <你的项目名>` 把树种下去,挑出值得画的部分逐个画图,
-每张图都跑到 `spex diagram check` 通过为止,提交 `.spec/`,最后交给你一个自包含的 HTML——整棵树,每个节点的图
-就在它正文上面,从磁盘双击就能打开。skill 会要求 agent 用你提问的语言来写这棵树。
+<img src="readme/atlas.zh.png" alt="Tencent/vConsole 的 atlas：「VConsole 核心」节点和它的生命周期图。" width="900">
 
-这时这个仓库已经在 L0 被引入了:它写出来的树,和 `spex init` 种下的是同一份资产,以后再跑
-`spex init --harness …` 会原样接管它,把机制装在它旁边。
+更多这样画出来的仓库：[flatcode.spexcode.net](https://flatcode.spexcode.net/)。图由 [archify](https://github.com/tt-a1i/archify)（MIT）渲染。
 
-[`shuxueshuxue/spexcode-plugins`](https://github.com/shuxueshuxue/spexcode-plugins) 就是那个 marketplace,
-里面只有这些包,由本仓库的 `distribution/` 自动同步过去。ZCode、gugu、PenguinHarness 装的是同一个 skill,
-各走各的机制,`distribution/README.md` 里逐个写了。
+## 可计算的 spec 漂移
 
-## 这套系统是怎么工作的
+spec 的每个版本就是一次碰过它 `spec.md` 的 commit，窗口从最新一版开始；之后每个 commit，SpexCode 用 Git 给出的改动行，去和被锚定单元在那个 commit 时的行区间求交。
 
-三层堆叠,每一层在没有上层的情况下都独立成立:
+<img src="readme/term-spec-lint.svg" alt="spex spec lint 报出 src/ingest/webhookVerifier.ts#verifyWebhook 自 spec webhook-security v3 以来的 anchor-drift。" width="900">
 
-<img src="readme-layers.svg" alt="L0 spec-code 数据资产,L1 agent session 基座,L2 dashboard 工作台,一架采纳阶梯">
+有交集就是 `anchor-drift`：这是错误，装了钩子时提交会被拦下。同一文件其它位置的改动只是 drift 提醒。
 
-L0 是组织采纳后长期持有的资产:纯文件、纯 git,离线可用。([看这个仓库自己的 L0 从 git 历史里长出来](https://spexcode.net/assets/spec-tree-growth.mp4),三周 160 个 spec 节点。)L1 让 agent 在这份资产上工作,也就是下一节的 session 机制。L2 是你观察这一切的工作台,它只是 L1 的消费者,dashboard 能做的任何事,你的脚本和 agent 走同一套 CLI 都能做。
+<img src="readme/drift-history.zh.svg" alt="spec webhook-security v3 之后，commit cbe53ee 改了 webhookVerifier.ts 第 6 行，落在 verifyWebhook（第 5–13 行）内，重叠即 anchor-drift。" width="900">
 
-## 和 agent 一起工作(L1)
-
-这一步需要机器上有 tmux(Windows 上请在 WSL2 里跑)。
+全部从 Git 算出，不存任何漂移数据。两种解法：spec 跟着代码改，新版本就会关闭窗口；或者用 `Spec-OK` trailer / `spex spec ack` 写明契约仍然成立。
 
 ```sh
-spex session new "[[uploader]] 失败的分块要带退避地重传"
+spex spec lint
 ```
 
-会在独立 worktree、分支 `node/uploader-…` 上启动一个 worker 会话。prompt 里第一个 `[[uploader]]` 提及决定分支名和看板归属;worker 会先找到并读完管辖那段代码的 spec,然后才开始修改。它完成修改,把 spec 正文改写到与代码一致,把两者放进同一个 commit,然后提出合并提议并停止:
-
-<img src="readme-worker-flow.zh.svg" alt="worker 的八步循环:派发、读 spec、干活、通过真实产品验证并交接 session 文件、消解 drift、提议合并、由人审核、关闭">
+装了钩子以后，命中锚点的新 commit 会被拒绝。要么把 spec 和代码一起改，要么写明为什么这次只改实现、契约仍然成立：
 
 ```sh
-spex session ls                  # 下面这张列表
-spex session watch stream        # 跟踪状态流转:working → review → done …
-spex session review uploader     # 领先主干的 commit、merge-base diff、合并/lint 闸门
-spex session merge uploader      # 把经过检查的合并交给该 session 自己的 agent 执行
-spex session close uploader      # 只移除 worktree;分支、记录和对话都还在,可以恢复
+git commit --trailer "Spec-OK: webhook-security"
 ```
 
-<img src="readme-sessions.svg" alt="动画终端:spex session ls 列出 working、review、asking、done 各状态的五个会话">
+已经提交的改动用：
 
-每条规则都有机制在执行:分支由后端创建,每个 commit 由 git 钩子自动归属到它的 session,pre-commit 守卫拒绝直接提交到主干,其余约定写在物化出来的 `CLAUDE.md`/`AGENTS.md` 里。派发 prompt 只需要写任务本身。更多内容见 [working with agents](https://spexcode.net/working-with-agents/)。
+```sh
+spex spec ack webhook-security --reason "契约仍然成立，这次重构没有改变它"
+```
 
-## dashboard(L2)
 
-前面讲的 spec 树、session,在 dashboard 上都有对应的实时页面。启动 `spex serve` 和 `spex dashboard`,然后:
+## 在图形界面里用
 
-<img src="readme-graph.png" alt="spec 地图:SpexCode 自己的仓库在自己的看板上,每个节点带版本与 drift 状态,正在被编辑的节点上悬浮着 agent 头像">
+<img src="readme/product.png" alt="SpexCode dashboard：桌面端的 review session，手机端的 webhook-security spec。" width="900">
 
-*整个仓库一张地图,图中是 SpexCode 自己的看板。每个节点带着它的版本号和 drift 状态,正在被编辑的节点上悬浮着那个 agent 的头像,左上角是活的 session 栏。*
+## 在终端里用
 
-<img src="readme-node.png" alt="在看板上打开一个节点:raw source 高亮块、expanded spec 正文、管辖的文件、drift 徽标,以及 history、issues 各 tab">
+<img src="readme/term-session-ls.svg" alt="Harbor 演示项目上的 spex session ls：处于 review、asking、parked 的 session，各自带着 spec 节点、id、父 session 和 prompt。" width="900">
 
-*点开一个节点:上面是 raw source,下面是 expanded spec,还有它管辖的文件、当前的 drift 状态,以及 git 本来就记着的版本历史和 issue 各自的 tab。*
+dashboard 能做的事，CLI 都有对应的命令；`spex help` 会列出全部。
 
-整个工作台走 HTTP,所以每个视图,不论 spec 节点、session 还是 live 终端,都是稳定 URL,发给同事就能一起坐在同一块看板前。终端面板是真 tmux 会话,复制它打印的命令,就能从你自己的终端 attach 上去。
+## Git 还是笔记本？直观的 spec 管理
 
-## 参与贡献
+spec 是 git 里的 Markdown 文件，dashboard 把它们当成可以直接操作的文档来读。
 
-[`docs/CONTRIBUTING.md`](CONTRIBUTING.md) 带你从 clone 走到第一个被合并的改动。[spexcode.net](https://spexcode.net) 有节点模型和反身插件系统的完整机制。
+<table>
+<tr>
+<td width="50%"><img src="readme/spec-change.gif" alt="在 webhook-security spec 上点「1 pending change」，打开一个运行中的 session 对它所做修改的逐词红线对比。"></td>
+<td width="50%"><img src="readme/spec-send.gif" alt="选中 webhook-security spec 里的一句话，右键，附上一条消息发给某个 session。"></td>
+</tr>
+<tr>
+<td>运行中的 session 对这份 spec 的修改，以红线对比呈现。</td>
+<td>选中一段话，发给某个 session。</td>
+</tr>
+</table>
 
-## 致谢
+## 快速开始
 
-最早发布在 [LINUX DO](https://linux.do) 社区,感谢那里的第一轮讨论。
+需要 **Node ≥ 22** 和 **git**。
 
-## License
+```sh
+npm i -g spexcode
+cd your-repo
+spex init --harness claude,codex,opencode,pi,zcode,snow,claude-headless,opencode-headless,pi-headless,codex-headless
+```
 
-[MIT](../LICENSE)。
+示例列出了全部内建 harness，留下你用的就行（任意一个 id 或逗号分隔的子集）。`spex init` 会种下 spec 树、安装钩子，并把工作流说明写进你的 agent 本来就会读的文件。已有配置不会被覆盖；`spex uninstall` 会移除 SpexCode 加的东西。
+
+<details>
+<summary><strong>只引入一部分</strong></summary>
+
+| 命令 | 结果 |
+| :--- | :--- |
+| `spex init --pure` | 只有根 spec 和项目配置，不装钩子。 |
+| `spex init --harness none` | spec 工作流和钩子，不改 agent 配置。 |
+| `spex init --harness …` | spec 工作流，外加给所选 agent 的说明。 |
+
+加 `--title "你的项目名"` 给根 spec 和 dashboard 命名。
+
+</details>
+
+<details>
+<summary><strong>运行隔离的 session</strong></summary>
+
+session 管理需要 **tmux**；Windows 上请用 **WSL2**。
+
+```sh
+spex session new "[[webhook-security]] verify signatures behind a reverse proxy"
+spex session ls
+spex session review <session-id>
+spex session merge <session-id>
+```
+
+worker 只提议，什么时候发起受闸门保护的合并由你决定。
+
+</details>
+
+<details>
+<summary><strong>打开 dashboard</strong></summary>
+
+```sh
+npm i -g @spexcode/spec-dashboard
+spex serve
+spex dashboard
+```
+
+每个项目一个后端，一台机器一个 dashboard 服务所有项目。spec、session 和终端视图都有可分享的 URL。
+
+</details>
+
+## 三层
+
+<img src="readme/layers.zh.svg" alt="三层：L0 是 git 里的 spec–code 图，L1 是建在其上的隔离 worktree 里的 agent session，L2 是读取 L1 的 dashboard。" width="900">
+
+[上手指南](https://spexcode.net/getting-started/) · [和 agent 一起工作](https://spexcode.net/working-with-agents/) · [参与贡献](CONTRIBUTING.md)
+
+首发于 [LINUX DO](https://linux.do)。以 [MIT](../LICENSE) 许可发布。

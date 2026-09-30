@@ -1,9 +1,12 @@
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { cpSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { createInterface } from 'node:readline/promises'
+import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
+import { scopeIds } from '@spexcode/archify/browser'
+import { FLATCODE_BANNER_SVG } from './flatcode-banner.js'
 import { HARNESSES, MISSING_DEFAULT_LAUNCHER_ERROR, defaultLauncher, harnessById, launcherList, resolveLauncher, type Harness } from './harness.js'
 import { ensureDashboardArtifact } from './dashboard-assets.js'
 
@@ -660,7 +663,11 @@ export type GalleryEntry = {
   passed: boolean
   languages: readonly string[]
   lang: string
+  diagrams: number
 }
+
+// The picture a card shows: one real diagram from the flat's own publication, never a drawing of the product.
+export type GalleryPreview = { node: string; title: string; svg: string }
 
 const escapeHtml = (text: string) =>
   text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -678,12 +685,17 @@ const LANGUAGE_DOT: Readonly<Record<string, string>> = {
 // The index is hand-written rather than another dashboard build: it is a LIST, not a graph, and giving it the
 // graph bundle would ship a megabyte of react-flow to render eight links. Self-contained and theme-aware for
 // the same reason every published artifact here is — it must survive on a static host with no build step.
-export function galleryIndexHtml(entries: readonly GalleryEntry[]): string {
-  const cards = entries.map((entry) => {
+export function galleryIndexHtml(entries: readonly GalleryEntry[], previews: Readonly<Record<string, GalleryPreview>> = {}): string {
+  const diagramCss = readFileSync(createRequire(import.meta.url).resolve('@spexcode/archify/diagram.css'), 'utf8')
+  const cards = entries.map((entry, index) => {
+    const preview = previews[entry.slug]
     const [owner, name] = entry.slug.includes('/') ? [entry.slug.split('/')[0], entry.slug.split('/').slice(1).join('/')] : ['', entry.slug]
     const langs = entry.languages.map((language) => `<span class="lang"><i style="background:${LANGUAGE_DOT[language] ?? '#6b7280'}"></i>${escapeHtml(language)}</span>`).join('')
-    return `      <a class="card" href="./${escapeHtml(entry.slug)}/">
-        <div class="card-top">
+    const picture = preview
+      ? `        <div class="preview archify" data-theme="dark" data-detail-level="map" aria-label="${escapeHtml(preview.title)}">${scopeIds(preview.svg, `p${index}`)}</div>\n`
+      : ''
+    return `      <a class="card" href="./${escapeHtml(entry.slug)}/${preview ? `#/spec/${encodeURIComponent(preview.node)}` : ''}">
+${picture}        <div class="card-top">
           <h3>${owner ? `<span class="owner">${escapeHtml(owner)}/</span>` : ''}${escapeHtml(name)}</h3>
           <svg class="go" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3l5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </div>
@@ -691,6 +703,7 @@ export function galleryIndexHtml(entries: readonly GalleryEntry[]): string {
         <div class="stats">
           <span><b>${entry.nodes}</b> 个节点</span>
           <span><b>${entry.governed}</b> 个文件</span>
+          ${entry.diagrams ? `<span><b>${entry.diagrams}</b> 张图</span>` : ''}
           <span class="${entry.passed ? 'ok' : 'partial'}">${entry.coverage}% 覆盖${entry.passed ? '' : '（部分）'}</span>
         </div>
         <div class="rev"><code>${escapeHtml(entry.revision.slice(0, 12))}</code></div>
@@ -744,8 +757,9 @@ export function galleryIndexHtml(entries: readonly GalleryEntry[]): string {
     margin: 0 calc(50% - 50vw) 4rem; padding: 6rem max(1.5rem, calc((100vw - 68rem) / 2)); display: flex;
     align-items: center; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
   }
-  .hero-image { position: absolute; z-index: -2; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center; }
-  .hero-shade { position: absolute; z-index: -1; inset: 0; background: rgba(4, 6, 7, .56); }
+  .hero-image { position: absolute; z-index: -2; inset: 0; }
+  .hero-image svg { display: block; width: 100%; height: 100%; }
+  .hero-shade { position: absolute; z-index: -1; inset: 0; background: linear-gradient(90deg, rgba(8, 9, 11, .9), rgba(8, 9, 11, .55) 38%, rgba(8, 9, 11, 0) 62%); }
   .hero-content { max-width: 38rem; }
   .eyebrow {
     font-size: .8125rem; color: var(--accent-soft); margin-bottom: 1.25rem;
@@ -754,8 +768,8 @@ export function galleryIndexHtml(entries: readonly GalleryEntry[]): string {
     font-size: 4.25rem; line-height: 1.02;
     font-weight: 620; margin: 0 0 1.25rem;
   }
-  h1 em { font-style: normal; color: var(--accent-soft); }
-  .lede { font-size: 1.125rem; color: #c0c5cc; margin: 0; max-width: 35rem; }
+  h1 em { font-style: normal; color: var(--accent-soft); white-space: nowrap; }
+  .lede { font-size: 1.125rem; color: #c0c5cc; margin: 0; max-width: 35rem; text-wrap: pretty; }
 
   section.onboarding { padding-bottom: 4.5rem; }
   .section-label { color: var(--accent-soft); font-family: var(--mono); font-size: .75rem; margin: 0 0 .6rem; }
@@ -815,6 +829,9 @@ export function galleryIndexHtml(entries: readonly GalleryEntry[]): string {
   .card:hover { border-color: var(--line-hi); background: #12151a; transform: translateY(-2px); }
   .card:hover .go { color: var(--accent-soft); transform: translateX(2px); }
   .card-top { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+  .preview { margin: -1.25rem -1.25rem 1.1rem; aspect-ratio: 16 / 9; overflow: hidden; border-bottom: 1px solid var(--line);
+    border-radius: 8px 8px 0 0; pointer-events: none; }
+  .preview svg { display: block; width: 100%; height: 100%; }
   .card h3 { margin: 0; font-size: 1rem; font-weight: 600; overflow-wrap: anywhere; }
   .card .owner { color: var(--dim); font-weight: 400; }
   .go { color: var(--dim); flex: none; transition: color .18s, transform .18s; }
@@ -834,8 +851,7 @@ export function galleryIndexHtml(entries: readonly GalleryEntry[]): string {
     nav { padding: 1rem 0; }
     nav a.ghost { padding: .4rem .55rem; }
     header.hero { min-height: 29rem; margin-bottom: 3rem; padding-top: 4rem; padding-bottom: 3rem; }
-    .hero-image { object-position: 66% center; }
-    .hero-shade { background: rgba(4, 6, 7, .66); }
+    .hero-shade { background: rgba(8, 9, 11, .72); }
     h1 { font-size: 2.625rem; }
     .lede { font-size: 1rem; }
     .setup-grid { grid-template-columns: 1fr; }
@@ -844,6 +860,7 @@ export function galleryIndexHtml(entries: readonly GalleryEntry[]): string {
     .cmd { font-size: .75rem; }
   }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+${diagramCss}
 </style>
 </head>
 <body>
@@ -863,11 +880,11 @@ export function galleryIndexHtml(entries: readonly GalleryEntry[]): string {
 </div>
 
   <header class="hero">
-    <img class="hero-image" src="./flatcode-banner.webp" alt="代码库整理为规格图谱">
+    <div class="hero-image" aria-hidden="true">${FLATCODE_BANNER_SVG}</div>
     <div class="hero-shade"></div>
     <div class="hero-content">
       <div class="eyebrow">软件二向箔，基于 SpexCode</div>
-      <h1>代码库的<em>职责说明</em>。</h1>
+      <h1>代码库的<br><em>职责说明</em>。</h1>
       <p class="lede">
         Flatcode 分析一个仓库，为其中的功能和模块生成 .spec 说明。
         它会检查说明的结构和对源码的覆盖情况，未通过检查的结果会标为部分完成。
@@ -929,6 +946,7 @@ ${cards}
     由 <a href="https://github.com/shuxueshuxue/spexcode" target="_blank" rel="noopener noreferrer">SpexCode</a> 构建。
     <a href="https://spexcode.net/zh/flatcode/">文档</a>。
     本站仅显示已提交的 spec，不显示会话，也不提供写入功能。
+    架构图由 <a href="https://github.com/tt-a1i/archify" target="_blank" rel="noopener noreferrer">archify</a>（MIT）渲染。
   </footer>
 </div>
 <script>
@@ -947,12 +965,28 @@ ${cards}
 `
 }
 
+// Reads the diagrams a flat already published (specs/<id>.json carries each node's rendered SVG). The card shows
+// the root's picture, else the first top-level node that has one, so the preview is the map a reader would open.
+function galleryDiagrams(site: string, nodes: readonly { id: string; parent: string | null; title?: string }[]): { count: number; preview: GalleryPreview | null } {
+  const drawn = new Map<string, string>()
+  for (const node of nodes) {
+    const file = join(site, 'specs', `${node.id}.json`)
+    if (!existsSync(file)) continue
+    const svg = (JSON.parse(readFileSync(file, 'utf8')) as { diagram?: { svg?: string } | null }).diagram?.svg
+    if (svg) drawn.set(node.id, svg)
+  }
+  const root = nodes.find((node) => node.parent === null)
+  const pick = [root, ...nodes.filter((node) => root && node.parent === root.id)].find((node) => node && drawn.has(node.id))
+  return { count: drawn.size, preview: pick ? { node: pick.id, title: pick.title ?? pick.id, svg: drawn.get(pick.id)! } : null }
+}
+
 export async function flatGallery(out: string, flatDirs: readonly string[], log: (line: string) => void = console.log): Promise<GalleryEntry[]> {
   if (!flatDirs.length) throw new Error('spex flat gallery: name at least one flat directory')
   const target = resolve(out)
   mkdirSync(target, { recursive: true })
   const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex')
   const entries: GalleryEntry[] = []
+  const previews: Record<string, GalleryPreview> = {}
   const receipts: { slug: string; release: string; sha256: string }[] = []
   for (const dir of flatDirs) {
     const flat = resolve(dir)
@@ -972,7 +1006,9 @@ export async function flatGallery(out: string, flatDirs: readonly string[], log:
     const dest = join(target, slug)
     mkdirSync(dest, { recursive: true })
     cpSync(site, dest, { recursive: true })
-    const graph = JSON.parse(readFileSync(join(dest, 'public-graph.json'), 'utf8')) as { nodes: unknown[] }
+    const graph = JSON.parse(readFileSync(join(dest, 'public-graph.json'), 'utf8')) as { nodes: { id: string; parent: string | null; title?: string }[] }
+    const pictured = galleryDiagrams(dest, graph.nodes)
+    if (pictured.preview) previews[slug] = pictured.preview
     entries.push({
       slug,
       source: record.source,
@@ -983,6 +1019,7 @@ export async function flatGallery(out: string, flatDirs: readonly string[], log:
       passed: record.passed === true,
       languages: record.profile?.languages ?? [],
       lang: record.lang ?? 'en',
+      diagrams: pictured.count,
     })
     const release = join(dest, 'public-spec-release.json')
     receipts.push({ slug, release: `${slug}/public-spec-release.json`, sha256: sha256(readFileSync(release)) })
@@ -994,8 +1031,7 @@ export async function flatGallery(out: string, flatDirs: readonly string[], log:
   const rank = (entry: GalleryEntry) => (entry.lang.toLowerCase().startsWith('zh') ? 0 : entry.lang.toLowerCase() === 'en' ? 2 : 1)
   entries.sort((a, b) => rank(a) - rank(b) || a.slug.localeCompare(b.slug))
   receipts.sort((a, b) => a.slug.localeCompare(b.slug))
-  copyFileSync(join(PKG, 'src', 'flatcode-banner.webp'), join(target, 'flatcode-banner.webp'))
-  writeFileSync(join(target, 'index.html'), galleryIndexHtml(entries))
+  writeFileSync(join(target, 'index.html'), galleryIndexHtml(entries, previews))
   // The manifest is what makes a publish auditable: it names every entry and hashes each flat's own release
   // manifest, so what landed on a host can be compared with what was built without trusting the transport.
   writeFileSync(join(target, 'gallery.json'), `${JSON.stringify({

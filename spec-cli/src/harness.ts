@@ -18,7 +18,7 @@ import { buildShim, cleanHarness, listenerAt, noLaunchEnv, pexec, SPEX } from '.
 import { buildSnowHooks, snowPaths, SNOW_EVENT_MAP } from './snow-harness.js'
 import { sessionHost } from './session-host.js'
 import type { ListenerProbe } from './harness-shim.js'
-export { buildShim, cleanHarness, headlessTurnFailureShell, listenerAt, noLaunchEnv, paneTreeRuns, procSnapshot, sessionIdentityEnvVars, writeManagedBlock, removeManagedBlock, writeManagedJsonHooks, removeManagedJsonHooks, sharedShimHasHostContent, GENERATED_MARK, isGeneratedArtifact } from './harness-shim.js'
+export { buildShim, cleanHarness, headlessTurnFailureShell, listenerAt, noLaunchEnv, paneTreeRuns, procSnapshot, sessionIdentityEnvVars, writeManagedBlock, removeManagedBlock, unappendManagedBlock, writeManagedJsonHooks, removeManagedJsonHooks, sharedShimHasHostContent, GENERATED_MARK, isGeneratedArtifact } from './harness-shim.js'
 export type { ListenerProbe } from './harness-shim.js'
 
 // @@@ harness-adapter - the ONE seam between SpexCode and the coding-agent harness (Claude Code, native adapter, …).
@@ -100,6 +100,8 @@ export type SharedRuntimeProbe = {
     referenceId: string
     turnPresence: 'idle' | 'active' | 'unknown'
     turnId?: string
+    // the native parent of a spawned reference, when the probe's read named one
+    parentReferenceId?: string
   }>
   error?: string
 }
