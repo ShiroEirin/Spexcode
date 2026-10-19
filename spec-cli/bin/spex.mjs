@@ -126,7 +126,7 @@ if (args[0] === 'serve' || args[0] === 'dashboard') {
     .split(',').map((key) => key.trim()).filter(Boolean)
   for (const key of identityKeys) delete env[key]
 }
-const child = spawn(process.execPath, [cli, ...args], { stdio: 'inherit', env })
+const child = spawn(process.execPath, [cli, ...args], { stdio: 'inherit', env, windowsHide: true })
 // @@@ signal forwarding - this launcher is the pid a shell, a monitor, or a harness's task-stop sees; the verb runs
 // in the child. Mirroring only the exit code meant `kill <spex-pid>` ended the launcher and ORPHANED a long-running
 // verb (a `session stream-dequeue` kept consuming its queue with no reader attached). Forward the stop signals to

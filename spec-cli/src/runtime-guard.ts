@@ -27,16 +27,15 @@ export function sessionRuntimeBlock(env: { hasTmux: boolean; platform: string })
   return lines
 }
 
-// Called at the top of the session-launching command path (`spex serve`). Exits 69 (EX_UNAVAILABLE: a
-// required support program does not exist) — a distinct, honest code, not a swallowed error or a stacktrace.
+// Called at the top of the session-launching command path (`spex serve`). A tmux-less host is NOT refused:
+// process-host carries every headless adapter, so the gate moved from "the OS name" to "the missing
+// primitive". What is left here is the honest repair pointer — WSL2 on Windows, install-tmux on a POSIX
+// host that merely lacks it — printed once, never an exit. `EX_UNAVAILABLE` (69) belonged to the phase
+// where the loud refusal was the sole non-tmux outcome; the process-host landing superseded it.
 export function assertSessionRuntime(): void {
-  // A host without tmux is supported by process-host; only its interactive capabilities are reduced.
-  if (!hasTmux()) {
-    console.error('spex: tmux is unavailable; using process-host (headless adapters only).')
-    return
-  }
-  const block = sessionRuntimeBlock({ hasTmux: hasTmux(), platform: process.platform })
-  if (!block) return
-  for (const line of block) console.error(line)
-  process.exit(69)
+  if (hasTmux()) return
+  console.error('spex: tmux is unavailable; using process-host (headless adapters only).')
+  // sessionRuntimeBlock's first line names the missing primitives; the user needs the repair pointer below.
+  const block = sessionRuntimeBlock({ hasTmux: false, platform: process.platform })
+  if (block) for (const line of block.slice(1)) console.error(line)
 }

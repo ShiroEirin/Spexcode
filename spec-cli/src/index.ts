@@ -1,3 +1,7 @@
+// @@@ console suppression ([[platform-support]]) - the serve process spawns children too (hook dispatch,
+// launcher probes, git), and cli.ts covers only the CLI half. Imported first for the same reason: the patch
+// must exist before any module below binds a child_process function. See windows-hide-console.ts.
+import './windows-hide-console.js'
 import type { Server as HttpServer, ServerResponse as HttpServerResponse } from 'node:http'
 import { randomUUID } from 'node:crypto'
 import { createReadStream } from 'node:fs'

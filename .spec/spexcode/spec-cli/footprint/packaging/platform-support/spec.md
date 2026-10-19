@@ -49,7 +49,9 @@ a real defect the moment a Windows user hits it:
 
 - **Process reaping.** A negative-PID process-group kill is a silent no-op on Windows (it throws `ESRCH`),
   so a caught-and-ignored failure left the child alive, holding a pipe, and the test hung. Reaping is now one
-  shared process-tree helper, not a signal a platform may or may not honour.
+  shared process-tree helper, not a signal a platform may or may not honour; on Windows it is
+  `taskkill /T /F`, because a console child has no window to receive the polite close (measured: the
+  non-forced pass answers "can only be terminated forcefully" and the child survives it).
 - **Paths crossing into a shell.** A Windows backslash is an escape character to bash, so an interpolated
   path was eaten and the file was "not found". Every path that crosses into a shell is spelled with forward
   slashes through one helper.
@@ -80,12 +82,11 @@ node was the straggler:
 - **Nothing is walled wholesale.** `spex serve` starts, `session ls` answers (falling back to the local store
   when no backend is up), and the read-only CLI was never in scope.
 
-**Honest gap in the code, recorded rather than papered over.** `assertSessionRuntime` short-circuits on the
-tmux-less path with a warning and a `return`, so the `EX_UNAVAILABLE` (69) exit beneath it is unreachable, and
-`sessionRuntimeBlock` is consulted only where `hasTmux()` is true — where it always returns null. Both are
-phase-1 remains: they were written when the loud refusal *was* the sole non-tmux outcome, and the process-host
-landing (which added the early return) superseded them without deleting them. Treating them as live would be
-describing a gate the product does not have.
+**The phase-1 remains are gone.** `assertSessionRuntime` asks `hasTmux()` once: a tmux-less host gets the
+one-line process-host notice plus the repair pointer `sessionRuntimeBlock` already carries (WSL2 on Windows,
+install-tmux on POSIX), and no exit. Nothing here walls a subsystem any more — the early `return` that used
+to leave `EX_UNAVAILABLE` (69) unreachable is deleted, along with the redundant second `hasTmux()` probe
+whose `sessionRuntimeBlock` answer was always null.
 
 - **The deciding gap is the live-terminal bridge, and it gates ONE adapter class.** The browser Sessions
   console ([[session-console]]) streams over `tmux -CC`, tmux's structured control-mode protocol, so an

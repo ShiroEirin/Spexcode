@@ -28,30 +28,30 @@ function isAlive(pid: number): boolean {
 /**
  * End `child` and every process below it.
  *
- * `signal` is honoured on POSIX (SIGTERM lets a well-behaved child clean up; SIGKILL does not). Windows
- * has no signals, so the tree reaper is used there and the signal is ignored — `taskkill /T` without `/F`
- * asks the tree to close, and `/F` is only reached when the polite pass did not take.
+ * `signal` is honoured on POSIX (SIGTERM lets a well-behaved child clean up; SIGKILL does not). Windows has
+ * no signals and no polite tree-close for a console child, so the forced tree reaper is used there and the
+ * signal is ignored.
  */
 export function killTree(child: KillableChild | number, signal: NodeJS.Signals = 'SIGKILL'): void {
   const pid = typeof child === 'number' ? child : child.pid
   if (!pid) return
 
   if (process.platform === 'win32') {
-    // `/T` includes descendants — the whole reason the POSIX group kill cannot be reused here. The
-    // non-forced pass comes first so a child that can shut down cleanly gets the chance, matching what
-    // SIGTERM buys a POSIX caller; `/F` is the backstop the POSIX path gets from SIGKILL.
-    const reap = (force: boolean) => spawnSync(
+    // `/T` includes descendants — the whole reason the POSIX group kill cannot be reused here. A console
+    // child has no window to receive WM_CLOSE, so `taskkill /T` WITHOUT `/F` answers "this process can only
+    // be terminated forcefully" and leaves it alive (measured on Windows 11); the polite half POSIX buys
+    // with SIGTERM has no analog here. The reaper is therefore always forced.
+    const result = spawnSync(
       'taskkill',
-      ['/PID', String(pid), '/T', ...(force ? ['/F'] : [])],
+      ['/PID', String(pid), '/T', '/F'],
       { stdio: 'ignore', windowsHide: true },
     )
-    try { reap(false) } catch { /* taskkill unavailable — fall through to the direct kill */ }
-    if (isAlive(pid)) {
-      try { reap(true) } catch { /* nothing else to try */ }
-    }
-    if (isAlive(pid) && typeof child !== 'number') {
-      // A tree reaper that could not reach it still leaves the direct handle.
-      try { child.kill(signal) } catch { /* already exited */ }
+    // spawnSync reports a missing binary or a non-zero taskkill in its RETURN value; it never throws.
+    if (result.error || result.status !== 0) {
+      // No usable tree reaper: the direct handle is the only remaining way to end the child.
+      if (typeof child !== 'number') {
+        try { child.kill(signal) } catch { /* already exited */ }
+      }
     }
     return
   }
@@ -67,7 +67,8 @@ export function killTree(child: KillableChild | number, signal: NodeJS.Signals =
 
 /**
  * End a spawned tree politely, then forcibly. The shape every teardown wants: give a well-behaved child
- * a moment to release its handles, then make sure it is gone before the caller continues.
+ * a moment to release its handles, then make sure it is gone before the caller continues. On Windows the
+ * first killTree is already forced, so the grace period only ever elapses on POSIX.
  */
 export async function killTreeAndWait(child: KillableChild | number, graceMs = 500): Promise<void> {
   const pid = typeof child === 'number' ? child : child.pid

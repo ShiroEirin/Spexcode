@@ -9,9 +9,10 @@
 //
 // HOW: this sets it ONCE, for the whole process, and only on win32 — elsewhere it is a no-op, so POSIX
 // behaviour (including the `sh`/`bash` semantics several adapters rely on) is untouched. `child_process`'s
-// named exports are LIVE BINDINGS, so patching the module object BEFORE any consumer imports it also
-// reaches `import { spawnSync } from 'node:child_process'`. That is why cli.ts imports this module first:
-// once a consumer has bound the function, patching is too late.
+// ESM named exports are LIVE BINDINGS (measured: `esm.spawn === module.exports.spawn` after patching), so a
+// module that already wrote `import { spawn }` still calls the patched function. A CommonJS consumer that
+// DESTRUCTURES (`const { spawn } = require(...)`) does snapshot, which is why cli.ts and index.ts import
+// this module first — before anything in this package could bind that pattern.
 //
 // CONTRACT: an explicit `windowsHide` the caller passed always wins (the spread order below), so a caller
 // that deliberately wants a window still gets one. Argument positions follow the Node signatures,
