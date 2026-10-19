@@ -1,5 +1,5 @@
 {
-  "harnesses": ["claude", "codex", "opencode", "pi", "pi-headless", "codex-headless"],
+  "harnesses": ["claude", "codex", "opencode", "pi", "pi-headless", "codex-headless", "snow"],
   "lint": {
     "governedRoots": ["spec-dashboard/src", "spec-cli/src", "packages/session-protocol/src", "packages/session-topology/src", "spec-forge/src"],
     "sourceExtensions": ["ts", "tsx", "js", "jsx"]

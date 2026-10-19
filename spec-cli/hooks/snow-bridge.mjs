@@ -133,7 +133,12 @@ function main() {
   if (!bash) process.exit(0)
 
   const claudePayload = {
-    session_id: payload.sessionId || payload.session_id || 'snow-session',
+    // The CLI's payload carries its own session id; the App's beforeToolCall payload carries NONE, and the
+    // App hands the hook no environment either (measured: SNOW_SESSION_ID is empty in the child). So under
+    // the App this still collapses to the fixed string — "fires once per session" means once per machine
+    // there. The env read is the seam kept for the day the App starts exporting one; the CLI never reaches
+    // it. Left visible rather than papered over.
+    session_id: payload.sessionId || payload.session_id || process.env.SNOW_SESSION_ID || 'snow-session',
     hook_event_name: event,
     // UserPromptSubmit carries the message; the pre-tool events carry the tool. Only include what exists —
     // dispatch.sh's handlers read the field their event defines.
@@ -170,20 +175,48 @@ function main() {
     process.exit(0)
   }
 
+  // @@@ snow-app protocol - the App and the CLI disagree on exit codes, and this bridge serves both.
+  //   CLI : exit 1 = the call does not run (and afterToolCall swaps the tool result for stderr).
+  //   APP : exit 1 = a soft warning that is only logged; exit 2+ = the block, with stderr shown first;
+  //         exit 0 with non-empty stdout = extra context. The same verdict therefore needs a different
+  //         code per platform.
+  // Which platform is decided by THREE signals, and the redundancy is deliberate: a `--app` flag on the hook
+  // command line, SNOW_PLATFORM=snow-app in the environment, or a payload with no session field at all
+  // (the CLI's payload carries sessionId; the App's does not — both measured). The flag alone proved
+  // untrustworthy: the App ran the --app command line and this process still saw no argument, so a launcher
+  // that rewrites the command must not be able to silently downgrade a block to a logged warning.
+  const isApp = process.argv.includes('--app')
+    || process.env.SNOW_PLATFORM === 'snow-app'
+    || !(payload.sessionId || payload.session_id)
+
   // spec-first: block this one access, name the governing spec, and let the retry through (its per-session
-  // sentinel was already spent). Snow's exit 1 is the same shape: the call does not run, the agent sees
-  // stderr, the conversation continues.
+  // sentinel was already spent). Either way the call does not run, the agent sees the reason, and the
+  // conversation continues.
   if (out.decision === 'block' && out.reason) {
+    if (isApp) {
+      // A 2-based block cannot survive the App's launcher: measured, `powershell -Command "node …"` collapses
+      // EVERY non-zero exit into 1 (2 → 1, 1 → 1), so an exit-2 block arrives as a logged soft warning and
+      // the gate silently passes. The App's own gate is the interactive decision instead: exit 1 whose
+      // stdout is {"decision":{"message":…}} raises the card and puts the reason in front of the human.
+      process.stdout.write(`${JSON.stringify({ decision: { message: out.reason } })}\n`)
+      process.exit(1)
+    }
     process.stderr.write(`${out.reason}\n`)
     process.exit(1)
   }
 
-  // spec-of-file: a non-blocking annotation. Snow's afterToolCall replaces the tool result with stderr on
-  // exit 1, so the note is appended after the (short) edit result rather than swallowing it.
+  // spec-of-file: a non-blocking annotation. Under the CLI, exit 1 replaces the tool result with stderr,
+  // so the note is appended after the (short) edit result rather than swallowing it. The App logs stderr
+  // on exit 1 and only treats STDOUT as context, so there the note goes out as stdout on a passing exit.
   const ctx = out.hookSpecificOutput?.additionalContext || out.additionalContext
   if (ctx) {
     const summary = typeof payload.result === 'object' && payload.result ? payload.result.message : ''
-    process.stderr.write(summary ? `${ctx}\n\n(${summary})\n` : `${ctx}\n`)
+    const note = summary ? `${ctx}\n\n(${summary})\n` : `${ctx}\n`
+    if (isApp) {
+      process.stdout.write(note)
+      process.exit(0)
+    }
+    process.stderr.write(note)
     process.exit(1)
   }
 

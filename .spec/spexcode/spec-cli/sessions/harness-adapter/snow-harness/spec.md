@@ -2,7 +2,7 @@
 title: snow-harness
 status: active
 hue: 205
-desc: The Snow CLI adapter — a first-class Harness row whose shim is a DIRECTORY of per-hook-type files, dispatched through one node bridge that translates Snow's payload and exit-code protocol. Its gates were silently dead until the bridge announced the right harness id, ran in the worktree, the payload stopped being mistaken for the identity, and the timeout stopped being written in the wrong unit.
+desc: The Snow CLI adapter — a first-class Harness row whose shim is a DIRECTORY of per-hook-type files, dispatched through one node bridge that translates Snow's payload and exit-code protocol. Its gates were silently dead until the bridge announced the right harness id, ran in the worktree, the payload stopped being mistaken for the identity, and the timeout stopped being written in the wrong unit. The same bridge serves the Snow App, which shares the name and nothing else: its launcher flattens every non-zero exit to 1, so the App's block is a decision card on stdout instead of the CLI's stderr.
 code:
   - spec-cli/src/snow-harness.ts
 related:
@@ -111,6 +111,38 @@ lookup, measured at ~2 s on a warm host and up to ~8 s cold — so it was killed
 single byte, and a governed edit went through with no block and no message. The number is now a named
 constant (`SNOW_HOOK_TIMEOUT_MS = 30_000`, the Claude default written in Snow's unit) so the unit cannot
 drift back with the value, and the unit is asserted in the unit test.
+
+## the second consumer: the App, which shares the name and nothing else
+
+The bridge serves two products that are configured in two different places. **Snow CLI** reads
+`.snow/hooks/<hookType>.json` and reports through exit codes; **Snow App** reads its hook configuration from
+its own database and reports through an interactive decision card. Neither store is visible to the other, so
+the App's wiring is recorded here rather than in the tree.
+
+Three facts were measured, and each one breaks an assumption the CLI path had already settled:
+
+- **The App's launcher flattens every non-zero exit to 1.** `powershell -Command "node …"` reports 2 as 1;
+  the same line with `exit $LASTEXITCODE` reports 2. Exit 1 is the App's *soft warning* — logged and
+  ignored — so an exit-2 block would arrive as a WARN line and the governed call would go through. The block
+  is therefore spelled per product: **the CLI gets the reason on stderr with exit 1; the App gets
+  `{"decision":{"message":…}}` on STDOUT with exit 1**, which is what raises the card. The annotation splits
+  the same way (stdout with exit 0 under the App, stderr with exit 1 under the CLI), because the App logs
+  stderr on a non-zero exit and reads only stdout as context.
+- **The App hands the hook no environment, and rewrites the command line.** `SNOW_PLATFORM`,
+  `SNOW_SESSION_ID` and `SPEX` are all empty in the child, and an `--app` argument written into the
+  configuration does not appear in `process.argv`. Neither signal can be trusted alone, so `isApp` is the OR
+  of three — the flag, `SNOW_PLATFORM=snow-app`, and a payload with no session field (the CLI's payload
+  carries `sessionId`; the App's carries none). A launcher that rewrites its own command must not be able to
+  downgrade a block into a logged warning.
+- **The App's payload carries no session id.** With no payload field and no environment, the sentinel
+  degenerates to a fixed string shared by every App conversation, so "fires once per session" means once per
+  machine there. The environment read is kept as the seam for the day the App exports one; the gap is left
+  visible rather than papered over.
+
+For reference, the App's wiring is `beforeToolCall` → `node <bridge> beforeToolCall --app` over the
+filesystem read/edit/write tools on a 20 000 ms budget, and `afterToolCall` → `node <bridge> afterToolCall`
+over the edit/write tools. The budget is milliseconds, the App's own unit — the same unit
+`SNOW_HOOK_TIMEOUT_MS` is written in.
 
 ## the identity line
 
