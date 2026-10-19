@@ -19,8 +19,8 @@
  *
  * Usage: node spexcode-to-snow.mjs <repo-root>
  */
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, rmSync } from 'node:fs'
-import { join, dirname, basename } from 'node:path'
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
 
 const repo = process.argv[2]
 if (!repo) {
