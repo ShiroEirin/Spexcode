@@ -1,25 +1,14 @@
-// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
-// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
-// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
-// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
-// this sits above the imports on purpose — the anchor cannot land after a call site.)
-function sweepTemp(dir: string): void {
-  for (let attempt = 0; attempt < 10; attempt++) {
-    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
-  }
-  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
-}
-
+import { fixtureTempDir, sweepTemp } from '../test/fixtures/temp-dir.js'
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, chmodSync, rmSync } from 'node:fs'
+import { mkdirSync, writeFileSync, readFileSync, existsSync, chmodSync, rmSync } from 'node:fs'
 import { dirname, join, delimiter } from 'node:path'
-import { tmpdir } from 'node:os'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 import { opencodePluginSource, OPENCODE_TOOL_NAMES } from './opencode.js'
 import { HARNESSES, harnessById, opencodeHarness, opencodeLaunchCommand, deliverViaRendezvous, rvSock } from './harness.js'
 import { migrateJsonSessionRecords, openProjectSessionApplication } from '@spexcode/session-application'
+import { shQuote } from './sh.js'
 
 // [[opencode-harness]] — the MECHANICAL layer: the adapter surface, the tail-branching launch script, and the
 // generated plugin's two roles (hook bridge → dispatch.sh with claude-SHAPED payloads; rendezvous daemon the
@@ -51,7 +40,7 @@ test('liveness: socket listener preferred, agent.pid fallback (a plugin that fai
 })
 
 test('launch script: prompt tail → --prompt; --resume marker → --session; --continue marker; empty → bare TUI', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'spex-oc-launch-'))
+  const dir = fixtureTempDir('spex-oc-launch-')
   const stub = join(dir, 'opencode')
   // the stub also prints the resume env markers so the seeding contract is pinned here: a --resume
   // relaunch must hand the plugin the owned id (SPEXCODE_OPENCODE_RESUME_ID), a --continue relaunch the
@@ -62,7 +51,7 @@ test('launch script: prompt tail → --prompt; --resume marker → --session; --
   delete (env as Record<string, string | undefined>).SPEXCODE_OPENCODE_RESUME_ID
   delete (env as Record<string, string | undefined>).SPEXCODE_OPENCODE_CONTINUE
   const run = (tail: string) =>
-    execFileSync('bash', ['-c', `${opencodeLaunchCommand('opencode --auto')} ${tail}`], { encoding: 'utf8', env })
+    execFileSync('bash', ['-c', `${opencodeLaunchCommand(`${shQuote(stub)} --auto`)} ${tail}`], { encoding: 'utf8', env })
       .split('\n').find((l) => l.startsWith('STUB:'))
   assert.equal(run(`'fix the login bug'`), 'STUB:--auto --prompt fix the login bug rid= cont=')
   assert.equal(run('--resume oc_abc'), 'STUB:--auto --session oc_abc rid=oc_abc cont=')
@@ -77,7 +66,7 @@ test('the REAL dispatch.sh consumes the `opencode` harness id and routes the cla
   // silently inert — this pins the detector with the real dispatcher and the real mark-active hook.
   const repo = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim()
   const dispatch = join(repo, 'spec-cli', 'hooks', 'dispatch.sh')
-  const dir = mkdtempSync(join(tmpdir(), 'spex-oc-dispatch-'))
+  const dir = fixtureTempDir('spex-oc-dispatch-')
   const home = join(dir, 'home')
   const runtime = join(home, 'projects', dir.replace(/[/.:\\]/g, '-'))
   execFileSync('git', ['init', '-q'], { cwd: dir })
@@ -113,7 +102,7 @@ test('the REAL dispatch.sh consumes the `opencode` harness id and routes the cla
 // a fake SDK client records injected prompts, and the REAL deliverViaRendezvous talks to the plugin's socket.
 
 async function loadPlugin(opts: { session: string; block?: string[]; blockJson?: string[]; blockReason?: string; promptMs?: number; resumeId?: string; continueList?: unknown[]; abortIdle?: boolean }) {
-  const dir = mkdtempSync(join(tmpdir(), 'spex-oc-plugin-'))
+  const dir = fixtureTempDir('spex-oc-plugin-')
   const dispatch = join(dir, 'dispatch.sh')
   // records `<event>.json` (argv check included: $1 must be the baked harness id); blocks listed events.
   writeFileSync(dispatch, [
@@ -130,7 +119,9 @@ async function loadPlugin(opts: { session: string; block?: string[]; blockJson?:
   for (const e of opts.block ?? []) writeFileSync(join(dir, `block-${e}`), '')
   for (const e of opts.blockJson ?? []) writeFileSync(join(dir, `blockjson-${e}`), '')
   const pluginFile = join(dir, 'spexcode-plugin.mjs')
-  writeFileSync(pluginFile, opencodePluginSource(dispatch, '/bin/true'))   // SPEX stubbed: capture becomes a no-op spawn
+  const spex = join(dir, 'spex-noop')
+  writeFileSync(spex, '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+  writeFileSync(pluginFile, opencodePluginSource(dispatch, spex))
   process.env.SPEXCODE_SESSION_ID = opts.session
   process.env.CLAUDE_BG_RENDEZVOUS_SOCK = rvSock(opts.session)
   // the resume seeds are read at plugin LOAD — set (or clear, to stop cross-test leakage) before import

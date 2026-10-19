@@ -1,22 +1,10 @@
-// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
-// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
-// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
-// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
-// this sits above the imports on purpose — the anchor cannot land after a call site.)
-function sweepTemp(dir: string): void {
-  for (let attempt = 0; attempt < 10; attempt++) {
-    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
-  }
-  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
-}
-
+import { fixtureTempDir, sweepTemp } from '../test/fixtures/temp-dir.js'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { once } from 'node:events'
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import net from 'node:net'
-import { tmpdir } from 'node:os'
 import { dirname, join, delimiter } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -95,7 +83,7 @@ function specBody(title: string): string {
 }
 
 test('cold governed overlays are one public generation, not one Git fanout per surface', { timeout: 60_000 }, async () => {
-  const fixture = mkdtempSync(join(tmpdir(), 'spex-layout-overlay-api-'))
+  const fixture = fixtureTempDir('spex-layout-overlay-api-')
   const project = join(fixture, 'project')
   const home = join(fixture, 'home')
   const argvLog = join(fixture, 'git-argv.log')

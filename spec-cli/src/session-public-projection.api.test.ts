@@ -1,23 +1,11 @@
-// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
-// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
-// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
-// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
-// this sits above the imports on purpose — the anchor cannot land after a call site.)
-function sweepTemp(dir: string): void {
-  for (let attempt = 0; attempt < 10; attempt++) {
-    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
-  }
-  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
-}
-
+import { fixtureTempDir, sweepTemp } from '../test/fixtures/temp-dir.js'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { once } from 'node:events'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
 import net from 'node:net'
-import { tmpdir } from 'node:os'
 import { dirname, join, delimiter } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -97,7 +85,7 @@ function record(id: string, project: string, pending: unknown, harness = 'claude
 
 test('all public record APIs share pending projection and malformed fail-closed semantics', { timeout: 30_000 }, async (t) => {
   const liveBefore = liveSessionsCensus()
-  const fixture = mkdtempSync(join(tmpdir(), 'spex-public-record-projection-'))
+  const fixture = fixtureTempDir('spex-public-record-projection-')
   const project = join(fixture, 'project')
   const home = join(fixture, 'home')
   const spec = join(project, '.spec', 'project', 'spec.md')
@@ -306,6 +294,16 @@ test('all public record APIs share pending projection and malformed fail-closed 
       assertLivePending(graph.sessions.find((row) => row.id === livePendingId), '/api/graph live candidate')
       assertLivePending(resources.owners.find((row) => row.kind === 'session' && row.id === livePendingId), '/api/resources live candidate')
       assertLivePending(settings.layout.worktrees.find((row) => row.session === livePendingId), '/api/settings live candidate')
+    })
+
+    await t.test('a newer canonical declaration cannot replace the frozen resource owner', async () => {
+      const changed = await fetch(`${base}/api/session-runtime/${pendingId}/state`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ status: 'asking', proposal: null, note: 'new declaration held behind the pending fence' }),
+      })
+      assert.equal(changed.status, 200, await changed.text())
+      const refreshed = await (await fetch(`${base}/api/resources`)).json() as { owners: any[] }
+      assertPending(refreshed.owners.find((row) => row.kind === 'session' && row.id === pendingId), '/api/resources newer canonical declaration')
     })
 
     const assertMalformed = (row: any, surface: string) => {

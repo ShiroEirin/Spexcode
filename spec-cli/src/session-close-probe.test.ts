@@ -1,26 +1,16 @@
-// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
-// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
-// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
-// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
-// this sits above the imports on purpose — the anchor cannot land after a call site.)
-function sweepTemp(dir: string): void {
-  for (let attempt = 0; attempt < 10; attempt++) {
-    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
-  }
-  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
-}
-
+import { fixtureTempDir, sweepTemp } from '../test/fixtures/temp-dir.js'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
-import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { platform } from 'node:os'
 import { join } from 'node:path'
 import { codexHarness } from './codex-harness.js'
 import { processStartToken } from '@spexcode/spec-core'
 import { closeSession, sendText } from './sessions.js'
 import { repoRoot, runtimeRoot, sessionArtifactPath, sessionRecordPath, sessionStoreDir } from '@spexcode/spec-core'
 import { initializeFreshSessionApplication } from './session-application.js'
+import { collectResourceReport } from './host-resources.js'
 
 let closeProbeTail = Promise.resolve()
 async function enterCloseProbe(): Promise<() => void> {
@@ -41,7 +31,7 @@ test('close uses a target tmux probe when the global listing is busy', { concurr
   const originalColdPreflight = codexHarness.coldPreflight
   const originalColdRuntime = codexHarness.coldRuntime
   const originalCleanup = codexHarness.cleanupRuntime
-  const home = mkdtempSync(join(tmpdir(), `spex-close-target-probe-${process.pid}-`))
+  const home = fixtureTempDir(`spex-close-target-probe-${process.pid}-`)
   const project = join(home, 'project')
   const bin = join(home, 'bin')
   const id = `close-target-probe-${process.pid}`
@@ -147,7 +137,7 @@ test('close reports detached residue by PID and stays quiet when no residue rema
   const previousPath = process.env.PATH
   const previousDatabasePath = process.env.SPEX_SESSION_DATABASE_PATH
   const previousCwd = process.cwd()
-  const home = mkdtempSync(join(tmpdir(), `spex-close-residue-${process.pid}-`))
+  const home = fixtureTempDir(`spex-close-residue-${process.pid}-`)
   const project = join(home, 'project')
   const bin = join(home, 'bin')
   const cleanId = `close-no-residue-${process.pid}`
@@ -225,13 +215,20 @@ setTimeout(() => process.exit(0), 50)
     console.warn = (...args: unknown[]) => residueWarnings.push(args.join(' '))
     try {
       assert.equal(await closeSession(residueId), true)
-      for (let attempt = 0; attempt < 50 && !residueWarnings.some((line) => line.includes(`pid=${residuePid}`)); attempt++)
+      for (let attempt = 0; platform() === 'linux' && attempt < 50 && !residueWarnings.some((line) => line.includes(`pid=${residuePid}`)); attempt++)
         await new Promise((resolve) => setTimeout(resolve, 20))
     } finally { console.warn = originalWarn }
-    const warning = residueWarnings.find((line) => line.includes(`pid=${residuePid}`))
-    assert.ok(warning, `close reports the detached PID: ${residueWarnings.join('\n')}`)
-    assert.match(warning!, /command=.*worktree=.*residue-worktree/)
-    assert.ok(residueWarnings.some((line) => /handle them through their owning harness\/runtime/.test(line)), 'close gives an operator action')
+    if (platform() === 'linux') {
+      const warning = residueWarnings.find((line) => line.includes(`pid=${residuePid}`))
+      assert.ok(warning, `close reports the detached PID: ${residueWarnings.join('\n')}`)
+      assert.match(warning!, /command=.*worktree=.*residue-worktree/)
+      assert.ok(residueWarnings.some((line) => /handle them through their owning harness\/runtime/.test(line)), 'close gives an operator action')
+    } else {
+      const report = await collectResourceReport({ persist: false })
+      assert.equal(report.available, false)
+      assert.match(report.unavailableReason ?? '', /host process metrics are unavailable/)
+      assert.equal(residueWarnings.some((line) => line.includes('detached process residue')), false, 'unsupported host inventory cannot invent a PID diagnostic')
+    }
   } finally {
     if (residuePid && processStartToken(residuePid)) {
       try { process.kill(residuePid, 'SIGKILL') } catch { /* already exited */ }

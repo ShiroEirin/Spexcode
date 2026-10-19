@@ -1,21 +1,9 @@
-// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
-// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
-// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
-// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
-// this sits above the imports on purpose — the anchor cannot land after a call site.)
-function sweepTemp(dir: string): void {
-  for (let attempt = 0; attempt < 10; attempt++) {
-    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
-  }
-  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
-}
-
+import { fixtureTempDir, sweepTemp } from '../test/fixtures/temp-dir.js'
 import assert from 'node:assert/strict'
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { once } from 'node:events'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import net from 'node:net'
-import { tmpdir } from 'node:os'
 import { dirname, join, delimiter } from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
@@ -66,7 +54,7 @@ function pidAlive(pid: number): boolean {
 }
 
 test('public direct close removes the worktree only after the live target is cold and filed', { timeout: 30_000 }, async () => {
-  const fixture = mkdtempSync(join(tmpdir(), 'spex-live-close-boundary-'))
+  const fixture = fixtureTempDir('spex-live-close-boundary-')
   const project = join(fixture, 'project')
   const home = join(fixture, 'home')
   const spec = join(project, '.spec', 'project', 'spec.md')
@@ -155,7 +143,7 @@ setInterval(() => {}, 1000)
     }, null, 2) + '\n')
     initializeFreshSessionApplication().createSession({ sessionId: id, status: 'idle', proposal: 'nothing' })
     writeFileSync(config, JSON.stringify({ pidFile, socket }) + '\n')
-    const started = spawnSync('/usr/bin/tmux', ['-L', tmuxServer, 'new-session', '-d', '-s', id, process.execPath, agentScript, config, id], { encoding: 'utf8' })
+    const started = spawnSync('tmux', ['-L', tmuxServer, 'new-session', '-d', '-s', id, process.execPath, agentScript, config, id], { encoding: 'utf8' })
     assert.equal(started.status, 0, started.stderr)
     await waitFor(() => existsSync(pidFile) && existsSync(socket), 'fixture agent startup')
     agentPid = Number(readFileSync(pidFile, 'utf8').trim())
@@ -177,7 +165,7 @@ setInterval(() => {}, 1000)
     assert.equal(spawnSync('git', ['show-ref', '--verify', '--quiet', `refs/spex-archive/${id}`], { cwd: project }).status, 0, 'close files the worktree tree before removal')
   } finally {
     await stopChild(backend)
-    spawnSync('/usr/bin/tmux', ['-L', tmuxServer, 'kill-server'], { stdio: 'ignore' })
+    spawnSync('tmux', ['-L', tmuxServer, 'kill-server'], { stdio: 'ignore' })
     if (agentPid && pidAlive(agentPid)) {
       try { process.kill(agentPid, 'SIGKILL') } catch { /* already exited */ }
     }

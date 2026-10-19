@@ -1,20 +1,8 @@
-// @@@ sweepTemp - a fixture cleanup that must never fail the test on Windows. A child process can still hold
-// a handle inside the tree, and rmSync then answers EPERM for as long as it lives; the OS reclaims the temp
-// tree anyway, so a bounded retry that gives up silently is the honest shape (POSIX deletes on the first try).
-// Same synchronous shape as rmSync: a successful delete is unchanged. (A function declaration is hoisted, so
-// this sits above the imports on purpose — the anchor cannot land after a call site.)
-function sweepTemp(dir: string): void {
-  for (let attempt = 0; attempt < 10; attempt++) {
-    try { rmSync(dir, { recursive: true, force: true }); return } catch { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50) }
-  }
-  try { rmSync(dir, { recursive: true, force: true }) } catch { /* OS temp reclamation */ }
-}
-
+import { fixtureTempDir, sweepTemp } from '../test/fixtures/temp-dir.js'
 import assert from 'node:assert/strict'
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import net from 'node:net'
-import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
@@ -59,7 +47,7 @@ async function waitForHealth(base: string, child: ChildProcess, log: () => strin
 }
 
 test('public session files CLI stores a live path and the backend authorizes only that path', { timeout: 30_000 }, async () => {
-  const fixture = mkdtempSync(join(tmpdir(), 'spex-session-files-'))
+  const fixture = fixtureTempDir('spex-session-files-')
   const project = join(fixture, 'project')
   const home = join(fixture, 'home')
   const artifact = join(fixture, 'artifact.txt')
@@ -231,7 +219,7 @@ test('public session files CLI stores a live path and the backend authorizes onl
 })
 
 test('a prompt that carries a completed upload posts it to the receiving session as the human\'s own file', { timeout: 120_000 }, async () => {
-  const fixture = mkdtempSync(join(tmpdir(), 'spex-sent-uploads-'))
+  const fixture = fixtureTempDir('spex-sent-uploads-')
   const project = join(fixture, 'project')
   const home = join(fixture, 'home')
   const port = await freePort()
