@@ -24,6 +24,10 @@ const spex = `npx -y ${REGISTRY} -p spexcode${tag} spex`
 const spexWithPage = `npx -y ${REGISTRY} -p spexcode${tag} -p @spexcode/spec-dashboard${tag} spex`
 // A penguin plugin's version is the date of its content, by that host's convention; bump it when the skill changes.
 const PENGUIN_VERSION = '2026.09.10.1'
+// The gugu App's version is its own: gugu's market lists the App by it, so a change to the App alone (its manifest, its
+// page) ships as a new App version with no spexcode release. The spex it runs is still the root version
+// (spex-command.js): when a release changes that, bump this too — the market refuses a version it already has.
+const GUGU_APP_VERSION = '0.7.3'
 
 // one line-ending normalizer for every content compare below (\line endings\ above).
 const lf = (text) => text.replace(/\r\n/g, '\n')
@@ -272,9 +276,11 @@ const files = new Map([
     id: 'spexcode',
     name: 'SpexCode',
     description: 'The spec tree of a task\'s repository, with drift and diagrams, beside the task. Start a task on a node or cite it; agents get SpexCode\'s skills and share a snapshot of the tree into a group, readable there and on phones.',
+    subtitle: 'Spec tree, drift and diagrams',
     localized: {
       'zh-CN': {
         name: 'SpexCode',
+        subtitle: '规格树、代码漂移与架构图',
         description: '任务旁边一格:它所在仓库的规格树——每个节点的正文、和代码的漂移、架构图。在节点上开一条新任务,或者把节点引用进这条任务;agent 拿到 SpexCode 的技能,还能把规格树的快照发进群,群里和手机上都能看。',
         examples: ['给这个仓库画一份规格图', '哪些规格和代码漂移了?'],
       },
@@ -285,10 +291,11 @@ const files = new Map([
     repository,
     license: 'MIT',
     categories: ['developer'],
-    // gugu versions are plain x.y.z, so a prerelease ships under its release number.
-    version: version.replace(/-.*$/, ''),
-    apiVersion: 4,
-    engines: { gugu: '>=0.2.55' },
+    version: GUGU_APP_VERSION,
+    // 11: platforms describes the human UI; earlier strict clients keep the previous App version.
+    apiVersion: 12,
+    platforms: ['desktop', 'phone'],
+    engines: { gugu: '>=0.2.57' },
     entry: 'index.html',
     icon: 'icon.png',
     // files:write puts an agent's shared snapshot into its group (tools.js `share`); gugu's files:write implies no read.
