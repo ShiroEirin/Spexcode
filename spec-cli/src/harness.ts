@@ -976,7 +976,9 @@ export const piHarness: Harness = {
   agentDir: () => null,                              // pi has no file-discovered sub-agent primitive — materialize skips it
   shim: (dispatch, spex) => ({
     content: piExtensionSource(dispatch, spex),
-    cmd: (e: string) => `SPEX='${posixPath(spex)}' bash ${posixPath(dispatch)} pi ${e}`,   // what the extension actually spawns, for parity with buildShim
+    // Quoted like buildShim: the host runs this as a command STRING, so a space in the install path would
+    // split the script argument (see harness-shim.ts `@@@ shell quoting`).
+    cmd: (e: string) => `SPEX='${posixPath(spex)}' bash '${posixPath(dispatch)}' pi ${e}`,   // what the extension actually spawns, for parity with buildShim
   }),
   writeTrust: (proj) => [writePiTrust(mainCheckout(proj))], // trust keys on the MAIN checkout; nearest-parent lookup covers worktrees
   removeTrust: (proj) => removePiTrust(mainCheckout(proj)),
@@ -1150,7 +1152,7 @@ export const opencodeHarness: Harness = {
   agentDir: (proj) => join(proj, '.opencode', 'agents'),
   // content = the plugin source; cmd = the SAME per-event command the plugin bakes into dispatch calls, so
   // any consumer that hashes/inspects commands sees one truth (trust is a no-op here regardless).
-  shim: (dispatch, spex) => ({ content: opencodePluginSource(dispatch, spex), cmd: (e) => `SPEX='${posixPath(spex)}' bash ${posixPath(dispatch)} opencode ${e}` }),
+  shim: (dispatch, spex) => ({ content: opencodePluginSource(dispatch, spex), cmd: (e) => `SPEX='${posixPath(spex)}' bash '${posixPath(dispatch)}' opencode ${e}` }),
   writeTrust: () => [],                            // permission policy stays with the launcher command; no trust artifact to report
   removeTrust: () => { /* nothing was written */ },
   clean(proj, arts, preserveProject) { cleanHarness(this, proj, arts, preserveProject) },

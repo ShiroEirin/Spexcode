@@ -215,12 +215,22 @@ export const windowsLocalityDetector = (readDriveType: (root: string) => string)
 // NAME (`Fixed` / `Network` / `Removable` / …), which is invariant across locales and console code pages,
 // instead of the prose. Only a DRIVE ROOT is ever asked about (the caller parses it first, and statSync
 // has already proven the parent exists).
-const readWindowsDriveType = (root: string): string =>
-  execFileSync(
+// @@@ one probe per drive - a drive's TYPE does not change while the process lives (a removable disk that is
+// swapped out also takes its paths with it), and the probe is a synchronous PowerShell start measured at
+// 420-540 ms. The detector is rebuilt for every requireLocalDatabasePath call, so the memo has to live at
+// module scope or every access re-paid the probe. Keyed by the DRIVE ROOT, not the parent path.
+const windowsDriveTypeCache = new Map<string, string>()
+const readWindowsDriveType = (root: string): string => {
+  const cached = windowsDriveTypeCache.get(root)
+  if (cached !== undefined) return cached
+  const value = execFileSync(
     'powershell',
     ['-NoProfile', '-NonInteractive', '-Command', `(New-Object System.IO.DriveInfo '${root}').DriveType`],
     { encoding: 'utf8', timeout: 10_000, stdio: ['ignore', 'pipe', 'ignore'] },
   )
+  windowsDriveTypeCache.set(root, value)
+  return value
+}
 
 export function localityDetectorForPlatform(platform: string): LocalityDetector {
   if (platform === 'linux') return linuxLocalityDetector(parentPath => statfsSync(parentPath).type)

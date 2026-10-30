@@ -73,18 +73,49 @@ const EVENT_MAP = {
 // below are simply absent; dispatch.sh's handlers branch on the event, not on the tool.
 const NON_TOOL_EVENTS = new Set(['SessionStart', 'UserPromptSubmit', 'Stop'])
 
-// Git for Windows' bash, in the order a normal install lands. PATH is consulted first so a portable Git
-// (scoop, winget, a custom prefix) wins over the conventional location.
+// Is `candidate` Git for Windows' MSYS bash? WSL's bash is REJECTED by name: it answers `uname -s` with a
+// Linux kernel name and cannot see a `C:/…` path, so a dispatch under it fails and the gate goes silently
+// inert. PATH order alone cannot answer this — a default Windows install lists System32 (WSL) right after
+// Git, so "the first bash on PATH" is not the same question as "a bash that can run this script".
+function isMsysBash(candidate) {
+  try {
+    const probe = spawnSync(candidate, ['-c', 'uname -s'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 5000,
+      windowsHide: true,
+    })
+    return probe.status === 0 && /^(MSYS|MINGW)/i.test((probe.stdout || '').trim())
+  } catch {
+    return false
+  }
+}
+
+// Git for Windows' bash. Conventional locations come FIRST and are trusted on existence alone (they are
+// pinned, never a PATH accident), so the common install pays zero probes. Only an unusual prefix — scoop,
+// winget, a custom directory — walks PATH, and each candidate there is PROVEN to be MSYS.
+//
+// `shell: true` is deliberately absent: it routes the probe through cmd.exe, which cannot report WHICH bash
+// answered (measured: the probe returned 0 with empty stdout) and which Node has deprecated for array args
+// (DEP0190). A missing bash returns null and the bridge fails OPEN, which is its contract.
 function findBash() {
-  const fromPath = spawnSync('bash', ['-c', 'exit 0'], { stdio: 'ignore', shell: true })
-  if (fromPath.status === 0) return 'bash'
-  const candidates = [
+  const conventional = [
     'C:/Program Files/Git/usr/bin/bash.exe',
     'C:/Program Files/Git/bin/bash.exe',
     'C:/Program Files (x86)/Git/usr/bin/bash.exe',
     join(process.env.LOCALAPPDATA || '', 'Programs/Git/usr/bin/bash.exe'),
   ]
-  return candidates.find((p) => p && existsSync(p)) || null
+  for (const candidate of conventional) {
+    if (candidate && existsSync(candidate)) return candidate
+  }
+  const dirs = (process.env.PATH || '').split(';')
+  for (const dir of dirs) {
+    if (!dir.trim()) continue
+    const candidate = join(dir.trim(), 'bash.exe')
+    if (!existsSync(candidate)) continue
+    if (isMsysBash(candidate)) return candidate
+  }
+  return null
 }
 
 function readStdin() {
@@ -151,6 +182,9 @@ function main() {
     input: JSON.stringify(claudePayload),
     encoding: 'utf8',
     timeout: 20000,
+    // This bridge is its own process: it never loads windows-hide-console, so every child it spawns would
+    // otherwise flash its own console window on Windows. The probe above carries it too.
+    windowsHide: true,
     // @@@ cwd - the dispatcher and every handler under it resolve the WORKTREE with `git rev-parse
     // --show-toplevel`, which reads the PROCESS cwd, not CLAUDE_PROJECT_DIR. Inheriting this node process's cwd
     // (wherever the harness happened to launch it) made that resolve against the wrong directory: git fails, the

@@ -11,6 +11,7 @@ import { resolveHarnessTargets, partitionHarnesses } from './harness-select.js'
 import { emitPlugin, cleanPlugin, pluginBundleDir, pluginVersion } from './plugin-harness.js'
 import { clearContractFilterPayload, contractFilterPlanted, plantContractFilter, removeContractFilter, settleIndexStat, type ContractFilterBinding, type ContractFilterPayload } from './contract-filter.js'
 import { posixPath } from './sh.js'
+import { removeHookFiles } from './harness-shim.js'
 import { writeFileIfChanged } from './file-write.js'
 
 export type MaterializedArtifact = {
@@ -42,27 +43,8 @@ function isOurShim(path: string): boolean {
     return readFileSync(path, 'utf8').includes('dispatch.sh')
   } catch { return false }
 }
-// un-land one <type>.json per entry of a hooks DIRECTORY, then drop the directory only if nothing of the user's
-// is left. Identity is the installation's own hook dir in the command (/`<PKG>/hooks`), never a `dispatch.sh`
-// grep (a hook-file-per-type command runs the harness's node entry, not dispatch.sh) and never byte-equality
-// with a fresh shim (its node path is per-process on a version-manager host, so the same artifact compares
-// unequal across runs). Mirrors cleanHarness's removeHookFiles (harness-shim.ts).
-function unlandHookFiles(dir: string): boolean {
-  const installHooks = posixPath(join(PKG, 'hooks'))
-  let removed = false
-  try {
-    if (!statSync(dir).isDirectory()) return false
-    for (const entry of readdirSync(dir)) {
-      const f = join(dir, entry)
-      let text: string
-      try { text = readFileSync(f, 'utf8') } catch { continue }
-      if (!text.includes(installHooks)) continue
-      rmSync(f, { force: true }); removed = true
-    }
-    if (removed) rmdirSync(dir)   // throws unless EMPTY, so a user file left in it keeps the directory; rmSync({recursive:false}) is EISDIR on a directory
-  } catch { /* absent or not ours */ }
-  return removed
-}
+// Hook-file un-landing has ONE implementation: removeHookFiles (harness-shim.ts), shared with cleanHarness so a
+// deselect and an uninstall can never drift apart.
 
 function landShim(file: string, shim: ShimTarget): boolean {
   // An anchor's whole job is that the path EXISTS, so a file already there has already done it — and its
@@ -347,7 +329,7 @@ function reconcileTree(proj: string, targets: TreeTargets, tracked: (file: strin
     // @@@ a hook-file-per-type shim is a DIRECTORY (`.snow/hooks/<type>.json`), so the single-file identity
     // read threw EISDIR here and aborted the entire reconcile — the deselect never un-landed anything.
     if (h.shimOwnership === 'hook-file-per-type') {
-      if (unlandHookFiles(file)) removed = true
+      if (removeHookFiles(file)) removed = true
       continue
     }
     if (isOurShim(file)) { rmSync(file, { force: true }); removed = true }

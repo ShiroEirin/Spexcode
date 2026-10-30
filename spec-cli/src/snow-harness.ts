@@ -2,8 +2,9 @@
 //
 // Snow is a native harness, not a bridge target: `spex init --harness snow` + `spex materialize` write its
 // artifacts directly, and `spex uninstall` takes them back. Before this, the same artifacts were produced
-// by two hand-run scripts (snow-bridge.mjs, spexcode-to-snow.mjs) — reproducible, but outside the
-// materialize pass, so they never counted toward the content hash and could not be cleaned up.
+// by two hand-run scripts (snow-bridge.mjs, and spexcode-to-snow.mjs which has since been retired — the
+// adapter owns the whole surface now) — reproducible, but outside the materialize pass, so they never
+// counted toward the content hash and could not be cleaned up.
 //
 // WHAT SNOW DISCOVERS (measured against the Snow CLI bundle):
 //   hooks    `.snow/hooks/<hookType>.json`  — the FILE NAME must be the hook type; a custom name is never

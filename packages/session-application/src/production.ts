@@ -261,9 +261,14 @@ const messageForEvent = (state: SessionStateChange, id: string): MessageInput =>
 export function openProjectSessionApplication(options: ProjectSessionApplicationOptions): ProductionSessionApplication {
   requirePath(options.databasePath)
   if (typeof options.locality !== 'function') throw new TypeError('session application requires a locality precondition')
-  options.locality(options.databasePath)
+  // @@@ locality once per path - the precondition guards OPENING the protocol, not re-entering an already-open
+  // composition. On Windows the probe is a synchronous PowerShell start, measured at 420-540 ms, so checking
+  // before the cache lookup made every cached access pay the full probe. [[application-composition]] requires
+  // the check "before it opens protocol"; a composition returned from the cache is not opened again, and it
+  // was validated when it did open.
   const existing = compositions.get(options.databasePath)
   if (existing) return existing
+  options.locality(options.databasePath)
 
   const protocol = openProtocolOnce(options.databasePath, options.now)
   const topology = openTopology(protocol)

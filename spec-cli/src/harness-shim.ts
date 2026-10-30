@@ -229,7 +229,12 @@ export function buildShim(id: HarnessId, events: readonly string[], dispatch: st
   // `C:\\...\\dispatch.sh` reaches bash as `C:Users...dispatch.sh` — the backslashes are eaten as escapes
   // and the file is never found. Forward slashes are valid in a Windows path AND survive bash, so one
   // spelling works on both platforms (the same rule the .gitignore writer follows, [[harness-delivery]]).
-  const cmd = (e: string) => `SPEX='${posixPath(spex)}' bash ${posixPath(dispatch)} ${id} ${e}`
+  // @@@ shell quoting - dispatch is an ARGUMENT to bash that the HOST runs as a command STRING, so a path
+  // containing a space is split into two words and bash answers 127 (measured: `bash C:/Users/x/Temp/spex
+  // space/t.sh` -> "No such file or directory"). The SPEX assignment already sits in single quotes; the
+  // script path needs the same treatment. Snow's snowHookCommand quoted both from the start — this is the
+  // shared-shim family catching up, not a new convention.
+  const cmd = (e: string) => `SPEX='${posixPath(spex)}' bash '${posixPath(dispatch)}' ${id} ${e}`
   const hooks: Record<string, unknown[]> = {}
   for (const e of events) hooks[e] = [{ hooks: [{ type: 'command', command: cmd(e) }] }]
   // `content` stays the standalone rendering (what a shim file that is wholly ours would hold); `hooks` is
@@ -255,19 +260,22 @@ const isOurShimFile = (file: string): boolean => {
 // ours: the command names a hook entry under THIS installation (`<PKG>/hooks`). Byte-equality with a freshly
 // generated shim would NOT do - the generated line embeds this process's node path (on a version-manager host
 // that differs per shell), so the same artifact compares unequal to itself across runs.
-function removeHookFiles(dir: string): void {
+export function removeHookFiles(dir: string): boolean {
   const installHooks = posixPath(join(PKG, 'hooks'))
+  let removed = false
   try {
-    if (!statSync(dir).isDirectory()) return
+    if (!statSync(dir).isDirectory()) return false
     for (const entry of readdirSync(dir)) {
       const f = join(dir, entry)
       let text: string
       try { text = readFileSync(f, 'utf8') } catch { continue }
       if (!text.includes(installHooks)) continue          // a hand-made hooks folder is never touched
-      rmSync(f, { force: true })
+      rmSync(f, { force: true }); removed = true
     }
-    rmdirSync(dir)   // throws unless EMPTY, so a user file left in it keeps the directory; rmSync({recursive:false}) is EISDIR on a directory
+    // Only after something of OURS went: an empty directory we never wrote is the user's, not litter.
+    if (removed) rmdirSync(dir)   // throws unless EMPTY, so a user file left in it keeps the directory
   } catch { /* absent or not ours: nothing to un-land */ }
+  return removed
 }
 
 // is this file git-tracked in proj? (guards cleanHarness's deleteIfEmpty; env-stripped git, never throws)

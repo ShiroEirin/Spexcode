@@ -15,9 +15,7 @@ export function spexcodeHome(): string {
 // took out `spex spec lint` and `spex graph --public --html` on every Windows machine. `:` and `\\` never
 // occur in a POSIX absolute path, so an existing Linux or macOS store keeps the exact name it already has.
 export function encodeProject(root: string): string {
-
   return root.replace(/[/\\:.]/g, '-')
-
 }
 
 export function projectRuntimeRoot(commonDir: string): string {

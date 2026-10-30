@@ -345,6 +345,11 @@ if (process.argv.includes('--check')) {
   // CRLF is erased: the comparison stays byte-level, so a BOM or a stray control character still fails.
   // On POSIX both sides are already LF and nothing moves.
   const normalized = (bytes) => {
+    // A binary target (the icons and screenshots are copied through this same map) must never take a utf8
+    // round trip: any 0x0D inside a PNG sent it down the CRLF branch, where every invalid UTF-8 byte collapses
+    // to U+FFFD and the two sides of the comparison stop describing real files. NUL is the cheap discriminator
+    // — no text this repository ships contains one.
+    if (bytes.includes(0)) return bytes
     const text = bytes.toString('utf8')
     return text.includes('\r') ? Buffer.from(lf(text), 'utf8') : bytes
   }

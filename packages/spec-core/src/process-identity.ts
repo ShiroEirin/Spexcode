@@ -64,7 +64,6 @@ export function processStartToken(pid: number, procRoot = '/proc'): string | nul
       // failed probe already means "identity unprovable" to every consumer, so its stderr is noise.
       const ticks = execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', `(Get-Process -Id ${pid}).StartTime.Ticks`], { encoding: 'utf8', timeout: 10_000, stdio: ['ignore', 'pipe', 'ignore'] }).trim()
       return /^\d+$/.test(ticks) ? ticks : null
-
     } catch { return null }
   }
   try {

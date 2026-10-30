@@ -40,7 +40,7 @@ if (process.platform === 'win32') {
         args[2] = isOptions(a2) ? { ...HIDDEN, ...a2 } : { ...HIDDEN }
       } else if (isOptions(a1)) {
         args[1] = { ...HIDDEN, ...a1 }
-      } else if (a1 === undefined) {
+      } else if (a1 === undefined || a1 === null) {
         if (isOptions(a2)) args[2] = { ...HIDDEN, ...a2 }   // spawn(cmd, undefined, options)
         else if (args.length <= 1) args.push({ ...HIDDEN }) // spawn(cmd) — an object here IS the options
         else args[1] = { ...HIDDEN }                        // spawn(cmd, undefined)
@@ -56,7 +56,7 @@ if (process.platform === 'win32') {
       const a1 = args[1]
       if (isOptions(a1)) args[1] = { ...HIDDEN, ...a1 }
       else if (typeof a1 === 'function') args.splice(1, 0, { ...HIDDEN })   // exec(cmd, callback)
-      else if (a1 === undefined) {
+      else if (a1 === undefined || a1 === null) {
         if (args.length <= 1) args.push({ ...HIDDEN })
         else args[1] = { ...HIDDEN }
       }
@@ -76,7 +76,7 @@ if (process.platform === 'win32') {
         else if (a2 === undefined) args[2] = { ...HIDDEN }
       } else if (isOptions(a1)) {
         args[1] = { ...HIDDEN, ...a1 }
-      } else if (a1 === undefined) {
+      } else if (a1 === undefined || a1 === null) {
         if (isOptions(a2)) args[2] = { ...HIDDEN, ...a2 }
         else if (args.length <= 1) args.push({ ...HIDDEN })
         else args[1] = { ...HIDDEN }

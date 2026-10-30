@@ -51,7 +51,16 @@ slot="$(cd "$proj" 2>/dev/null && hp_tree_dir)" || slot=""
 # is the authority for whether its events are active. A tree without a published selection is inert.
 allowed="$slot/harnesses"
 if [ -f "$allowed" ]; then
-  grep -Fxq "$harness" "$allowed" || exit 0
+  if ! grep -Fxq "$harness" "$allowed"; then
+    # The allowlist is the USER's selection, so a harness it does not name is inert by contract (this tree
+    # published a selection that excludes it). Silence made that indistinguishable from a broken install, so
+    # the reason is available under SPEX_HOOK_DEBUG — off by default, since a hook that fired correctly for
+    # another harness must never chatter.
+    if [ -n "${SPEX_HOOK_DEBUG:-}" ]; then
+      printf 'dispatch.sh: harness %s is not in the allowlist %s - inert by contract\n' "$harness" "$allowed" >&2
+    fi
+    exit 0
+  fi
 elif [ -f "$rt/harness-selection-v1" ]; then
   exit 0
 fi
